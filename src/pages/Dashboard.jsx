@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, CheckCircle2, DollarSign, Clock, Video, Plus, Trash2, ArrowRight, Bot, Receipt, ShieldCheck, Download } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
+import { API_BASE_URL } from '../config/api';
 
 const Dashboard = () => {
   const [userData, setUserData] = useState(null);
@@ -33,7 +34,7 @@ const Dashboard = () => {
     try {
       setLoading(true);
       // Fetch user profile
-      const userRes = await fetch(`http://localhost:5000/api/users/${userId}`);
+      const userRes = await fetch(`${API_BASE_URL}/api/users/${userId}`);
       if (!userRes.ok) throw new Error('Failed to fetch user data');
       const user = await userRes.json();
       setUserData(user);
@@ -41,7 +42,7 @@ const Dashboard = () => {
       setSlotsList(user.availabilitySlots || ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM']);
 
       // Fetch user's interviews
-      const interviewsRes = await fetch(`http://localhost:5000/api/interviews?userId=${userId}&role=${user.role}`);
+      const interviewsRes = await fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${user.role}`);
       if (interviewsRes.ok) {
         const interviewData = await interviewsRes.json();
         setInterviews(interviewData);
@@ -49,13 +50,13 @@ const Dashboard = () => {
 
       // If candidate, fetch interviewers & feedback
       if (user.role === 'candidate') {
-        const profRes = await fetch('http://localhost:5000/api/users?role=professional');
+        const profRes = await fetch(`${API_BASE_URL}/api/users?role=professional`);
         if (profRes.ok) {
           const profData = await profRes.json();
           setInterviewers(profData);
         }
 
-        const feedRes = await fetch(`http://localhost:5000/api/feedbacks/candidate/${userId}`);
+        const feedRes = await fetch(`${API_BASE_URL}/api/feedbacks/candidate/${userId}`);
         if (feedRes.ok) {
           const feedData = await feedRes.json();
           setFeedbacks(feedData);
@@ -77,7 +78,7 @@ const Dashboard = () => {
     if (!priceInput || isNaN(priceInput)) return;
     try {
       setSavingPrice(true);
-      const res = await fetch(`http://localhost:5000/api/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hourlyRate: Number(priceInput) })
@@ -109,7 +110,7 @@ const Dashboard = () => {
   const handleSaveSlots = async () => {
     try {
       setSavingSlots(true);
-      const res = await fetch(`http://localhost:5000/api/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ availabilitySlots: slotsList })

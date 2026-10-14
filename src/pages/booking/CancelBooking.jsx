@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Clock, AlertTriangle, CheckCircle, ArrowLeft, XCircle, ShieldCheck } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/api';
 
 const CancelBooking = () => {
   const [scheduledInterviews, setScheduledInterviews] = useState([]);
@@ -22,7 +23,7 @@ const CancelBooking = () => {
     }
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:5000/api/interviews?userId=${userId}&role=${userRole}`);
+      const res = await fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${userRole}`);
       if (res.ok) {
         const data = await res.json();
         // Filter only scheduled interviews
@@ -48,7 +49,7 @@ const CancelBooking = () => {
     if (!selectedBooking) return;
     try {
       setProcessing(true);
-      const res = await fetch(`http://localhost:5000/api/interviews/${selectedBooking._id}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/interviews/${selectedBooking._id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

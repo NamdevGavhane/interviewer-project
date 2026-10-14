@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, Clock, Video, FileText, CheckCircle2, AlertCircle, XCircle, ChevronRight, User, Download, ShieldCheck, CreditCard, Receipt } from 'lucide-react';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
+import { API_BASE_URL } from '../config/api';
 
 const Interviews = () => {
   const [interviews, setInterviews] = useState([]);
@@ -24,8 +25,8 @@ const Interviews = () => {
     try {
       setLoading(true);
       const [resInterviews, resPayments] = await Promise.all([
-        fetch(`http://localhost:5000/api/interviews?userId=${userId}&role=${userRole}`),
-        fetch(`http://localhost:5000/api/payment/history?userId=${userId}&role=${userRole}`)
+        fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${userRole}`),
+        fetch(`${API_BASE_URL}/api/payment/history?userId=${userId}&role=${userRole}`)
       ]);
 
       if (!resInterviews.ok) throw new Error('Failed to load interviews');
@@ -51,7 +52,7 @@ const Interviews = () => {
     if (!window.confirm('Are you sure you want to cancel this mock interview session?')) return;
     try {
       setActionLoading(interviewId);
-      const res = await fetch(`http://localhost:5000/api/interviews/${interviewId}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelled' })
@@ -68,7 +69,7 @@ const Interviews = () => {
   const handleDownloadReportForInterview = async (interviewItem) => {
     try {
       setActionLoading(`report_${interviewItem._id}`);
-      const res = await fetch(`http://localhost:5000/api/feedbacks/interview/${interviewItem._id}`);
+      const res = await fetch(`${API_BASE_URL}/api/feedbacks/interview/${interviewItem._id}`);
       if (res.ok) {
         const feedbackData = await res.json();
         downloadInterviewReportPDF(feedbackData);

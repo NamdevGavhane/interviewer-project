@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { CreditCard, Receipt, Download, ShieldCheck, CheckCircle2, Clock, Search, ArrowUpRight, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { downloadInvoicePDF } from '../../utils/invoiceGenerator';
+import { API_BASE_URL } from '../../config/api';
 
 const PaymentHistory = () => {
   const [payments, setPayments] = useState([]);
@@ -23,8 +24,8 @@ const PaymentHistory = () => {
       try {
         setLoading(true);
         const [payRes, intRes] = await Promise.all([
-          fetch(`http://localhost:5000/api/payment/history?userId=${userId}&role=${userRole}`),
-          fetch(`http://localhost:5000/api/interviews?userId=${userId}&role=${userRole}`)
+          fetch(`${API_BASE_URL}/api/payment/history?userId=${userId}&role=${userRole}`),
+          fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${userRole}`)
         ]);
 
         if (payRes.ok) setPayments(await payRes.json());

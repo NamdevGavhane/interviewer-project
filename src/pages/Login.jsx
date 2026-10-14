@@ -1,6 +1,7 @@
 import { Eye, X, UserPlus } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config/api';
 
 const DEFAULT_GOOGLE_ACCOUNTS = [
   {
@@ -101,8 +102,8 @@ const Login = () => {
     setLoading(true);
 
     const url = isLogin 
-      ? 'http://localhost:5000/api/users/login' 
-      : 'http://localhost:5000/api/users/register';
+      ? `${API_BASE_URL}/api/users/login` 
+      : `${API_BASE_URL}/api/users/register`;
       
     try {
       const response = await fetch(url, {
@@ -131,7 +132,7 @@ const Login = () => {
       }
     } catch (err) {
       if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
-        setError('Cannot connect to backend server. Please verify the backend is running on port 5000 (run: cd backend && npm run dev).');
+        setError('Cannot connect to backend server. Please verify the backend API is running and reachable.');
       } else {
         setError(err.message);
       }
@@ -146,7 +147,7 @@ const Login = () => {
       setSelectedAccountLoading(account.email);
       setError('');
 
-      const response = await fetch('http://localhost:5000/api/users/google-login', {
+      const response = await fetch(`${API_BASE_URL}/api/users/google-login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +172,7 @@ const Login = () => {
       navigate('/');
     } catch (err) {
       if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
-        setError('Cannot connect to backend server. Please verify the backend is running on port 5000 (run: cd backend && npm run dev).');
+        setError('Cannot connect to backend server. Please verify the backend API is running and reachable.');
       } else {
         setError(err.message);
       }

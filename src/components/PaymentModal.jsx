@@ -17,6 +17,7 @@ import {
   ArrowRight,
   IndianRupee
 } from 'lucide-react';
+import { API_BASE_URL } from '../config/api';
 
 const PaymentModal = ({
   isOpen,
@@ -125,7 +126,7 @@ const PaymentModal = ({
         bankName: method === 'netbanking' ? selectedBank : 'HDFC Bank',
       };
 
-      const res = await fetch('http://localhost:5000/api/payment/verify-and-book', {
+      const res = await fetch(`${API_BASE_URL}/api/payment/verify-and-book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -16,6 +16,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/api';
 
 const AdminDashboard = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,9 +41,9 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       const [statsRes, usersRes, bookingsRes] = await Promise.all([
-        fetch('http://localhost:5000/api/admin/stats'),
-        fetch('http://localhost:5000/api/admin/users'),
-        fetch('http://localhost:5000/api/admin/bookings')
+        fetch(`${API_BASE_URL}/api/admin/stats`),
+        fetch(`${API_BASE_URL}/api/admin/users`),
+        fetch(`${API_BASE_URL}/api/admin/bookings`)
       ]);
 
       if (statsRes.ok) setStats(await statsRes.json());
@@ -63,7 +64,7 @@ const AdminDashboard = () => {
   const handleRoleChange = async (userId, newRole) => {
     try {
       setActionLoading(`role_${userId}`);
-      const res = await fetch(`http://localhost:5000/api/admin/users/${userId}/role`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/role`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole })
@@ -83,7 +84,7 @@ const AdminDashboard = () => {
   const handleToggleVerify = async (userId, currentStatus) => {
     try {
       setActionLoading(`verify_${userId}`);
-      const res = await fetch(`http://localhost:5000/api/admin/users/${userId}/verify`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/verify`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isVerified: !currentStatus })
@@ -104,7 +105,7 @@ const AdminDashboard = () => {
     if (!window.confirm(`Are you sure you want to delete user "${userName}"? This cannot be undone.`)) return;
     try {
       setActionLoading(`del_${userId}`);
-      const res = await fetch(`http://localhost:5000/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -122,7 +123,7 @@ const AdminDashboard = () => {
   const handleBookingStatus = async (bookingId, newStatus) => {
     try {
       setActionLoading(`book_${bookingId}`);
-      const res = await fetch(`http://localhost:5000/api/admin/bookings/${bookingId}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/bookings/${bookingId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })

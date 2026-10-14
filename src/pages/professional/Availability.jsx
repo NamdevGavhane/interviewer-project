@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Clock, Plus, Trash2, CheckCircle, Save, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/api';
 
 const DEFAULT_SLOT_PRESETS = [
   '09:00 AM - 09:45 AM',
@@ -34,7 +35,7 @@ const Availability = () => {
     const fetchUser = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`http://localhost:5000/api/users/${userId}`);
+        const res = await fetch(`${API_BASE_URL}/api/users/${userId}`);
         if (res.ok) {
           const data = await res.json();
           setUserData(data);
@@ -82,7 +83,7 @@ const Availability = () => {
   const handleSaveAvailability = async () => {
     try {
       setSaving(true);
-      const res = await fetch(`http://localhost:5000/api/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ availabilitySlots: slots })

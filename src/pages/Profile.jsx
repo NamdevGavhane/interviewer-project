@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, BadgeCheck, Briefcase, MapPin, Clock, Edit2, Save } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../config/api';
 
 const Profile = () => {
   const [searchParams] = useSearchParams();
@@ -33,7 +34,7 @@ const Profile = () => {
 
     try {
       setLoading(true);
-      const res = await fetch(`http://localhost:5000/api/users/${targetId}`);
+      const res = await fetch(`${API_BASE_URL}/api/users/${targetId}`);
       if (res.ok) {
         const data = await res.json();
         setProfileData(data);
@@ -61,7 +62,7 @@ const Profile = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      const res = await fetch(`http://localhost:5000/api/users/${targetId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${targetId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, CheckCircle, Clock, Calendar, Download, ShieldCheck, Receipt, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { downloadInvoicePDF } from '../../utils/invoiceGenerator';
+import { API_BASE_URL } from '../../config/api';
 
 const Earnings = () => {
   const [earningsData, setEarningsData] = useState(null);
@@ -20,7 +21,7 @@ const Earnings = () => {
     const fetchEarnings = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`http://localhost:5000/api/users/${userId}/earnings`);
+        const res = await fetch(`${API_BASE_URL}/api/users/${userId}/earnings`);
         if (!res.ok) throw new Error('Failed to load earnings report');
         const data = await res.json();
         setEarningsData(data);

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
+import { API_BASE_URL } from '../config/api';
 
 const SAMPLE_RESUME = `Full Stack Software Engineer with 3+ years experience building web applications.
 Core Skills: React 19, Node.js, Express, MongoDB, Redis, WebRTC, TypeScript, AWS S3.
@@ -212,7 +213,7 @@ const AIInterview = () => {
       const formData = new FormData();
       formData.append('resume', file);
 
-      const res = await fetch('http://localhost:5000/api/ai/parse-resume', {
+      const res = await fetch(`${API_BASE_URL}/api/ai/parse-resume`, {
         method: 'POST',
         body: formData
       });
@@ -242,7 +243,7 @@ const AIInterview = () => {
   const handleStartInterview = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:5000/api/ai/start', {
+      const res = await fetch(`${API_BASE_URL}/api/ai/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -299,7 +300,7 @@ const AIInterview = () => {
       ];
       setTranscript(updatedTranscript);
 
-      const res = await fetch('http://localhost:5000/api/ai/chat', {
+      const res = await fetch(`${API_BASE_URL}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -346,7 +347,7 @@ const AIInterview = () => {
       setGeneratingReport(true);
       if (window.speechSynthesis) window.speechSynthesis.cancel();
 
-      const res = await fetch('http://localhost:5000/api/ai/evaluate', {
+      const res = await fetch(`${API_BASE_URL}/api/ai/evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

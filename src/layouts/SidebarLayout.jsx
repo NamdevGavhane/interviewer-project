@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { 
   LayoutDashboard, 
   Users, 
@@ -26,7 +27,7 @@ const SidebarLayout = () => {
       return;
     }
 
-    fetch(`http://localhost:5000/api/users/${userId}`)
+    fetch(`${API_BASE_URL}/api/users/${userId}`)
       .then(res => {
         if (!res.ok) throw new Error('Not found');
         return res.json();

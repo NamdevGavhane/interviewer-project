@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Link, useSearchParams, useParams } from 'react-router-dom';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
+import { API_BASE_URL } from '../config/api';
 
 const FeedbackReport = () => {
   const [searchParams] = useSearchParams();
@@ -95,9 +96,9 @@ const FeedbackReport = () => {
       setLoading(true);
       let url = '';
       if (interviewId) {
-        url = `http://localhost:5000/api/feedbacks/interview/${interviewId}`;
+        url = `${API_BASE_URL}/api/feedbacks/interview/${interviewId}`;
       } else if (currentUserId) {
-        url = `http://localhost:5000/api/feedbacks/candidate/${currentUserId}`;
+        url = `${API_BASE_URL}/api/feedbacks/candidate/${currentUserId}`;
       }
 
       if (!url) {
@@ -221,7 +222,7 @@ const FeedbackReport = () => {
 
     try {
       setSubmitting(true);
-      const res = await fetch('http://localhost:5000/api/feedbacks', {
+      const res = await fetch(`${API_BASE_URL}/api/feedbacks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -3,6 +3,7 @@ import { ArrowLeft, Lock, Calendar as CalendarIcon, Clock, CheckCircle2, Downloa
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PaymentModal from '../components/PaymentModal';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
+import { API_BASE_URL } from '../config/api';
 
 const Booking = () => {
   const [searchParams] = useSearchParams();
@@ -31,7 +32,7 @@ const Booking = () => {
     const fetchProfessionals = async () => {
       try {
         setLoading(true);
-        const res = await fetch('http://localhost:5000/api/users?role=professional');
+        const res = await fetch(`${API_BASE_URL}/api/users?role=professional`);
         const data = await res.json();
         setInterviewers(data);
 
@@ -91,7 +92,7 @@ const Booking = () => {
       const platform = Math.round(fee * 0.1);
 
       // Create Payment Order in Backend
-      const res = await fetch('http://localhost:5000/api/payment/create-order', {
+      const res = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -13,6 +13,7 @@ import {
   FileText
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { API_BASE_URL } from '../config/api';
 
 const VideoRoom = () => {
   const [searchParams] = useSearchParams();
@@ -56,7 +57,7 @@ const VideoRoom = () => {
   // 1. Fetch interview details if ID present
   useEffect(() => {
     if (interviewId) {
-      fetch(`http://localhost:5000/api/interviews/${interviewId}`)
+      fetch(`${API_BASE_URL}/api/interviews/${interviewId}`)
         .then(res => res.json())
         .then(data => setInterview(data))
         .catch(err => console.error('Error loading interview:', err));
@@ -215,7 +216,7 @@ const VideoRoom = () => {
 
     if (interviewId) {
       try {
-        await fetch(`http://localhost:5000/api/interviews/${interviewId}/status`, {
+        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/status`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'completed' })
