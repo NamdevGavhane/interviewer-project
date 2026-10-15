@@ -262,6 +262,15 @@ button {
   display: flex;
   flex-direction: column;
   padding: 1.5rem 1rem;
+  overflow-y: auto;
+  max-height: 100vh;
+  scrollbar-width: thin;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
 }
 
 .main-content {

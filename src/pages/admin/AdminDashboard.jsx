@@ -13,7 +13,8 @@ import {
   Shield,
   Clock,
   TrendingUp,
-  DollarSign
+  DollarSign,
+  LogOut
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../../config/api';
@@ -192,14 +193,37 @@ const AdminDashboard = () => {
           <h2 className="text-2xl font-bold mt-1">InterviewPro Admin Console</h2>
           <p className="text-muted text-sm">Manage registered users, review & verify professionals, and oversee interview bookings.</p>
         </div>
-        <button 
-          onClick={fetchData} 
-          className="btn btn-outline text-xs flex items-center gap-1.5"
-          disabled={loading}
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          <span>Refresh Data</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={fetchData} 
+            className="btn btn-outline text-xs flex items-center gap-1.5"
+            disabled={loading}
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh Data</span>
+          </button>
+          <button
+            onClick={() => {
+              localStorage.removeItem('userId');
+              localStorage.removeItem('userRole');
+              window.location.href = '/login';
+            }}
+            className="btn text-xs flex items-center gap-1.5"
+            style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              color: '#dc2626',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              padding: '0.45rem 0.85rem',
+              borderRadius: '8px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+            title="Sign out of Admin Console"
+          >
+            <LogOut size={14} />
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
 
       {/* Top Stats Cards */}

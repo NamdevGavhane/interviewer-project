@@ -149,6 +149,23 @@ const SidebarLayout = () => {
                 className="profile-avatar"
               />
             </div>
+            <button 
+              onClick={handleLogout} 
+              className="btn text-xs flex items-center gap-1.5"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: '#dc2626',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                padding: '0.45rem 0.85rem',
+                borderRadius: '8px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+              title="Logout from your account"
+            >
+              <LogOut size={15} />
+              <span>Logout</span>
+            </button>
           </div>
         </header>
         <Outlet />
