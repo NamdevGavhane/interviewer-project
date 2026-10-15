@@ -34,7 +34,7 @@ const seedDatabase = async () => {
         avatar: '/shushant-gaikwad.png',
         availabilitySlots: ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM', '05:00 PM - 05:45 PM', '07:30 PM - 08:15 PM']
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // 2. Raju Bojane (Professional Interviewer)
@@ -55,7 +55,7 @@ const seedDatabase = async () => {
         avatar: '/raju-bojane.png',
         availabilitySlots: ['11:00 AM - 11:45 AM', '03:00 PM - 03:45 PM', '06:00 PM - 06:45 PM', '08:30 PM - 09:15 PM']
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // 3. Namdev Sharma (Candidate)
@@ -71,7 +71,7 @@ const seedDatabase = async () => {
         avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80',
         availabilitySlots: ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM', '05:00 PM - 05:45 PM', '07:00 PM - 07:45 PM']
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // 4. Namdev Gavhane (Admin)
@@ -88,7 +88,7 @@ const seedDatabase = async () => {
         bio: 'Platform Super Administrator with full system privileges.',
         avatar: '/namdev-admin.jpg'
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     // Remove any other test user like rahul
