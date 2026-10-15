@@ -72,13 +72,17 @@ const PaymentModal = ({
     selectedDate,
     selectedSlot,
     topic,
-    sessionFee = 100,
-    platformFee = 10,
     notes = '',
     userId,
     orderId = `order_${Date.now()}`
   } = bookingDetails;
 
+  const sessionFee = bookingDetails.sessionFee !== undefined && !isNaN(Number(bookingDetails.sessionFee))
+    ? Number(bookingDetails.sessionFee)
+    : 100;
+  const platformFee = bookingDetails.platformFee !== undefined && !isNaN(Number(bookingDetails.platformFee))
+    ? Number(bookingDetails.platformFee)
+    : (sessionFee > 0 ? Math.round(sessionFee * 0.1) : 0);
   const totalAmount = sessionFee + platformFee;
 
   // Real Dynamic UPI Deep Link for Mobile UPI Apps (GPay, PhonePe, Paytm, BHIM)
@@ -322,112 +326,114 @@ const PaymentModal = ({
           </div>
         </div>
 
-        {/* Top Tab Bar Navigation */}
-        <div 
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--border)',
-            backgroundColor: '#f1f5f9',
-            padding: '0.4rem 0.75rem',
-            gap: '0.5rem',
-            overflowX: 'auto'
-          }}
-        >
-          <button 
-            type="button"
-            onClick={() => setActiveTab('gpay_upi')}
+        {/* Top Tab Bar Navigation (Shown only for paid sessions) */}
+        {totalAmount > 0 && (
+          <div 
             style={{
               display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              padding: '0.55rem 0.9rem',
-              borderRadius: '8px',
-              border: 'none',
-              background: activeTab === 'gpay_upi' ? '#ffffff' : 'transparent',
-              color: activeTab === 'gpay_upi' ? '#0f172a' : '#64748b',
-              fontWeight: activeTab === 'gpay_upi' ? '700' : '600',
-              boxShadow: activeTab === 'gpay_upi' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              cursor: 'pointer',
-              fontSize: '0.82rem',
-              whiteSpace: 'nowrap'
+              borderBottom: '1px solid var(--border)',
+              backgroundColor: '#f1f5f9',
+              padding: '0.4rem 0.75rem',
+              gap: '0.5rem',
+              overflowX: 'auto'
             }}
           >
-            <Smartphone size={16} className="text-emerald-600" />
-            <span>Google Pay & UPI QR (HDFC Bank)</span>
-            <span style={{ backgroundColor: '#10b981', color: 'white', fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px' }}>
-              DIRECT
-            </span>
-          </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('gpay_upi')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'gpay_upi' ? '#ffffff' : 'transparent',
+                color: activeTab === 'gpay_upi' ? '#0f172a' : '#64748b',
+                fontWeight: activeTab === 'gpay_upi' ? '700' : '600',
+                boxShadow: activeTab === 'gpay_upi' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <Smartphone size={16} className="text-emerald-600" />
+              <span>Google Pay & UPI QR (HDFC Bank)</span>
+              <span style={{ backgroundColor: '#10b981', color: 'white', fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px' }}>
+                DIRECT
+              </span>
+            </button>
 
-          <button 
-            type="button"
-            onClick={() => setActiveTab('testpay')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              padding: '0.55rem 0.9rem',
-              borderRadius: '8px',
-              border: 'none',
-              background: activeTab === 'testpay' ? '#ffffff' : 'transparent',
-              color: activeTab === 'testpay' ? '#16a34a' : '#64748b',
-              fontWeight: activeTab === 'testpay' ? '700' : '600',
-              boxShadow: activeTab === 'testpay' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              cursor: 'pointer',
-              fontSize: '0.82rem',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <Zap size={16} />
-            <span>⚡ 1-Click Fast Pay (Sandbox)</span>
-          </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('testpay')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'testpay' ? '#ffffff' : 'transparent',
+                color: activeTab === 'testpay' ? '#16a34a' : '#64748b',
+                fontWeight: activeTab === 'testpay' ? '700' : '600',
+                boxShadow: activeTab === 'testpay' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <Zap size={16} />
+              <span>⚡ 1-Click Fast Pay (Sandbox)</span>
+            </button>
 
-          <button 
-            type="button"
-            onClick={() => setActiveTab('razorpay')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              padding: '0.55rem 0.9rem',
-              borderRadius: '8px',
-              border: 'none',
-              background: activeTab === 'razorpay' ? '#ffffff' : 'transparent',
-              color: activeTab === 'razorpay' ? '#1d4ed8' : '#64748b',
-              fontWeight: activeTab === 'razorpay' ? '700' : '600',
-              boxShadow: activeTab === 'razorpay' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              cursor: 'pointer',
-              fontSize: '0.82rem',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <ExternalLink size={16} />
-            <span>Razorpay Standard Gateway</span>
-          </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('razorpay')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'razorpay' ? '#ffffff' : 'transparent',
+                color: activeTab === 'razorpay' ? '#1d4ed8' : '#64748b',
+                fontWeight: activeTab === 'razorpay' ? '700' : '600',
+                boxShadow: activeTab === 'razorpay' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <ExternalLink size={16} />
+              <span>Razorpay Standard Gateway</span>
+            </button>
 
-          <button 
-            type="button"
-            onClick={() => setActiveTab('card')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              padding: '0.55rem 0.9rem',
-              borderRadius: '8px',
-              border: 'none',
-              background: activeTab === 'card' ? '#ffffff' : 'transparent',
-              color: activeTab === 'card' ? '#0f172a' : '#64748b',
-              fontWeight: activeTab === 'card' ? '700' : '600',
-              boxShadow: activeTab === 'card' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-              cursor: 'pointer',
-              fontSize: '0.82rem',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <CreditCard size={16} />
-            <span>Card & NetBanking</span>
-          </button>
-        </div>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('card')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'card' ? '#ffffff' : 'transparent',
+                color: activeTab === 'card' ? '#0f172a' : '#64748b',
+                fontWeight: activeTab === 'card' ? '700' : '600',
+                boxShadow: activeTab === 'card' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <CreditCard size={16} />
+              <span>Card & NetBanking</span>
+            </button>
+          </div>
+        )}
 
         {/* Tab Body */}
         <div style={{ padding: '1.25rem 1.5rem' }}>
@@ -439,10 +445,42 @@ const PaymentModal = ({
             </div>
           )}
 
+          {/* Free Session Card (When totalAmount is 0) */}
+          {totalAmount === 0 && (
+            <div className="card text-center p-6" style={{ backgroundColor: '#f0fdf4', borderColor: '#86efac', borderStyle: 'solid', borderWidth: '1px' }}>
+              <div style={{ backgroundColor: '#dcfce7', color: '#16a34a', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto' }}>
+                <CheckCircle2 size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 mb-1">🎉 Free Mock Interview Session (₹0)</h3>
+              <p className="text-sm text-muted mb-6">
+                <strong>{interviewer?.name}</strong> has set this session fee to <strong>₹0</strong>. No payment or bank transfer is required!
+              </p>
+              <button
+                type="button"
+                onClick={() => handleProcessPayment('free', { paymentId: `FREE_${Date.now()}` })}
+                disabled={processing}
+                className="btn btn-primary w-full py-3 text-base font-bold flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#16a34a', borderColor: '#16a34a', cursor: 'pointer' }}
+              >
+                {processing ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Confirming Free Booking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={18} />
+                    <span>Confirm Free Booking (₹0) & Schedule Session</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* ======================================================== */}
           {/* TAB 1: GOOGLE PAY UPI QR (DIRECT TO USER'S HDFC BANK) */}
           {/* ======================================================== */}
-          {activeTab === 'gpay_upi' && (
+          {totalAmount > 0 && activeTab === 'gpay_upi' && (
             <div>
               {/* Account credit explanation banner */}
               <div 

@@ -5,14 +5,35 @@ import PaymentModal from '../components/PaymentModal';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
 import { API_BASE_URL } from '../config/api';
 
+const getAvailableDates = () => {
+  const dates = [];
+  const today = new Date();
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dayLabel = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-US', { weekday: 'short' });
+    const formatted = `${dayLabel}, ${d.getDate()} ${d.toLocaleDateString('en-US', { month: 'short' })} ${d.getFullYear()}`;
+    dates.push(formatted);
+  }
+  return dates;
+};
+
+const getInterviewerSlots = (interviewer) => {
+  if (interviewer?.availabilitySlots && interviewer.availabilitySlots.length > 0) {
+    return interviewer.availabilitySlots;
+  }
+  return ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM', '05:00 PM - 05:45 PM', '07:30 PM - 08:15 PM'];
+};
+
 const Booking = () => {
   const [searchParams] = useSearchParams();
   const preselectedInterviewerId = searchParams.get('interviewerId');
   const navigate = useNavigate();
 
+  const [availableDates] = useState(getAvailableDates());
   const [interviewers, setInterviewers] = useState([]);
   const [selectedInterviewer, setSelectedInterviewer] = useState(null);
-  const [selectedDate, setSelectedDate] = useState('Tomorrow, 14 Oct 2026');
+  const [selectedDate, setSelectedDate] = useState(() => getAvailableDates()[0]);
   const [selectedSlot, setSelectedSlot] = useState('');
   const [topic, setTopic] = useState('Batch 3 Interview - MERN Stack Architecture & Coding');
   const [notes, setNotes] = useState('');
@@ -42,9 +63,8 @@ const Booking = () => {
             : data[0];
           const chosen = match || data[0];
           setSelectedInterviewer(chosen);
-          if (chosen.availabilitySlots && chosen.availabilitySlots.length > 0) {
-            setSelectedSlot(chosen.availabilitySlots[0]);
-          }
+          const slotsList = getInterviewerSlots(chosen);
+          setSelectedSlot(slotsList[0]);
         }
       } catch (err) {
         console.error('Error fetching interviewers:', err);
@@ -60,11 +80,8 @@ const Booking = () => {
     const chosen = interviewers.find(u => u._id === interviewerId);
     if (chosen) {
       setSelectedInterviewer(chosen);
-      if (chosen.availabilitySlots && chosen.availabilitySlots.length > 0) {
-        setSelectedSlot(chosen.availabilitySlots[0]);
-      } else {
-        setSelectedSlot('10:00 AM - 10:45 AM');
-      }
+      const slotsList = getInterviewerSlots(chosen);
+      setSelectedSlot(slotsList[0]);
       if (chosen.title) {
         setTopic(`${chosen.title} Mock Interview`);
       } else {
@@ -88,8 +105,8 @@ const Booking = () => {
 
     try {
       setSubmitting(true);
-      const fee = selectedInterviewer.hourlyRate || 100;
-      const platform = Math.round(fee * 0.1);
+      const fee = selectedInterviewer?.hourlyRate !== undefined ? Number(selectedInterviewer.hourlyRate) : 100;
+      const platform = fee > 0 ? Math.round(fee * 0.1) : 0;
 
       // Create Payment Order in Backend
       const res = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
@@ -251,8 +268,8 @@ const Booking = () => {
     );
   }
 
-  const sessionFee = selectedInterviewer ? selectedInterviewer.hourlyRate : 100;
-  const platformFee = Math.round(sessionFee * 0.1);
+  const sessionFee = selectedInterviewer?.hourlyRate !== undefined ? Number(selectedInterviewer.hourlyRate) : 100;
+  const platformFee = sessionFee > 0 ? Math.round(sessionFee * 0.1) : 0;
   const totalAmount = sessionFee + platformFee;
 
   return (
@@ -327,7 +344,7 @@ const Booking = () => {
               <div className="mb-4">
                 <label className="text-sm font-medium text-muted block mb-2">Choose Date</label>
                 <div className="flex gap-2 flex-wrap">
-                  {['Today, 13 Oct 2026', 'Tomorrow, 14 Oct 2026', 'Friday, 16 Oct 2026', 'Saturday, 17 Oct 2026'].map(d => (
+                  {availableDates.map(d => (
                     <button
                       type="button"
                       key={d}
@@ -345,7 +362,7 @@ const Booking = () => {
               <div>
                 <label className="text-sm font-medium text-muted block mb-2">Available Slots ({selectedInterviewer?.name})</label>
                 <div className="flex gap-2 flex-wrap">
-                  {(selectedInterviewer?.availabilitySlots || ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM', '06:00 PM - 06:45 PM']).map(slot => (
+                  {getInterviewerSlots(selectedInterviewer).map(slot => (
                     <button
                       type="button"
                       key={slot}

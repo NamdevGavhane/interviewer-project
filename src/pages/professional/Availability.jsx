@@ -56,7 +56,25 @@ const Availability = () => {
     setTimeout(() => setToastMessage(''), 3000);
   };
 
-  const handleAddCustomSlot = (e) => {
+  const saveSlots = async (newSlots) => {
+    try {
+      setSaving(true);
+      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ availabilitySlots: newSlots })
+      });
+
+      if (!res.ok) throw new Error('Failed to update availability');
+      showToast('Availability slots saved to live profile! ✅');
+    } catch (err) {
+      alert('Error saving slots: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddCustomSlot = async (e) => {
     e.preventDefault();
     const trimmed = newSlotInput.trim();
     if (!trimmed) return;
@@ -64,38 +82,28 @@ const Availability = () => {
       alert('This slot is already added.');
       return;
     }
-    setSlots([...slots, trimmed]);
+    const updated = [...slots, trimmed];
+    setSlots(updated);
     setNewSlotInput('');
+    await saveSlots(updated);
   };
 
-  const handleTogglePreset = (preset) => {
-    if (slots.includes(preset)) {
-      setSlots(slots.filter(s => s !== preset));
-    } else {
-      setSlots([...slots, preset]);
-    }
+  const handleTogglePreset = async (preset) => {
+    const updated = slots.includes(preset)
+      ? slots.filter(s => s !== preset)
+      : [...slots, preset];
+    setSlots(updated);
+    await saveSlots(updated);
   };
 
-  const handleRemoveSlot = (slotToRemove) => {
-    setSlots(slots.filter(s => s !== slotToRemove));
+  const handleRemoveSlot = async (slotToRemove) => {
+    const updated = slots.filter(s => s !== slotToRemove);
+    setSlots(updated);
+    await saveSlots(updated);
   };
 
   const handleSaveAvailability = async () => {
-    try {
-      setSaving(true);
-      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ availabilitySlots: slots })
-      });
-
-      if (!res.ok) throw new Error('Failed to update availability');
-      showToast('Availability slots saved successfully! ✅');
-    } catch (err) {
-      alert('Error saving slots: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
+    await saveSlots(slots);
   };
 
   return (

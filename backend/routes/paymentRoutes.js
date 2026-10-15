@@ -44,8 +44,8 @@ router.post('/create-order', async (req, res) => {
       return res.status(400).json({ message: 'Candidate and Interviewer are required.' });
     }
 
-    const fee = Number(sessionFee) || 100;
-    const platform = Number(platformFee) !== undefined ? Number(platformFee) : Math.round(fee * 0.1);
+    const fee = sessionFee !== undefined && !isNaN(Number(sessionFee)) ? Number(sessionFee) : 100;
+    const platform = platformFee !== undefined && !isNaN(Number(platformFee)) ? Number(platformFee) : (fee > 0 ? Math.round(fee * 0.1) : 0);
     const totalAmount = fee + platform;
 
     // Check if real Razorpay instance is available
@@ -116,8 +116,8 @@ router.post('/verify-and-book', async (req, res) => {
       return res.status(400).json({ message: 'Missing required booking details.' });
     }
 
-    const fee = Number(sessionFee) || 100;
-    const platform = Number(platformFee) !== undefined ? Number(platformFee) : Math.round(fee * 0.1);
+    const fee = sessionFee !== undefined && !isNaN(Number(sessionFee)) ? Number(sessionFee) : 100;
+    const platform = platformFee !== undefined && !isNaN(Number(platformFee)) ? Number(platformFee) : (fee > 0 ? Math.round(fee * 0.1) : 0);
     const totalAmount = fee + platform;
 
     // Verify signature if real Razorpay keys are in use
