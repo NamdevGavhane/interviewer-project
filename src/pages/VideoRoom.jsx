@@ -10,15 +10,29 @@ import {
   Send, 
   X, 
   AlertCircle,
-  FileText
+  FileText,
+  Copy,
+  Check,
+  RefreshCw,
+  Radio,
+  Users
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import Peer from 'peerjs';
 import { API_BASE_URL } from '../config/api';
 
 const VideoRoom = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const interviewId = searchParams.get('interviewId');
+  const roleParam = searchParams.get('role');
   const navigate = useNavigate();
+
+  // Determine active room & role
+  const roomId = interviewId || searchParams.get('room') || 'main-session';
+  const initialRole = roleParam || localStorage.getItem('userRole') || 'candidate';
+  const [currentRole, setCurrentRole] = useState(initialRole === 'professional' || initialRole === 'admin' ? 'interviewer' : 'candidate');
+
+  const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
 
   // State
   const [interview, setInterview] = useState(null);
@@ -28,6 +42,13 @@ const VideoRoom = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [mediaError, setMediaError] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
+  
+  // WebRTC Connection State
+  const [peerReady, setPeerReady] = useState(false);
+  const [isCallConnected, setIsCallConnected] = useState(false);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('Initializing media...');
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Live Timer State
   const [secondsElapsed, setSecondsElapsed] = useState(0);
@@ -36,12 +57,7 @@ const VideoRoom = () => {
   const [messages, setMessages] = useState([
     {
       sender: 'System',
-      text: 'Welcome to your InterviewPro live video session. Your connection is encrypted.',
-      time: 'Just now'
-    },
-    {
-      sender: 'Interviewer',
-      text: 'Hello! Can you hear and see me clearly? Feel free to share your screen or code anytime.',
+      text: 'Live encrypted P2P WebRTC room ready. Camera and microphone enabled.',
       time: 'Just now'
     }
   ]);
@@ -49,10 +65,17 @@ const VideoRoom = () => {
 
   // Refs
   const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
   const mediaStreamRef = useRef(null);
+  const peerRef = useRef(null);
+  const currentCallRef = useRef(null);
+  const dataConnRef = useRef(null);
   const chatBottomRef = useRef(null);
 
-  const currentUserRole = localStorage.getItem('userRole') || 'candidate';
+  // Clean IDs for PeerJS (alphanumeric only)
+  const cleanRoomId = roomId.replace(/[^a-zA-Z0-9]/g, '');
+  const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
+  const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
   // 1. Fetch interview details if ID present
   useEffect(() => {
@@ -80,31 +103,40 @@ const VideoRoom = () => {
   };
 
   // 3. Initialize Camera & Mic
-  useEffect(() => {
-    let stream = null;
-    const initMedia = async () => {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: 1280, height: 720 },
-            audio: true
-          });
-          mediaStreamRef.current = stream;
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
-          }
-          setCameraActive(true);
-        } else {
-          setMediaError('Browser media devices API is not supported in this environment.');
-        }
-      } catch (err) {
-        console.warn('Media access note:', err.message);
-        setMediaError('Camera/Mic permission preview mode (Simulated HD Feed).');
-        setCameraActive(false);
-      }
-    };
+  const startCamera = async () => {
+    try {
+      setMediaError(null);
+      setConnectionStatus('Requesting camera & microphone access...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: true
+      });
 
-    initMedia();
+      mediaStreamRef.current = stream;
+      setCameraActive(true);
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.muted = true;
+        localVideoRef.current.play().catch(e => console.warn('Local play warning:', e));
+      }
+
+      setConnectionStatus('Camera connected. Ready for partner call.');
+      return stream;
+    } catch (err) {
+      console.warn('Camera error:', err);
+      setMediaError('Camera permission blocked or no webcam found. Click "Enable Camera" or allow access in browser URL bar.');
+      setCameraActive(false);
+      setConnectionStatus('Camera permission required.');
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    let localStream = null;
+    startCamera().then(stream => {
+      localStream = stream;
+    });
 
     return () => {
       if (mediaStreamRef.current) {
@@ -112,6 +144,154 @@ const VideoRoom = () => {
       }
     };
   }, []);
+
+  // Ensure local video always plays when cameraActive or ref updates
+  useEffect(() => {
+    if (localVideoRef.current && mediaStreamRef.current) {
+      localVideoRef.current.srcObject = mediaStreamRef.current;
+      localVideoRef.current.muted = true;
+      localVideoRef.current.play().catch(e => console.warn('Local video play:', e));
+    }
+  }, [cameraActive, isVideoOn]);
+
+  // Ensure remote video plays when remoteStream updates
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(e => console.warn('Remote video play:', e));
+    }
+  }, [remoteStream, isCallConnected]);
+
+  // 4. WebRTC PeerJS Setup
+  useEffect(() => {
+    let peerInstance = null;
+    let callRetryInterval = null;
+
+    try {
+      setConnectionStatus(`Connecting as ${currentRole}...`);
+      peerInstance = new Peer(myPeerId, {
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' }
+          ]
+        }
+      });
+
+      peerRef.current = peerInstance;
+
+      peerInstance.on('open', (id) => {
+        console.log('PeerJS connection opened with ID:', id);
+        setPeerReady(true);
+        setConnectionStatus(`Online as ${currentRole}. Waiting for ${partnerRole}...`);
+      });
+
+      // Handle Incoming Call
+      peerInstance.on('call', (incomingCall) => {
+        console.log('Incoming WebRTC Call from:', incomingCall.peer);
+        currentCallRef.current = incomingCall;
+
+        incomingCall.answer(mediaStreamRef.current || undefined);
+
+        incomingCall.on('stream', (stream) => {
+          console.log('Received remote live video stream!');
+          setRemoteStream(stream);
+          setIsCallConnected(true);
+          setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
+        });
+
+        incomingCall.on('close', () => {
+          console.log('Call closed');
+          setIsCallConnected(false);
+          setRemoteStream(null);
+          setConnectionStatus(`${partnerName} disconnected.`);
+        });
+
+        incomingCall.on('error', (err) => {
+          console.warn('Call stream error:', err);
+        });
+      });
+
+      // Handle Incoming Data Connection for Chat
+      peerInstance.on('connection', (conn) => {
+        dataConnRef.current = conn;
+        conn.on('data', (data) => {
+          if (data && data.text) {
+            setMessages(prev => [...prev, data]);
+          }
+        });
+      });
+
+      peerInstance.on('error', (err) => {
+        console.warn('PeerJS notice:', err.type, err.message);
+        if (err.type === 'unavailable-id') {
+          // If ID collision occurs, handle gracefully
+          setConnectionStatus(`Ready. Attempting partner connection...`);
+        }
+      });
+
+      // Periodic check to call partner
+      callRetryInterval = setInterval(() => {
+        if (!isCallConnected && peerInstance && !peerInstance.destroyed && mediaStreamRef.current) {
+          callPartner();
+        }
+      }, 3500);
+
+    } catch (e) {
+      console.error('PeerJS init failed:', e);
+    }
+
+    return () => {
+      clearInterval(callRetryInterval);
+      if (currentCallRef.current) {
+        currentCallRef.current.close();
+      }
+      if (peerInstance) {
+        peerInstance.destroy();
+      }
+    };
+  }, [myPeerId, partnerPeerId, currentRole]);
+
+  // Outgoing Call Function
+  const callPartner = () => {
+    if (!peerRef.current || !mediaStreamRef.current || isCallConnected) return;
+
+    try {
+      const call = peerRef.current.call(partnerPeerId, mediaStreamRef.current);
+      if (call) {
+        currentCallRef.current = call;
+
+        call.on('stream', (stream) => {
+          console.log('Remote stream connected from outgoing call!');
+          setRemoteStream(stream);
+          setIsCallConnected(true);
+          setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
+        });
+
+        call.on('close', () => {
+          setIsCallConnected(false);
+          setRemoteStream(null);
+          setConnectionStatus(`Waiting for ${partnerName} to reconnect...`);
+        });
+      }
+
+      // Also open data connection for real-time chat
+      if (!dataConnRef.current) {
+        const conn = peerRef.current.connect(partnerPeerId);
+        conn.on('open', () => {
+          dataConnRef.current = conn;
+        });
+        conn.on('data', (data) => {
+          if (data && data.text) {
+            setMessages(prev => [...prev, data]);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Outbound call attempt:', err.message);
+    }
+  };
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -146,29 +326,49 @@ const VideoRoom = () => {
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
           const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          const screenTrack = screenStream.getVideoTracks()[0];
+
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = screenStream;
           }
           setIsScreenSharing(true);
 
-          screenStream.getVideoTracks()[0].onended = () => {
-            if (localVideoRef.current && mediaStreamRef.current) {
-              localVideoRef.current.srcObject = mediaStreamRef.current;
+          // Replace track in active WebRTC call sender
+          if (currentCallRef.current && currentCallRef.current.peerConnection) {
+            const senders = currentCallRef.current.peerConnection.getSenders();
+            const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+            if (videoSender) {
+              videoSender.replaceTrack(screenTrack);
             }
-            setIsScreenSharing(false);
+          }
+
+          screenTrack.onended = () => {
+            revertToCamera();
           };
         } else {
           alert('Screen sharing is not supported by your browser.');
         }
       } catch (err) {
-        console.warn('Screen share canceled or unsupported:', err);
+        console.warn('Screen share canceled:', err);
       }
     } else {
-      if (localVideoRef.current && mediaStreamRef.current) {
-        localVideoRef.current.srcObject = mediaStreamRef.current;
-      }
-      setIsScreenSharing(false);
+      revertToCamera();
     }
+  };
+
+  const revertToCamera = () => {
+    if (localVideoRef.current && mediaStreamRef.current) {
+      localVideoRef.current.srcObject = mediaStreamRef.current;
+    }
+    if (currentCallRef.current && currentCallRef.current.peerConnection && mediaStreamRef.current) {
+      const camTrack = mediaStreamRef.current.getVideoTracks()[0];
+      const senders = currentCallRef.current.peerConnection.getSenders();
+      const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+      if (videoSender && camTrack) {
+        videoSender.replaceTrack(camTrack);
+      }
+    }
+    setIsScreenSharing(false);
   };
 
   // Send Chat Message
@@ -177,7 +377,7 @@ const VideoRoom = () => {
     if (!chatInput.trim()) return;
 
     const userMsg = {
-      sender: currentUserRole === 'professional' ? 'Interviewer (You)' : 'Candidate (You)',
+      sender: currentRole === 'interviewer' ? 'Interviewer (You)' : 'Candidate (You)',
       text: chatInput.trim(),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
@@ -185,24 +385,25 @@ const VideoRoom = () => {
     setMessages(prev => [...prev, userMsg]);
     setChatInput('');
 
-    // Dynamic automated simulation response from partner
-    setTimeout(() => {
-      const replies = [
-        "Received! That looks like an optimal time complexity approach.",
-        "Could you also explain how this handles concurrency or race conditions?",
-        "Good point! Let's continue with the technical evaluation.",
-        "Thanks for sharing, I've noted that down for the evaluation summary."
-      ];
-      const randomReply = replies[Math.floor(Math.random() * replies.length)];
-      setMessages(prev => [
-        ...prev,
-        {
-          sender: currentUserRole === 'professional' ? 'Candidate' : 'Interviewer',
-          text: randomReply,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-    }, 2000);
+    // Send through P2P WebRTC data connection if connected
+    if (dataConnRef.current && dataConnRef.current.open) {
+      dataConnRef.current.send({
+        sender: currentRole === 'interviewer' ? 'Interviewer' : 'Candidate',
+        text: userMsg.text,
+        time: userMsg.time
+      });
+    }
+  };
+
+  // Copy Room Link
+  const handleCopyRoomLink = () => {
+    const partnerRoleToPass = currentRole === 'interviewer' ? 'candidate' : 'professional';
+    const link = `${window.location.origin}/room?interviewId=${interviewId || cleanRoomId}&role=${partnerRoleToPass}`;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(link);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    }
   };
 
   // End Call & Complete Session
@@ -212,6 +413,13 @@ const VideoRoom = () => {
 
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+
+    if (currentCallRef.current) {
+      currentCallRef.current.close();
+    }
+    if (peerRef.current) {
+      peerRef.current.destroy();
     }
 
     if (interviewId) {
@@ -231,105 +439,245 @@ const VideoRoom = () => {
   };
 
   const partnerName = interview 
-    ? (currentUserRole === 'professional' ? (interview.candidateId?.name || 'Candidate') : (interview.interviewerId?.name || 'Interviewer')) 
-    : (currentUserRole === 'professional' ? 'Candidate' : 'Interviewer');
+    ? (currentRole === 'interviewer' ? (interview.candidateId?.name || 'Candidate') : (interview.interviewerId?.name || 'Shushant Gaikwad')) 
+    : (currentRole === 'interviewer' ? 'Candidate' : 'Shushant Gaikwad');
 
-  const partnerRole = interview
-    ? (currentUserRole === 'professional' ? 'Candidate' : (interview.interviewerId?.title || 'Technical Interviewer'))
-    : (currentUserRole === 'professional' ? 'Candidate' : 'Technical Interviewer');
+  const partnerTitle = interview
+    ? (currentRole === 'interviewer' ? 'Software Candidate' : (interview.interviewerId?.title || 'MERN Developer & Batch 3 Lead'))
+    : (currentRole === 'interviewer' ? 'Software Candidate' : 'MERN Developer & Batch 3 Lead');
 
   const partnerAvatar = interview
-    ? (currentUserRole === 'professional' ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
-    : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
+    ? (currentRole === 'interviewer' ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
+    : '/shushant-gaikwad.png';
 
   return (
-    <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden' }}>
+    <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', backgroundColor: '#090d16' }}>
       {/* Header */}
-      <header className="flex justify-between items-center p-4 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+      <header className="flex justify-between items-center p-3 px-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0f172a' }}>
         <div className="flex items-center gap-3">
-          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '8px', fontWeight: 'bold' }}>IP</div>
+          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>IP</div>
           <div>
-            <h1 className="text-lg font-bold" style={{ color: 'white' }}>InterviewPro Live Room</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base md:text-lg font-bold" style={{ color: 'white' }}>InterviewPro Live Room</h1>
+              <span className={`badge ${isCallConnected ? 'badge-success' : 'badge-warning'} text-xs font-semibold`}>
+                {isCallConnected ? '● Live Call Connected' : 'Waiting for Partner'}
+              </span>
+            </div>
             <p className="text-xs text-gray-400">
               {interview?.topic || 'Batch 3 Interview - MERN Stack Architecture & Coding'}
             </p>
           </div>
         </div>
-        
-        <div className="text-sm font-medium text-gray-300 flex items-center gap-2">
-          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22c55e' }}></span>
-          <span>Session with <strong>{partnerName}</strong></span>
-        </div>
 
-        <div className="flex items-center gap-6">
-          <div className="font-mono text-lg tracking-wider" style={{ color: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.1)', padding: '0.25rem 0.75rem', borderRadius: '6px' }}>
+        {/* Room Info & Controls */}
+        <div className="flex items-center gap-4">
+          {/* Role Switcher Pill */}
+          <div 
+            style={{ 
+              backgroundColor: 'rgba(255,255,255,0.06)', 
+              borderRadius: '8px', 
+              padding: '3px 6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.75rem'
+            }}
+          >
+            <span className="text-gray-400 text-xs px-1">You are:</span>
+            <button
+              type="button"
+              onClick={() => setCurrentRole('candidate')}
+              className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${currentRole === 'candidate' ? 'bg-primary text-white shadow' : 'text-gray-300 hover:text-white'}`}
+              style={{ border: 'none', cursor: 'pointer' }}
+            >
+              Candidate
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentRole('interviewer')}
+              className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${currentRole === 'interviewer' ? 'bg-primary text-white shadow' : 'text-gray-300 hover:text-white'}`}
+              style={{ border: 'none', cursor: 'pointer' }}
+            >
+              Interviewer
+            </button>
+          </div>
+
+          {/* Copy Invite Link */}
+          <button 
+            type="button"
+            onClick={handleCopyRoomLink}
+            className="btn btn-outline text-xs text-gray-300 border-gray-600 flex items-center gap-1.5 hover:text-white hover:border-gray-400"
+            style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem' }}
+            title="Copy invite link to join from second browser / device"
+          >
+            {copiedLink ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+            <span>{copiedLink ? 'Link Copied!' : 'Copy Partner Invite'}</span>
+          </button>
+
+          {/* Timer */}
+          <div className="font-mono text-sm tracking-wider font-bold" style={{ color: '#22c55e', backgroundColor: 'rgba(34, 197, 94, 0.12)', padding: '0.3rem 0.75rem', borderRadius: '6px' }}>
             ⏱ {formatTime(secondsElapsed)}
           </div>
           
           <button 
-            className="btn flex items-center gap-2" 
-            style={{ backgroundColor: 'var(--danger)', color: 'white' }}
+            className="btn flex items-center gap-1.5" 
+            style={{ backgroundColor: 'var(--danger)', color: 'white', padding: '0.4rem 0.9rem', fontSize: '0.8rem' }}
             onClick={handleEndCall}
           >
-            <PhoneOff size={16} />
-            End Interview
+            <PhoneOff size={15} />
+            <span>End Interview</span>
           </button>
         </div>
       </header>
 
-      {/* Media Note if permissions warning */}
+      {/* Media Warning Bar */}
       {mediaError && (
-        <div style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '0.4rem 1rem', fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-          <AlertCircle size={14} className="text-warning" />
-          <span>{mediaError} — Live controls (Mute, Video, Screen Share, Chat) are fully active.</span>
+        <div style={{ backgroundColor: '#7f1d1d', borderBottom: '1px solid #b91c1c', padding: '0.45rem 1rem', fontSize: '0.78rem', color: '#fecaca', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.65rem' }}>
+          <AlertCircle size={15} />
+          <span>{mediaError}</span>
+          <button 
+            type="button" 
+            onClick={startCamera} 
+            className="btn btn-primary text-xs py-0.5 px-2 font-bold"
+            style={{ backgroundColor: '#dc2626', borderColor: '#ef4444' }}
+          >
+            Enable Camera
+          </button>
         </div>
       )}
 
       {/* Main Area: Videos + Sliding Chat */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden" style={{ minHeight: 'calc(100vh - 145px)' }}>
         {/* Video Grid */}
-        <main className="flex-1 flex items-center justify-center p-6 gap-6 relative">
+        <main className="flex-1 flex items-center justify-center p-6 gap-6 relative" style={{ backgroundColor: '#090d16' }}>
           {/* Local Video (You) */}
-          <div className="relative rounded-2xl overflow-hidden bg-gray-900 border" style={{ width: '48%', aspectRatio: '16/10', borderColor: 'rgba(255,255,255,0.1)' }}>
-            {cameraActive && isVideoOn ? (
-              <video 
-                ref={localVideoRef} 
-                autoPlay 
-                playsInline 
-                muted 
-                className="w-full h-full object-cover"
-                style={{ transform: isScreenSharing ? 'none' : 'scaleX(-1)' }}
-              />
-            ) : !isVideoOn ? (
-              <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 bg-gray-900">
-                <VideoOff size={48} className="mb-2" />
-                <span className="text-sm font-medium">Your camera is turned off</span>
+          <div 
+            className="relative rounded-2xl overflow-hidden border shadow-2xl flex items-center justify-center"
+            style={{ 
+              width: '48%', 
+              aspectRatio: '16/10', 
+              borderColor: 'rgba(255,255,255,0.15)',
+              backgroundColor: '#0f172a'
+            }}
+          >
+            {/* Always-mounted local video to guarantee ref attachment */}
+            <video 
+              ref={localVideoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="w-full h-full object-cover"
+              style={{ 
+                transform: isScreenSharing ? 'none' : 'scaleX(-1)',
+                display: cameraActive && isVideoOn ? 'block' : 'none' 
+              }}
+            />
+
+            {/* Camera Off Overlay */}
+            {!isVideoOn && (
+              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-slate-900">
+                <VideoOff size={48} className="mb-2 text-gray-500" />
+                <span className="text-sm font-semibold">Your Camera is Off</span>
               </div>
-            ) : (
-              <img 
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" 
-                alt="You" 
-                className="w-full h-full object-cover"
-              />
             )}
 
-            <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-2">
-              <span>You ({currentUserRole})</span>
-              {!isMicOn && <MicOff size={14} className="text-danger" />}
-              {isScreenSharing && <span className="badge badge-info text-xs">Screen Sharing</span>}
+            {/* Permission blocked overlay */}
+            {!cameraActive && isVideoOn && (
+              <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 p-6 text-center bg-slate-900">
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', padding: '1rem', borderRadius: '50%', marginBottom: '0.75rem' }}>
+                  <VideoOff size={36} className="text-danger" />
+                </div>
+                <div className="text-sm font-bold mb-1">Webcam Permission Needed</div>
+                <p className="text-xs text-gray-400 max-w-xs mb-3">Please allow camera access in your browser to broadcast your video to the interviewer.</p>
+                <button type="button" onClick={startCamera} className="btn btn-primary text-xs py-1.5 px-3">
+                  <RefreshCw size={13} className="mr-1 inline" /> Allow Camera Access
+                </button>
+              </div>
+            )}
+
+            {/* Bottom Label Tag */}
+            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+              <span>You ({currentRole})</span>
+              {!isMicOn && <MicOff size={13} className="text-danger" />}
+              {isScreenSharing && <span className="badge badge-info text-[10px] py-0 px-1.5">Screen Sharing</span>}
             </div>
           </div>
 
-          {/* Remote Video (Interviewer / Candidate) */}
-          <div className="relative rounded-2xl overflow-hidden bg-gray-900 border" style={{ width: '48%', aspectRatio: '16/10', borderColor: 'rgba(255,255,255,0.1)' }}>
-            <img 
-              src={partnerAvatar || "https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"} 
-              alt={partnerName} 
+          {/* Remote Video (Partner) */}
+          <div 
+            className="relative rounded-2xl overflow-hidden border shadow-2xl flex items-center justify-center"
+            style={{ 
+              width: '48%', 
+              aspectRatio: '16/10', 
+              borderColor: isCallConnected ? '#10b981' : 'rgba(255,255,255,0.15)',
+              backgroundColor: '#0f172a'
+            }}
+          >
+            {/* Always-mounted remote video element */}
+            <video 
+              ref={remoteVideoRef} 
+              autoPlay 
+              playsInline 
               className="w-full h-full object-cover"
+              style={{ display: isCallConnected && remoteStream ? 'block' : 'none' }}
             />
-            <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-2">
+
+            {/* When partner is not yet sending live video */}
+            {(!isCallConnected || !remoteStream) && (
+              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-slate-900 relative">
+                <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                  <img 
+                    src={partnerAvatar} 
+                    alt={partnerName} 
+                    style={{ 
+                      width: '90px', 
+                      height: '90px', 
+                      borderRadius: '50%', 
+                      objectFit: 'cover',
+                      border: '3px solid rgba(255,255,255,0.2)'
+                    }} 
+                  />
+                  <span 
+                    style={{ 
+                      position: 'absolute', 
+                      bottom: 0, 
+                      right: 0, 
+                      width: '18px', 
+                      height: '18px', 
+                      borderRadius: '50%', 
+                      backgroundColor: '#f59e0b', 
+                      border: '3px solid #0f172a' 
+                    }} 
+                  />
+                </div>
+
+                <div className="text-base font-bold text-white mb-0.5">{partnerName}</div>
+                <div className="text-xs text-gray-400 mb-3">{partnerTitle}</div>
+
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                  <span className="text-xs text-amber-300 font-medium">
+                    Waiting for {partnerRole} to enter room...
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={callPartner}
+                  className="btn btn-outline text-xs text-gray-300 border-gray-600 hover:text-white flex items-center gap-1.5 py-1 px-3"
+                >
+                  <RefreshCw size={13} />
+                  <span>Retry Call / Connect Now</span>
+                </button>
+              </div>
+            )}
+
+            {/* Bottom Label Tag */}
+            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${isCallConnected ? 'bg-emerald-500' : 'bg-amber-400'} inline-block`}></span>
               <span>{partnerName} ({partnerRole})</span>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22c55e' }}></span>
+              {isCallConnected && <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">LIVE HD</span>}
             </div>
           </div>
         </main>
@@ -347,9 +695,9 @@ const VideoRoom = () => {
             <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
               <div className="flex items-center gap-2">
                 <MessageSquare size={18} className="text-primary" />
-                <h3 className="font-bold text-sm text-white">In-Call Live Chat</h3>
+                <h3 className="font-bold text-sm text-white">Live In-Call Chat</h3>
               </div>
-              <button onClick={() => setIsChatOpen(false)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setIsChatOpen(false)} className="text-gray-400 hover:text-white" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                 <X size={18} />
               </button>
             </div>
@@ -380,9 +728,9 @@ const VideoRoom = () => {
             <form onSubmit={handleSendMessage} className="p-3 border-t flex gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
               <input 
                 type="text" 
-                placeholder="Type a message or code..."
+                placeholder="Type a message or code snippet..." 
                 className="input-field flex-1"
-                style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)' }}
+                style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)', fontSize: '0.85rem' }}
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
               />
@@ -395,73 +743,73 @@ const VideoRoom = () => {
       </div>
 
       {/* Controls Footer */}
-      <footer className="p-4 flex justify-center items-center gap-6 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0b1120' }}>
+      <footer className="p-3 flex justify-center items-center gap-6 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0b1120' }}>
         {/* Mic Toggle */}
         <button 
           onClick={toggleMic}
           className="flex flex-col items-center gap-1 transition-colors"
-          style={{ color: isMicOn ? '#94a3b8' : 'var(--danger)' }}
+          style={{ color: isMicOn ? '#94a3b8' : 'var(--danger)', background: 'transparent', border: 'none', cursor: 'pointer' }}
         >
           <div 
             className="p-3 rounded-full transition-colors"
             style={{ backgroundColor: isMicOn ? '#1e293b' : 'rgba(234, 67, 53, 0.2)' }}
           >
-            {isMicOn ? <Mic size={22} className="text-white" /> : <MicOff size={22} className="text-danger" />}
+            {isMicOn ? <Mic size={20} className="text-white" /> : <MicOff size={20} className="text-danger" />}
           </div>
-          <span className="text-xs font-medium">{isMicOn ? 'Mute' : 'Unmute'}</span>
+          <span className="text-[11px] font-medium">{isMicOn ? 'Mute' : 'Unmute'}</span>
         </button>
         
         {/* Camera Toggle */}
         <button 
           onClick={toggleVideo}
           className="flex flex-col items-center gap-1 transition-colors"
-          style={{ color: isVideoOn ? '#94a3b8' : 'var(--danger)' }}
+          style={{ color: isVideoOn ? '#94a3b8' : 'var(--danger)', background: 'transparent', border: 'none', cursor: 'pointer' }}
         >
           <div 
             className="p-3 rounded-full transition-colors"
             style={{ backgroundColor: isVideoOn ? '#1e293b' : 'rgba(234, 67, 53, 0.2)' }}
           >
-            {isVideoOn ? <VideoIcon size={22} className="text-white" /> : <VideoOff size={22} className="text-danger" />}
+            {isVideoOn ? <VideoIcon size={20} className="text-white" /> : <VideoOff size={20} className="text-danger" />}
           </div>
-          <span className="text-xs font-medium">{isVideoOn ? 'Stop Video' : 'Start Video'}</span>
+          <span className="text-[11px] font-medium">{isVideoOn ? 'Stop Video' : 'Start Video'}</span>
         </button>
         
         {/* Screen Share */}
         <button 
           onClick={toggleScreenShare}
           className="flex flex-col items-center gap-1 transition-colors"
-          style={{ color: isScreenSharing ? 'var(--primary)' : '#94a3b8' }}
+          style={{ color: isScreenSharing ? 'var(--primary)' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
         >
           <div 
             className="p-3 rounded-full transition-colors"
             style={{ backgroundColor: isScreenSharing ? 'rgba(26, 115, 232, 0.2)' : '#1e293b' }}
           >
-            <MonitorUp size={22} className={isScreenSharing ? 'text-primary' : 'text-white'} />
+            <MonitorUp size={20} className={isScreenSharing ? 'text-primary' : 'text-white'} />
           </div>
-          <span className="text-xs font-medium">{isScreenSharing ? 'Stop Share' : 'Share Screen'}</span>
+          <span className="text-[11px] font-medium">{isScreenSharing ? 'Stop Share' : 'Share Screen'}</span>
         </button>
         
         {/* In-Call Chat */}
         <button 
           onClick={() => setIsChatOpen(prev => !prev)}
           className="flex flex-col items-center gap-1 transition-colors"
-          style={{ color: isChatOpen ? 'var(--primary)' : '#94a3b8' }}
+          style={{ color: isChatOpen ? 'var(--primary)' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
         >
           <div 
             className="p-3 rounded-full transition-colors"
             style={{ backgroundColor: isChatOpen ? 'rgba(26, 115, 232, 0.2)' : '#1e293b' }}
           >
-            <MessageSquare size={22} className={isChatOpen ? 'text-primary' : 'text-white'} />
+            <MessageSquare size={20} className={isChatOpen ? 'text-primary' : 'text-white'} />
           </div>
-          <span className="text-xs font-medium">Chat ({messages.length})</span>
+          <span className="text-[11px] font-medium">Chat ({messages.length})</span>
         </button>
 
         {/* View / Submit Feedback Button */}
         {interviewId && (
           <Link to={`/feedback?interviewId=${interviewId}`}>
-            <button className="btn btn-outline text-xs text-white border-gray-600 flex items-center gap-1">
-              <FileText size={16} />
-              Evaluation Report
+            <button className="btn btn-outline text-xs text-white border-gray-600 flex items-center gap-1.5 py-2 px-3">
+              <FileText size={15} />
+              <span>Evaluation Report</span>
             </button>
           </Link>
         )}
