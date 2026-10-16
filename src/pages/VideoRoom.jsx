@@ -27,11 +27,19 @@ const VideoRoom = () => {
   const roleParam = searchParams.get('role');
   const navigate = useNavigate();
 
-  // Determine active room & role
+  // Determine active room & role accurately
   const roomId = interviewId || searchParams.get('room') || 'main-session';
-  const initialRole = roleParam || localStorage.getItem('userRole') || 'candidate';
-  const [currentRole, setCurrentRole] = useState(initialRole === 'professional' || initialRole === 'admin' ? 'interviewer' : 'candidate');
 
+  const getEffectiveRole = (param, stored) => {
+    const p = (param || '').toLowerCase();
+    const s = (stored || '').toLowerCase();
+    if (p === 'interviewer' || p === 'professional' || p === 'admin') return 'interviewer';
+    if (p === 'candidate') return 'candidate';
+    if (s === 'professional' || s === 'admin') return 'interviewer';
+    return 'candidate';
+  };
+
+  const [currentRole, setCurrentRole] = useState(() => getEffectiveRole(roleParam, localStorage.getItem('userRole')));
   const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
 
   // State
@@ -84,7 +92,7 @@ const VideoRoom = () => {
   const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
   const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
-  // 1. Fetch interview details if ID present & auto-confirm role
+  // 1. Fetch interview details if ID present & auto-confirm role from session participants
   useEffect(() => {
     if (interviewId) {
       fetch(`${API_BASE_URL}/api/interviews/${interviewId}`)
@@ -93,18 +101,22 @@ const VideoRoom = () => {
           setInterview(data);
           const loggedUserId = localStorage.getItem('userId');
           if (loggedUserId && data) {
-            const interviewerUserId = data.interviewerId?._id || data.interviewerId;
-            const candidateUserId = data.candidateId?._id || data.candidateId;
-            if (loggedUserId === interviewerUserId && !roleParam) {
+            const interviewerUserId = String(data.interviewerId?._id || data.interviewerId || '');
+            const candidateUserId = String(data.candidateId?._id || data.candidateId || '');
+            const myId = String(loggedUserId);
+
+            if (myId === interviewerUserId) {
+              console.log('Confirmed identity as Interviewer from DB session');
               setCurrentRole('interviewer');
-            } else if (loggedUserId === candidateUserId && !roleParam) {
+            } else if (myId === candidateUserId) {
+              console.log('Confirmed identity as Candidate from DB session');
               setCurrentRole('candidate');
             }
           }
         })
         .catch(err => console.error('Error loading interview:', err));
     }
-  }, [interviewId, roleParam]);
+  }, [interviewId]);
 
   // 2. Timer effect
   useEffect(() => {
@@ -300,12 +312,16 @@ const VideoRoom = () => {
 
       peerInstance.on('error', (err) => {
         console.warn('PeerJS notice:', err.type, err.message);
-        if (err.type === 'unavailable-id') {
-          setConnectionStatus(`Ready. Attempting partner connection...`);
+        // CRITICAL: Always release calling lock so reconnects can proceed!
+        isCallingRef.current = false;
+        if (err.type === 'peer-unavailable') {
+          setConnectionStatus(`Waiting for ${partnerRole} to enter room...`);
+        } else if (err.type === 'unavailable-id') {
+          setConnectionStatus(`Connecting...`);
         }
       });
 
-      // Stable Periodic Check: Only attempts call when NOT connected and NOT already calling
+      // Stable Periodic Check: Retries connection until both participants are connected
       callRetryInterval = setInterval(() => {
         if (
           !isCallConnectedRef.current && 
@@ -314,12 +330,9 @@ const VideoRoom = () => {
           !peerRef.current.destroyed && 
           mediaStreamRef.current
         ) {
-          // Candidate acts as caller to prevent simultaneous glare collision
-          if (currentRole === 'candidate') {
-            callPartner();
-          }
+          callPartner();
         }
-      }, 3000);
+      }, 3500);
 
     } catch (e) {
       console.error('PeerJS init failed:', e);
@@ -345,6 +358,14 @@ const VideoRoom = () => {
     try {
       isCallingRef.current = true;
       console.log('Initiating outbound call to partner:', partnerPeerId);
+      
+      // Auto-unlock callingRef after 3.5s in case partner is not yet in room
+      setTimeout(() => {
+        if (!isCallConnectedRef.current) {
+          isCallingRef.current = false;
+        }
+      }, 3500);
+
       const call = peerRef.current.call(partnerPeerId, mediaStreamRef.current);
       if (call) {
         currentCallRef.current = call;
@@ -371,9 +392,7 @@ const VideoRoom = () => {
 
         call.on('error', (err) => {
           console.warn('Outbound call error:', err);
-          if (currentCallRef.current === call) {
-            isCallingRef.current = false;
-          }
+          isCallingRef.current = false;
         });
       } else {
         isCallingRef.current = false;
@@ -381,10 +400,14 @@ const VideoRoom = () => {
 
       // Also open data connection for real-time chat if needed
       if (!dataConnRef.current || !dataConnRef.current.open) {
-        const conn = peerRef.current.connect(partnerPeerId);
-        conn.on('open', () => {
-          attachDataHandlers(conn);
-        });
+        try {
+          const conn = peerRef.current.connect(partnerPeerId);
+          conn.on('open', () => {
+            attachDataHandlers(conn);
+          });
+        } catch (e) {
+          console.warn('Data connection notice:', e);
+        }
       }
     } catch (err) {
       console.warn('Outbound call attempt failed:', err.message);
@@ -516,7 +539,7 @@ const VideoRoom = () => {
 
   // Copy Room Link
   const handleCopyRoomLink = () => {
-    const partnerRoleToPass = currentRole === 'interviewer' ? 'candidate' : 'professional';
+    const partnerRoleToPass = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
     const link = `${window.location.origin}/room?interviewId=${interviewId || cleanRoomId}&role=${partnerRoleToPass}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(link);
@@ -557,18 +580,28 @@ const VideoRoom = () => {
     }
   };
 
+  const isInterviewer = currentRole === 'interviewer';
+
   const partnerName = interview 
-    ? (currentRole === 'interviewer' ? (interview.candidateId?.name || 'Candidate') : (interview.interviewerId?.name || 'Shushant Gaikwad')) 
-    : (currentRole === 'interviewer' ? 'Candidate' : 'Shushant Gaikwad');
+    ? (isInterviewer 
+        ? (interview.candidateId?.name || 'Software Candidate') 
+        : (interview.interviewerId?.name || 'Shushant Gaikwad')) 
+    : (isInterviewer ? 'Software Candidate' : 'Shushant Gaikwad');
 
   const rawPartnerTitle = interview
-    ? (currentRole === 'interviewer' ? 'Software Candidate' : (interview.interviewerId?.title || 'Senior Full Stack MERN Developer'))
-    : (currentRole === 'interviewer' ? 'Software Candidate' : 'Senior Full Stack MERN Developer');
+    ? (isInterviewer 
+        ? (interview.candidateId?.email || 'Engineering Candidate') 
+        : (interview.interviewerId?.title || 'Senior Full Stack MERN Developer'))
+    : (isInterviewer ? 'Engineering Candidate' : 'Senior Full Stack MERN Developer');
   const partnerTitle = rawPartnerTitle?.includes('Batch 3') ? 'Senior Full Stack MERN Developer' : rawPartnerTitle;
 
   const partnerAvatar = interview
-    ? (currentRole === 'interviewer' ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
-    : '/shushant-gaikwad.png';
+    ? (isInterviewer 
+        ? (interview.candidateId?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80') 
+        : (interview.interviewerId?.avatar || '/shushant-gaikwad.png'))
+    : (isInterviewer 
+        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80' 
+        : '/shushant-gaikwad.png');
 
   return (
     <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', backgroundColor: '#090d16' }}>
