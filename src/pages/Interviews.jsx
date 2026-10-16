@@ -254,8 +254,8 @@ const Interviews = () => {
                               topic: topicStr,
                               timeSlot: dateStr,
                               sessionFee: item.sessionFee || item.price || 100,
-                              platformFee: item.platformFee || 10,
-                              paidAmount: feeAmount,
+                              platformFee: 0,
+                              paidAmount: item.paidAmount || item.price || 100,
                               invoiceNumber: invNo,
                               paymentId: item.paymentId || `pay_${(item._id || '').slice(-8)}`,
                               paymentMethod: payMethod
@@ -357,9 +357,9 @@ const Interviews = () => {
                         interviewerName: item.interviewerId?.name,
                         interviewerTitle: item.interviewerId?.title,
                         company: item.interviewerId?.company,
-                        sessionFee: item.price,
-                        platformFee: item.platformFee || Math.round(item.price * 0.1),
-                        paidAmount: item.paidAmount || (item.price + Math.round(item.price * 0.1)),
+                        sessionFee: item.price || 100,
+                        platformFee: 0,
+                        paidAmount: item.paidAmount || item.price || 100,
                         invoiceNumber: item.invoiceNumber || `INV-2026-${item._id.slice(-6).toUpperCase()}`,
                         paymentId: item.paymentId || `pay_${item._id.slice(-8)}`,
                         paymentMethod: item.paymentMethod || 'UPI / Razorpay'

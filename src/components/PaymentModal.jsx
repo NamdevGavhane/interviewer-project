@@ -25,8 +25,8 @@ const PaymentModal = ({
   bookingDetails,
   onSuccess
 }) => {
-  // Default active tab is direct Google Pay & UPI QR for instant HDFC Bank transfer
-  const [activeTab, setActiveTab] = useState('gpay_upi'); // 'gpay_upi' | 'testpay' | 'razorpay' | 'card'
+  // Default active tab is Razorpay Payment Gateway
+  const [activeTab, setActiveTab] = useState('razorpay'); // 'razorpay' | 'gpay_upi' | 'testpay' | 'card'
   const [processing, setProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
@@ -79,11 +79,9 @@ const PaymentModal = ({
 
   const sessionFee = bookingDetails.sessionFee !== undefined && !isNaN(Number(bookingDetails.sessionFee))
     ? Number(bookingDetails.sessionFee)
-    : 100;
-  const platformFee = bookingDetails.platformFee !== undefined && !isNaN(Number(bookingDetails.platformFee))
-    ? Number(bookingDetails.platformFee)
-    : (sessionFee > 0 ? Math.round(sessionFee * 0.1) : 0);
-  const totalAmount = sessionFee + platformFee;
+    : (bookingDetails.interviewer?.hourlyRate !== undefined ? Number(bookingDetails.interviewer.hourlyRate) : 100);
+  const platformFee = 0;
+  const totalAmount = sessionFee;
 
   // Real Dynamic UPI Deep Link for Mobile UPI Apps (GPay, PhonePe, Paytm, BHIM)
   const upiPayString = `upi://pay?pa=${recipientUpiId}&pn=${encodeURIComponent(recipientName)}&am=${totalAmount}&cu=INR&tn=${encodeURIComponent(`Mock Interview Booking`)}`;
@@ -146,7 +144,7 @@ const PaymentModal = ({
           paymentMethod: method === 'testpay' ? 'upi' : (method === 'gpay_upi' ? 'upi' : method),
           paymentDetails: paymentDetailsObj,
           sessionFee,
-          platformFee
+          platformFee: 0
         })
       });
 
@@ -170,15 +168,20 @@ const PaymentModal = ({
 
   // Open official Razorpay Checkout popup
   const handleOpenRazorpayCheckout = () => {
+    setError(null);
+    setProcessing(true);
+    setStatusMessage('Opening Razorpay Payment Gateway...');
+
     if (typeof window !== 'undefined' && window.Razorpay) {
       try {
         const options = {
-          key: 'rzp_test_51130000000000', // Standard Razorpay test key
-          amount: totalAmount * 100, // in paise
+          key: bookingDetails?.keyId || 'rzp_test_51130000000000', // Razorpay Key ID
+          amount: Math.round(totalAmount * 100), // in paise
           currency: 'INR',
           name: 'InterviewPro',
           description: `${topic} with ${interviewer?.name}`,
-          image: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80',
+          image: interviewer?.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=120&q=80',
+          order_id: bookingDetails?.orderId && bookingDetails.orderId.startsWith('order_') && bookingDetails.orderId.length === 20 ? bookingDetails.orderId : undefined,
           prefill: {
             name: cardName || 'Candidate',
             email: 'candidate@interviewpro.com',
@@ -196,7 +199,8 @@ const PaymentModal = ({
           },
           modal: {
             ondismiss: function () {
-              console.log('Razorpay modal closed');
+              setProcessing(false);
+              setStatusMessage('');
             }
           }
         };
@@ -204,10 +208,12 @@ const PaymentModal = ({
         const rzp = new window.Razorpay(options);
         rzp.on('payment.failed', function (resp) {
           setError(resp.error?.description || 'Payment Failed');
+          setProcessing(false);
+          setStatusMessage('');
         });
         rzp.open();
       } catch (err) {
-        console.warn('Razorpay checkout fallback:', err);
+        console.warn('Razorpay checkout fallback to simulation:', err);
         handleProcessPayment('razorpay');
       }
     } else {
@@ -319,7 +325,7 @@ const PaymentModal = ({
           </div>
 
           <div className="text-right">
-            <div className="text-xs text-muted">Session: ₹{sessionFee} + Platform: ₹{platformFee}</div>
+            <div className="text-xs text-muted">Interviewer Fee: ₹{sessionFee} • Platform Charges: ₹0 (Zero)</div>
             <div className="font-bold text-lg" style={{ color: 'var(--primary)' }}>
               Total Payable: ₹{totalAmount} INR
             </div>
@@ -338,6 +344,32 @@ const PaymentModal = ({
               overflowX: 'auto'
             }}
           >
+            <button 
+              type="button"
+              onClick={() => setActiveTab('razorpay')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.55rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'razorpay' ? '#ffffff' : 'transparent',
+                color: activeTab === 'razorpay' ? '#1d4ed8' : '#64748b',
+                fontWeight: activeTab === 'razorpay' ? '700' : '600',
+                boxShadow: activeTab === 'razorpay' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <ExternalLink size={16} className="text-primary" />
+              <span>Razorpay Payment Gateway</span>
+              <span style={{ backgroundColor: '#2563eb', color: 'white', fontSize: '0.62rem', padding: '1px 5px', borderRadius: '4px' }}>
+                PRIMARY
+              </span>
+            </button>
+
             <button 
               type="button"
               onClick={() => setActiveTab('gpay_upi')}
@@ -385,29 +417,6 @@ const PaymentModal = ({
             >
               <Zap size={16} />
               <span>⚡ 1-Click Fast Pay (Sandbox)</span>
-            </button>
-
-            <button 
-              type="button"
-              onClick={() => setActiveTab('razorpay')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.55rem 0.9rem',
-                borderRadius: '8px',
-                border: 'none',
-                background: activeTab === 'razorpay' ? '#ffffff' : 'transparent',
-                color: activeTab === 'razorpay' ? '#1d4ed8' : '#64748b',
-                fontWeight: activeTab === 'razorpay' ? '700' : '600',
-                boxShadow: activeTab === 'razorpay' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                cursor: 'pointer',
-                fontSize: '0.82rem',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <ExternalLink size={16} />
-              <span>Razorpay Standard Gateway</span>
             </button>
 
             <button 
@@ -701,39 +710,78 @@ const PaymentModal = ({
           )}
 
           {/* ======================================================== */}
-          {/* TAB 3: RAZORPAY STANDARD GATEWAY */}
+          {/* TAB: RAZORPAY STANDARD GATEWAY */}
           {/* ======================================================== */}
           {activeTab === 'razorpay' && (
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="badge badge-info text-xs font-bold py-1 px-2.5">RAZORPAY STANDARD</span>
-                <span className="text-xs text-muted">Official Payment Gateway Modal</span>
+                <span className="badge badge-info text-xs font-bold py-1 px-2.5">RAZORPAY GATEWAY</span>
+                <span className="text-xs text-muted">UPI • Cards • NetBanking • Wallets</span>
               </div>
-              <h4 className="font-bold text-base mb-1">Launch Official Razorpay Dialog</h4>
-              <p className="text-xs text-muted mb-3">
-                Opens the standard Razorpay checkout modal with cards, netbanking, and simulated UPI.
+              <h4 className="font-bold text-base mb-1">Pay with Razorpay</h4>
+              <p className="text-xs text-muted mb-4">
+                Fast and secure payment via Razorpay. Support for Google Pay, PhonePe, Paytm, BHIM, all Cards, and NetBanking.
               </p>
 
-              <div className="card p-3 mb-4" style={{ backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }}>
-                <div className="font-bold text-xs text-primary mb-1 flex items-center gap-1.5">
-                  <ShieldCheck size={16} />
-                  <span>Razorpay Test Mode Notice (ध्यान दें):</span>
+              {/* Price Breakdown Card - ZERO Platform Fee */}
+              <div className="card p-4 mb-4" style={{ backgroundColor: '#f8fafc', borderColor: 'var(--border)' }}>
+                <div className="flex justify-between items-center py-1.5 text-sm border-b" style={{ borderColor: 'var(--border)' }}>
+                  <span className="text-muted">Interviewer Fee (45 mins)</span>
+                  <span className="font-bold text-slate-800">₹{sessionFee}</span>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Razorpay का यह टेस्ट मोड (<code>rzp_test_...</code>) केवल सॉफ्टवेयर टेस्टिंग के लिए है; इसमें बैंक खाते में असली पैसे क्रेडिट नहीं होते हैं। असली पैसे सीधे अपने बैंक खाते में प्राप्त करने के लिए पहला टैब <strong>"Google Pay & UPI QR (HDFC Bank)"</strong> इस्तेमाल करें, या Razorpay Dashboard से अपनी Live Merchant Keys <code>backend/.env</code> में जोड़ें।
-                </p>
+                <div className="flex justify-between items-center py-1.5 text-sm border-b" style={{ borderColor: 'var(--border)' }}>
+                  <span className="text-muted">Platform Extra Charge</span>
+                  <span className="font-bold text-emerald-600">₹0 (Zero Charges)</span>
+                </div>
+                <div className="flex justify-between items-center pt-2">
+                  <span className="font-bold text-base">Final Amount to Pay</span>
+                  <span className="font-bold text-xl text-primary">₹{totalAmount} INR</span>
+                </div>
               </div>
 
-              <button 
-                type="button"
-                onClick={handleOpenRazorpayCheckout}
-                disabled={processing}
-                className="btn btn-primary w-full py-3 text-sm font-bold flex items-center justify-center gap-2 shadow-sm"
-                style={{ backgroundColor: '#1a73e8' }}
-              >
-                <ExternalLink size={17} />
-                <span>Open Razorpay Gateway Popup (₹{totalAmount})</span>
-              </button>
+              {/* Badges */}
+              <div className="flex items-center gap-2 flex-wrap mb-4 p-2.5 rounded-lg border bg-white" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-[11px] font-semibold text-muted">Accepted:</span>
+                <span className="badge badge-secondary text-[10px]">Google Pay</span>
+                <span className="badge badge-secondary text-[10px]">PhonePe</span>
+                <span className="badge badge-secondary text-[10px]">Paytm</span>
+                <span className="badge badge-secondary text-[10px]">BHIM UPI</span>
+                <span className="badge badge-secondary text-[10px]">Visa / Mastercard</span>
+                <span className="badge badge-secondary text-[10px]">RuPay</span>
+                <span className="badge badge-secondary text-[10px]">All NetBanking</span>
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <button 
+                  type="button"
+                  onClick={handleOpenRazorpayCheckout}
+                  disabled={processing}
+                  className="btn btn-primary w-full py-3.5 text-sm font-bold flex items-center justify-center gap-2 shadow-md"
+                  style={{ backgroundColor: '#1a73e8', borderColor: '#1557b0' }}
+                >
+                  {processing ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>{statusMessage || 'Processing Payment...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink size={17} />
+                      <span>Open Razorpay Gateway (Pay ₹{totalAmount})</span>
+                    </>
+                  )}
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => handleProcessPayment('razorpay')}
+                  disabled={processing}
+                  className="btn btn-outline w-full py-2 text-xs flex items-center justify-center gap-1.5 text-muted hover:text-slate-900"
+                >
+                  <Zap size={14} className="text-amber-500" />
+                  <span>⚡ 1-Click Instant Success (Sandbox Test Mode)</span>
+                </button>
+              </div>
             </div>
           )}
 

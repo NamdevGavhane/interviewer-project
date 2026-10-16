@@ -38,15 +38,20 @@ router.get('/config', (req, res) => {
 // @access  Public
 router.post('/create-order', async (req, res) => {
   try {
-    const { candidateId, interviewerId, sessionFee, platformFee } = req.body;
+    const { candidateId, interviewerId, sessionFee } = req.body;
 
     if (!candidateId || !interviewerId) {
       return res.status(400).json({ message: 'Candidate and Interviewer are required.' });
     }
 
-    const fee = sessionFee !== undefined && !isNaN(Number(sessionFee)) ? Number(sessionFee) : 100;
-    const platform = platformFee !== undefined && !isNaN(Number(platformFee)) ? Number(platformFee) : (fee > 0 ? Math.round(fee * 0.1) : 0);
-    const totalAmount = fee + platform;
+    const interviewer = await User.findById(interviewerId).select('name email title company hourlyRate');
+
+    // The amount set by the professional is the exact final amount - ZERO extra platform charges
+    const fee = sessionFee !== undefined && !isNaN(Number(sessionFee))
+      ? Number(sessionFee)
+      : (interviewer?.hourlyRate !== undefined ? Number(interviewer.hourlyRate) : 100);
+    const platform = 0;
+    const totalAmount = fee;
 
     // Check if real Razorpay instance is available
     const rzp = getRazorpayInstance();
@@ -73,15 +78,14 @@ router.post('/create-order', async (req, res) => {
     }
 
     const candidate = await User.findById(candidateId).select('name email');
-    const interviewer = await User.findById(interviewerId).select('name email title company hourlyRate');
 
     res.json({
       orderId,
       amount: totalAmount,
       sessionFee: fee,
-      platformFee: platform,
+      platformFee: 0,
       currency: 'INR',
-      keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_mock_interviewpro',
+      keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_51130000000000',
       candidate,
       interviewer
     });
@@ -106,19 +110,19 @@ router.post('/verify-and-book', async (req, res) => {
       orderId,
       paymentId,
       signature,
-      paymentMethod = 'upi',
+      paymentMethod = 'razorpay',
       paymentDetails = {},
-      sessionFee,
-      platformFee
+      sessionFee
     } = req.body;
 
     if (!candidateId || !interviewerId || !date || !timeSlot) {
       return res.status(400).json({ message: 'Missing required booking details.' });
     }
 
+    // Professional's price is the final amount - ZERO extra platform charges
     const fee = sessionFee !== undefined && !isNaN(Number(sessionFee)) ? Number(sessionFee) : 100;
-    const platform = platformFee !== undefined && !isNaN(Number(platformFee)) ? Number(platformFee) : (fee > 0 ? Math.round(fee * 0.1) : 0);
-    const totalAmount = fee + platform;
+    const platform = 0;
+    const totalAmount = fee;
 
     // Verify signature if real Razorpay keys are in use
     const secret = process.env.RAZORPAY_KEY_SECRET;

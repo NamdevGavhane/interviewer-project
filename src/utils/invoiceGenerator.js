@@ -33,11 +33,10 @@ export const downloadInvoicePDF = (paymentData) => {
     const company = paymentData.company || paymentData.interviewerId?.company || 'InterviewPro Expert';
 
     const topic = paymentData.topic || 'Technical Mock Interview & System Coding';
-    const timeSlot = paymentData.timeSlot || 'Scheduled Session';
-    const sessionFee = Number(paymentData.sessionFee || paymentData.price || 100);
-    const platformFee = Number(paymentData.platformFee || Math.round(sessionFee * 0.1));
-    const totalAmount = Number(paymentData.amount || paymentData.paidAmount || (sessionFee + platformFee));
-    const paymentMethod = (paymentData.paymentMethod || 'UPI / Razorpay').toUpperCase();
+    const sessionFee = Number(paymentData.sessionFee || paymentData.amount || paymentData.paidAmount || paymentData.price || 100);
+    const platformFee = 0;
+    const totalAmount = sessionFee;
+    const paymentMethod = (paymentData.paymentMethod || 'Razorpay UPI').toUpperCase();
 
     // 1. Header Banner
     doc.setFillColor(26, 115, 232); // Primary Brand Blue
@@ -175,50 +174,34 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.setFont('helvetica', 'bold');
     doc.text(`INR ${sessionFee.toFixed(2)}`, pageWidth - margin - 10, y + 20, { align: 'right' });
 
-    y += 38;
-
-    // Row 2: Platform & Video Room Fee
-    doc.line(margin, y + 30, pageWidth - margin, y + 30);
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Platform Maintenance, WebRTC Video & AI Engine', margin + 10, y + 16);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text('Secure Room creation, Evaluation Report & Storage', margin + 10, y + 26);
-
-    doc.setTextColor(71, 85, 105);
-    doc.setFontSize(9);
-    doc.text('10% Platform Charge', margin + 280, y + 20);
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`INR ${platformFee.toFixed(2)}`, pageWidth - margin - 10, y + 20, { align: 'right' });
-
     y += 45;
 
     // 6. Subtotal & Total Summary Box
     const summaryBoxX = pageWidth - margin - 220;
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(summaryBoxX, y, 220, 85, 6, 6, 'F');
+    doc.roundedRect(summaryBoxX, y, 220, 65, 6, 6, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(summaryBoxX, y, 220, 85, 6, 6, 'D');
+    doc.roundedRect(summaryBoxX, y, 220, 65, 6, 6, 'D');
 
     let sumY = y + 20;
     doc.setTextColor(100, 116, 139);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text('Subtotal:', summaryBoxX + 14, sumY);
+    doc.text('Professional Fee:', summaryBoxX + 14, sumY);
     doc.setTextColor(15, 23, 42);
-    doc.text(`INR ${(sessionFee + platformFee).toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
+    doc.text(`INR ${sessionFee.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
 
-    sumY += 18;
+    sumY += 16;
     doc.setTextColor(100, 116, 139);
-    doc.text('GST / Taxes (18% Incl.):', summaryBoxX + 14, sumY);
-    const gstAmount = ((totalAmount * 18) / 118).toFixed(2);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`INR ${gstAmount}`, summaryBoxX + 206, sumY, { align: 'right' });
+    doc.text('Platform / Extra Fee:', summaryBoxX + 14, sumY);
+    doc.setTextColor(16, 185, 129);
+    doc.text('INR 0.00 (Zero Fee)', summaryBoxX + 206, sumY, { align: 'right' });
 
+    sumY += 12;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(summaryBoxX + 10, sumY, summaryBoxX + 210, sumY);
+
+    sumY += 16;
     sumY += 12;
     doc.setDrawColor(203, 213, 225);
     doc.line(summaryBoxX + 10, sumY, summaryBoxX + 210, sumY);
@@ -228,7 +211,7 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.text('Total Paid:', summaryBoxX + 14, sumY);
-    doc.text(`INR ${totalAmount.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
+    doc.text(`INR ${sessionFee.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
 
     // Left side: Security & Terms
     doc.setTextColor(100, 116, 139);

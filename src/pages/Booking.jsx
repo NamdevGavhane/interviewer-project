@@ -112,7 +112,7 @@ const Booking = () => {
     try {
       setSubmitting(true);
       const fee = selectedInterviewer?.hourlyRate !== undefined ? Number(selectedInterviewer.hourlyRate) : 100;
-      const platform = fee > 0 ? Math.round(fee * 0.1) : 0;
+      const platform = 0;
 
       // Create Payment Order in Backend
       const res = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
@@ -122,7 +122,7 @@ const Booking = () => {
           candidateId: userId,
           interviewerId: selectedInterviewer._id,
           sessionFee: fee,
-          platformFee: platform,
+          platformFee: 0,
           topic,
           date: selectedDate,
           timeSlot: selectedSlot
@@ -139,8 +139,8 @@ const Booking = () => {
       setPaymentOrderData({
         orderId: orderData.orderId,
         sessionFee: fee,
-        platformFee: platform,
-        totalAmount: fee + platform,
+        platformFee: 0,
+        totalAmount: fee,
         userId,
         interviewer: selectedInterviewer,
         selectedDate,
@@ -172,10 +172,10 @@ const Booking = () => {
   }
 
   if (successBooking) {
-    const feePaid = confirmedPayment?.amount || (selectedInterviewer?.hourlyRate + Math.round(selectedInterviewer?.hourlyRate * 0.1));
+    const feePaid = confirmedPayment?.amount || selectedInterviewer?.hourlyRate || 100;
     const invNo = confirmedPayment?.invoiceNumber || successBooking?.invoiceNumber || `INV-${new Date().getFullYear()}-849201`;
     const payId = confirmedPayment?.paymentId || successBooking?.paymentId || 'pay_verified';
-    const payMethod = confirmedPayment?.paymentMethod || 'UPI / Razorpay';
+    const payMethod = confirmedPayment?.paymentMethod || 'Razorpay UPI';
 
     return (
       <div className="card text-center p-8" style={{ maxWidth: '640px', margin: '2rem auto' }}>
@@ -243,8 +243,8 @@ const Booking = () => {
               company: selectedInterviewer?.company,
               topic,
               timeSlot: `${selectedDate} (${selectedSlot})`,
-              sessionFee: selectedInterviewer?.hourlyRate,
-              platformFee: Math.round(selectedInterviewer?.hourlyRate * 0.1),
+              sessionFee: selectedInterviewer?.hourlyRate || feePaid,
+              platformFee: 0,
               paidAmount: feePaid,
               invoiceNumber: invNo,
               paymentId: payId,
@@ -275,8 +275,8 @@ const Booking = () => {
   }
 
   const sessionFee = selectedInterviewer?.hourlyRate !== undefined ? Number(selectedInterviewer.hourlyRate) : 100;
-  const platformFee = sessionFee > 0 ? Math.round(sessionFee * 0.1) : 0;
-  const totalAmount = sessionFee + platformFee;
+  const platformFee = 0;
+  const totalAmount = sessionFee;
 
   return (
     <div>
@@ -454,16 +454,16 @@ const Booking = () => {
 
               <div className="flex flex-col gap-3 mb-6">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted">Session Fee (45 mins)</span>
+                  <span className="text-muted">Interviewer Fee (45 mins)</span>
                   <span className="font-medium">₹{sessionFee}</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted">Platform Fee (10%)</span>
-                  <span className="font-medium">₹{platformFee}</span>
+                  <span className="text-muted">Platform Charges</span>
+                  <span className="font-medium text-emerald-600">₹0 (No Extra Fees)</span>
                 </div>
                 <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '0.25rem 0' }}></div>
                 <div className="flex justify-between items-center">
-                  <span className="font-bold">Total Amount</span>
+                  <span className="font-bold">Final Amount to Pay</span>
                   <span className="font-bold text-xl" style={{ color: 'var(--primary)' }}>₹{totalAmount}</span>
                 </div>
               </div>
@@ -474,7 +474,7 @@ const Booking = () => {
                 disabled={submitting}
               >
                 <CreditCard size={18} />
-                <span>{submitting ? 'Creating Order...' : `Proceed to Payment (₹${totalAmount})`}</span>
+                <span>{submitting ? 'Creating Order...' : `Pay ₹${totalAmount} with Razorpay`}</span>
               </button>
               
               <div className="flex flex-col gap-2 pt-2 border-t text-xs text-muted" style={{ borderColor: 'var(--border)' }}>

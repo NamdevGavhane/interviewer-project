@@ -74,8 +74,8 @@ router.get('/:id/earnings', async (req, res) => {
 
     const totalEarned = completed.reduce((sum, item) => sum + (item.price || 100), 0);
     const pendingEarnings = scheduled.reduce((sum, item) => sum + (item.price || 100), 0);
-    const platformFeeCut = Math.round(totalEarned * 0.1);
-    const netPayout = totalEarned; // Professional gets the full session fee, candidate pays extra platform fee
+    const platformFeeCut = 0;
+    const netPayout = totalEarned;
 
     res.json({
       professional: {
