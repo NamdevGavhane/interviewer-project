@@ -92,6 +92,21 @@ const VideoRoom = () => {
   const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
   const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
+  const loggedUserId = localStorage.getItem('userId');
+  const [currentUserData, setCurrentUserData] = useState(null);
+
+  // Fetch logged-in user profile if available
+  useEffect(() => {
+    if (loggedUserId) {
+      fetch(`${API_BASE_URL}/api/users/${loggedUserId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) setCurrentUserData(data);
+        })
+        .catch(err => console.warn('User profile notice:', err));
+    }
+  }, [loggedUserId]);
+
   // 1. Fetch interview details if ID present & auto-confirm role from session participants
   useEffect(() => {
     if (interviewId) {
@@ -99,7 +114,6 @@ const VideoRoom = () => {
         .then(res => res.json())
         .then(data => {
           setInterview(data);
-          const loggedUserId = localStorage.getItem('userId');
           if (loggedUserId && data) {
             const interviewerUserId = String(data.interviewerId?._id || data.interviewerId || '');
             const candidateUserId = String(data.candidateId?._id || data.candidateId || '');
@@ -116,7 +130,7 @@ const VideoRoom = () => {
         })
         .catch(err => console.error('Error loading interview:', err));
     }
-  }, [interviewId]);
+  }, [interviewId, loggedUserId]);
 
   // 2. Timer effect
   useEffect(() => {
@@ -582,11 +596,19 @@ const VideoRoom = () => {
 
   const isInterviewer = currentRole === 'interviewer';
 
-  const partnerName = interview 
-    ? (isInterviewer 
-        ? (interview.candidateId?.name || 'Software Candidate') 
-        : (interview.interviewerId?.name || 'Shushant Gaikwad')) 
-    : (isInterviewer ? 'Software Candidate' : 'Shushant Gaikwad');
+  // Resolve participant names
+  const interviewerDisplayName = interview?.interviewerId?.name || (currentRole === 'interviewer' && currentUserData?.name) || 'Shushant Gaikwad';
+  const candidateDisplayName = interview?.candidateId?.name || (currentRole === 'candidate' && currentUserData?.name) || 'Software Candidate';
+
+  // Local Screen Details (You)
+  const localDisplayName = isInterviewer ? interviewerDisplayName : candidateDisplayName;
+  const localRoleBadge = isInterviewer ? 'Interviewer (You)' : 'Candidate (You)';
+  const localCompanyTag = isInterviewer ? 'Cognizant' : null;
+
+  // Remote Screen Details (Partner)
+  const partnerName = isInterviewer ? candidateDisplayName : interviewerDisplayName;
+  const remoteRoleBadge = isInterviewer ? 'Candidate' : 'Interviewer';
+  const remoteCompanyTag = isInterviewer ? null : 'Cognizant';
 
   const rawPartnerTitle = interview
     ? (isInterviewer 
@@ -702,15 +724,31 @@ const VideoRoom = () => {
       {/* Main Area: Videos + Sliding Chat */}
       <div className="flex-1 flex overflow-hidden" style={{ minHeight: 'calc(100vh - 145px)' }}>
         {/* Video Grid */}
-        <main className="flex-1 flex items-center justify-center p-6 gap-6 relative" style={{ backgroundColor: '#090d16' }}>
+        <main 
+          style={{ 
+            flex: 1, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            padding: '1.5rem', 
+            gap: '1.5rem', 
+            position: 'relative', 
+            backgroundColor: '#090d16',
+            width: '100%',
+            overflow: 'hidden'
+          }}
+        >
           {/* Local Video (You) */}
           <div 
-            className="relative rounded-2xl overflow-hidden border shadow-2xl flex items-center justify-center"
             style={{ 
+              position: 'relative',
               width: '48%', 
               aspectRatio: '16/10', 
-              borderColor: 'rgba(255,255,255,0.15)',
-              backgroundColor: '#0f172a'
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: '2px solid rgba(255, 255, 255, 0.15)',
+              backgroundColor: '#0f172a',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)'
             }}
           >
             {/* Mirror / Flip Camera View Button */}
@@ -718,8 +756,25 @@ const VideoRoom = () => {
               type="button"
               onClick={() => setIsMirrored(prev => !prev)}
               title="Flip / Mirror Camera View"
-              className="absolute top-3 right-3 bg-black/60 hover:bg-black/85 text-gray-300 hover:text-white px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5 transition-all z-20 backdrop-blur"
-              style={{ border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                left: '12px',
+                zIndex: 35,
+                backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+                color: '#e2e8f0',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '8px',
+                padding: '4px 10px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer'
+              }}
             >
               <RefreshCw size={12} />
               <span>{isMirrored ? 'Mirrored' : 'Normal'}</span>
@@ -731,8 +786,13 @@ const VideoRoom = () => {
               autoPlay 
               playsInline 
               muted 
-              className="w-full h-full object-cover"
               style={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
                 transform: isScreenSharing ? 'none' : (isMirrored ? 'scaleX(-1)' : 'none'),
                 display: cameraActive && isVideoOn ? 'block' : 'none' 
               }}
@@ -740,43 +800,125 @@ const VideoRoom = () => {
 
             {/* Camera Off Overlay */}
             {!isVideoOn && (
-              <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-slate-900">
-                <VideoOff size={48} className="mb-2 text-gray-500" />
-                <span className="text-sm font-semibold">Your Camera is Off</span>
+              <div 
+                style={{ 
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  backgroundColor: '#0f172a',
+                  color: '#94a3b8' 
+                }}
+              >
+                <VideoOff size={44} style={{ marginBottom: '0.5rem', color: '#64748b' }} />
+                <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Your Camera is Off</span>
               </div>
             )}
 
             {/* Permission blocked overlay */}
             {!cameraActive && isVideoOn && (
-              <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 p-6 text-center bg-slate-900">
+              <div 
+                style={{ 
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  backgroundColor: '#0f172a',
+                  color: '#e2e8f0',
+                  padding: '1.5rem',
+                  textAlign: 'center'
+                }}
+              >
                 <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', padding: '1rem', borderRadius: '50%', marginBottom: '0.75rem' }}>
-                  <VideoOff size={36} className="text-danger" />
+                  <VideoOff size={32} style={{ color: '#ef4444' }} />
                 </div>
-                <div className="text-sm font-bold mb-1">Webcam Permission Needed</div>
-                <p className="text-xs text-gray-400 max-w-xs mb-3">Please allow camera access in your browser to broadcast your video to the interviewer.</p>
-                <button type="button" onClick={startCamera} className="btn btn-primary text-xs py-1.5 px-3">
-                  <RefreshCw size={13} className="mr-1 inline" /> Allow Camera Access
+                <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '4px' }}>Webcam Permission Needed</div>
+                <p style={{ fontSize: '0.75rem', color: '#94a3b8', maxWidth: '280px', marginBottom: '12px' }}>
+                  Please allow camera access in your browser to broadcast your video.
+                </p>
+                <button type="button" onClick={startCamera} className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
+                  <RefreshCw size={13} style={{ marginRight: '4px', display: 'inline' }} /> Allow Camera Access
                 </button>
               </div>
             )}
 
-            {/* Bottom Label Tag */}
-            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2 z-20">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-              <span>You ({currentRole})</span>
-              {!isMicOn && <MicOff size={13} className="text-danger" title="You are muted" />}
-              {isScreenSharing && <span className="badge badge-info text-[10px] py-0 px-1.5">Screen Sharing</span>}
+            {/* Bottom-Right Name Tag for Local Video */}
+            <div 
+              style={{
+                position: 'absolute',
+                bottom: '14px',
+                right: '14px',
+                zIndex: 35,
+                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.18)',
+                borderRadius: '10px',
+                padding: '6px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
+                color: 'white',
+                pointerEvents: 'none',
+                maxWidth: 'calc(100% - 28px)'
+              }}
+            >
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: isVideoOn ? '#10b981' : '#f59e0b',
+                display: 'inline-block',
+                boxShadow: isVideoOn ? '0 0 8px #10b981' : 'none',
+                flexShrink: 0
+              }}></span>
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap' }}>
+                  {localDisplayName}
+                </span>
+                <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 500 }}>
+                  {localRoleBadge} {localCompanyTag ? `• ${localCompanyTag}` : ''}
+                </span>
+              </div>
+              {!isMicOn && (
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.25)', padding: '3px', borderRadius: '4px', marginLeft: '4px' }}>
+                  <MicOff size={13} style={{ color: '#ef4444' }} />
+                </div>
+              )}
+              {isScreenSharing && (
+                <span style={{ 
+                  backgroundColor: 'rgba(26, 115, 232, 0.25)', 
+                  color: '#60a5fa', 
+                  fontSize: '0.65rem', 
+                  padding: '2px 6px', 
+                  borderRadius: '6px', 
+                  fontWeight: 600,
+                  border: '1px solid rgba(96, 165, 250, 0.3)' 
+                }}>
+                  Sharing Screen
+                </span>
+              )}
             </div>
           </div>
 
           {/* Remote Video (Partner) */}
           <div 
-            className="relative rounded-2xl overflow-hidden border shadow-2xl flex items-center justify-center"
             style={{ 
+              position: 'relative',
               width: '48%', 
               aspectRatio: '16/10', 
-              borderColor: isCallConnected ? '#10b981' : 'rgba(255,255,255,0.15)',
-              backgroundColor: '#0f172a'
+              borderRadius: '16px',
+              overflow: 'hidden',
+              border: isCallConnected ? '2px solid #10b981' : '2px solid rgba(255,255,255,0.15)',
+              backgroundColor: '#0f172a',
+              boxShadow: isCallConnected 
+                ? '0 0 25px rgba(16, 185, 129, 0.25), 0 20px 25px -5px rgba(0, 0, 0, 0.5)' 
+                : '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
             }}
           >
             {/* Always-mounted remote video element */}
@@ -784,28 +926,60 @@ const VideoRoom = () => {
               ref={remoteVideoRef} 
               autoPlay 
               playsInline 
-              className="w-full h-full object-cover"
-              style={{ display: isCallConnected && remoteStream ? 'block' : 'none' }}
+              style={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: isCallConnected && remoteStream ? 'block' : 'none' 
+              }}
             />
 
             {/* When partner turns camera off during active call */}
             {isCallConnected && remoteStream && !partnerVideoOn && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 bg-slate-900/95 backdrop-blur z-10">
-                <VideoOff size={48} className="mb-2 text-gray-500" />
-                <span className="text-sm font-semibold">{partnerName}&apos;s Camera is Off</span>
+              <div 
+                style={{ 
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                  backdropFilter: 'blur(8px)',
+                  color: '#94a3b8',
+                  zIndex: 20
+                }}
+              >
+                <VideoOff size={44} style={{ marginBottom: '0.5rem', color: '#64748b' }} />
+                <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{partnerName}&apos;s Camera is Off</span>
               </div>
             )}
 
             {/* When partner is not yet sending live video */}
             {(!isCallConnected || !remoteStream) && (
-              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-slate-900 relative">
+              <div 
+                style={{ 
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  padding: '1.5rem', 
+                  textAlign: 'center', 
+                  backgroundColor: '#0f172a' 
+                }}
+              >
                 <div style={{ position: 'relative', marginBottom: '1rem' }}>
                   <img 
                     src={partnerAvatar} 
                     alt={partnerName} 
                     style={{ 
-                      width: '90px', 
-                      height: '90px', 
+                      width: '85px', 
+                      height: '85px', 
                       borderRadius: '50%', 
                       objectFit: 'cover',
                       border: '3px solid rgba(255,255,255,0.2)'
@@ -825,12 +999,16 @@ const VideoRoom = () => {
                   />
                 </div>
 
-                <div className="text-base font-bold text-white mb-0.5">{partnerName}</div>
-                <div className="text-xs text-gray-400 mb-3">{partnerTitle}</div>
+                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white', marginBottom: '2px' }}>
+                  {partnerName}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '12px' }}>
+                  {partnerTitle}
+                </div>
 
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-                  <span className="text-xs text-amber-300 font-medium">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }}></span>
+                  <span style={{ fontSize: '0.75rem', color: '#fcd34d', fontWeight: 500 }}>
                     Waiting for {partnerRole} to enter room...
                   </span>
                 </div>
@@ -838,20 +1016,73 @@ const VideoRoom = () => {
                 <button
                   type="button"
                   onClick={callPartner}
-                  className="btn btn-outline text-xs text-gray-300 border-gray-600 hover:text-white flex items-center gap-1.5 py-1 px-3"
+                  className="btn btn-outline"
+                  style={{ fontSize: '0.75rem', color: '#cbd5e1', borderColor: '#475569', padding: '0.35rem 0.85rem' }}
                 >
-                  <RefreshCw size={13} />
+                  <RefreshCw size={13} style={{ marginRight: '4px', display: 'inline' }} />
                   <span>Retry Call / Connect Now</span>
                 </button>
               </div>
             )}
 
-            {/* Bottom Label Tag */}
-            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2 z-20">
-              <span className={`w-2 h-2 rounded-full ${isCallConnected ? 'bg-emerald-500' : 'bg-amber-400'} inline-block`}></span>
-              <span>{partnerName} ({partnerRole})</span>
-              {!partnerMicOn && <MicOff size={13} className="text-danger" title="Partner is muted" />}
-              {isCallConnected && <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">LIVE HD</span>}
+            {/* Bottom-Right Name Tag for Remote Video */}
+            <div 
+              style={{
+                position: 'absolute',
+                bottom: '14px',
+                right: '14px',
+                zIndex: 35,
+                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.18)',
+                borderRadius: '10px',
+                padding: '6px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
+                color: 'white',
+                pointerEvents: 'none',
+                maxWidth: 'calc(100% - 28px)'
+              }}
+            >
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: isCallConnected ? '#10b981' : '#f59e0b',
+                display: 'inline-block',
+                boxShadow: isCallConnected ? '0 0 8px #10b981' : 'none',
+                flexShrink: 0
+              }}></span>
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap' }}>
+                  {partnerName}
+                </span>
+                <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 500 }}>
+                  {remoteRoleBadge} {remoteCompanyTag ? `• ${remoteCompanyTag}` : ''}
+                </span>
+              </div>
+              {isCallConnected && (
+                <span style={{ 
+                  backgroundColor: 'rgba(16, 185, 129, 0.2)', 
+                  color: '#34d399', 
+                  fontSize: '0.65rem', 
+                  padding: '2px 6px', 
+                  borderRadius: '6px', 
+                  fontWeight: 700,
+                  letterSpacing: '0.5px',
+                  border: '1px solid rgba(16, 185, 129, 0.3)' 
+                }}>
+                  LIVE HD
+                </span>
+              )}
+              {!partnerMicOn && (
+                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.25)', padding: '3px', borderRadius: '4px', marginLeft: '4px' }}>
+                  <MicOff size={13} style={{ color: '#ef4444' }} />
+                </div>
+              )}
             </div>
           </div>
         </main>
