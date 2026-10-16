@@ -24,7 +24,7 @@ const seedDatabase = async () => {
         email: 'shushant@example.com',
         password: 'password123',
         role: 'professional',
-        title: 'Senior MERN Developer & Batch 3 Lead',
+        title: 'Senior Full Stack MERN Developer',
         company: 'Cognizant',
         domain: 'MERN Stack Development',
         hourlyRate: 100,

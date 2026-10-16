@@ -662,8 +662,8 @@ const AIInterview = () => {
               <label className="font-semibold text-sm">Select Primary Technical Domain</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
                 {[
-                  { id: 'mern', name: 'Batch 3 MERN Stack Interview', desc: 'MongoDB, Express, React, Node.js Full Stack' },
-                  { id: 'ml', name: 'Batch 3 Machine Learning Track', desc: 'Python, PyTorch, Deep Learning, ML Systems' },
+                  { id: 'mern', name: 'Full Stack MERN Interview', desc: 'MongoDB, Express, React, Node.js Full Stack' },
+                  { id: 'ml', name: 'Machine Learning & AI Track', desc: 'Python, PyTorch, Deep Learning, ML Systems' },
                   { id: 'frontend', name: 'Frontend React & Architecture', desc: 'React 19, DOM, State, Performance' },
                   { id: 'backend', name: 'Backend Node.js & Microservices', desc: 'Node.js, Databases, APIs, Concurrency' },
                   { id: 'system-design', name: 'System Design & High Scale', desc: 'Distributed Systems, Caching, Storage' },

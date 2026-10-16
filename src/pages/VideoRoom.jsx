@@ -562,8 +562,8 @@ const VideoRoom = () => {
     : (currentRole === 'interviewer' ? 'Candidate' : 'Shushant Gaikwad');
 
   const partnerTitle = interview
-    ? (currentRole === 'interviewer' ? 'Software Candidate' : (interview.interviewerId?.title || 'MERN Developer & Batch 3 Lead'))
-    : (currentRole === 'interviewer' ? 'Software Candidate' : 'MERN Developer & Batch 3 Lead');
+    ? (currentRole === 'interviewer' ? 'Software Candidate' : (interview.interviewerId?.title || 'Senior Full Stack MERN Developer'))
+    : (currentRole === 'interviewer' ? 'Software Candidate' : 'Senior Full Stack MERN Developer');
 
   const partnerAvatar = interview
     ? (currentRole === 'interviewer' ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
@@ -583,7 +583,7 @@ const VideoRoom = () => {
               </span>
             </div>
             <p className="text-xs text-gray-400">
-              {interview?.topic || 'Batch 3 Interview - MERN Stack Architecture & Coding'}
+              {interview?.topic || 'Technical Interview - MERN Stack Architecture & Coding'}
             </p>
           </div>
         </div>

@@ -32,7 +32,7 @@ export const downloadInvoicePDF = (paymentData) => {
     const interviewerTitle = paymentData.interviewerTitle || paymentData.interviewerId?.title || 'Technical Specialist';
     const company = paymentData.company || paymentData.interviewerId?.company || 'InterviewPro Expert';
 
-    const topic = paymentData.topic || 'Batch 3 Mock Interview & System Coding';
+    const topic = paymentData.topic || 'Technical Mock Interview & System Coding';
     const timeSlot = paymentData.timeSlot || 'Scheduled Session';
     const sessionFee = Number(paymentData.sessionFee || paymentData.price || 100);
     const platformFee = Number(paymentData.platformFee || Math.round(sessionFee * 0.1));

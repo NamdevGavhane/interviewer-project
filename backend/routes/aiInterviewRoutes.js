@@ -104,14 +104,14 @@ const extractResumeHighlights = (text) => {
 // Curated technical questions bank for built-in high-quality AI engine
 const QUESTION_BANK = {
   'mern': [
-    "Welcome to the Batch 3 MERN Stack Technical Interview! To begin, can you walk me through the full data lifecycle in a MERN app when a React client makes an API request to an Express/Node.js endpoint, performs operations on MongoDB, and returns JSON back to update UI state?",
+    "Welcome to the Full Stack MERN Technical Interview! To begin, can you walk me through the full data lifecycle in a MERN app when a React client makes an API request to an Express/Node.js endpoint, performs operations on MongoDB, and returns JSON back to update UI state?",
     "In React 19, how do you handle complex state management and custom hooks effectively? How do you prevent unnecessary re-renders when passing callbacks down to child components?",
     "In Express and Node.js, how do you architect secure middleware pipelines for JWT token verification, role-based authorization, and centralized error handling?",
     "When designing database schemas with Mongoose for MongoDB, how do you evaluate embedding subdocuments versus normalized referenced schemas with populate? What are the write and query performance trade-offs?",
     "Finally, how do you handle CORS, environment variables, security headers (Helmet), and connection pooling when taking a MERN stack application to production?"
   ],
   'ml': [
-    "Welcome to the Batch 3 Machine Learning Technical Interview! Can you explain the bias-variance tradeoff and how you diagnose whether an ML model suffers from high bias or high variance?",
+    "Welcome to the Machine Learning & AI Technical Interview! Can you explain the bias-variance tradeoff and how you diagnose whether an ML model suffers from high bias or high variance?",
     "When training deep neural networks with PyTorch or TensorFlow, what strategies do you employ to prevent overfitting and combat vanishing/exploding gradients?",
     "Can you walk me through the architecture and attention mechanism in Transformers? How does multi-head self-attention capture contextual relationships in language models?",
     "Suppose your machine learning model encounters data drift or concept drift after being deployed to production. How do you monitor, detect, and retrain the model reliably?",

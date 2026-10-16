@@ -35,7 +35,7 @@ const Booking = () => {
   const [selectedInterviewer, setSelectedInterviewer] = useState(null);
   const [selectedDate, setSelectedDate] = useState(() => getAvailableDates()[0]);
   const [selectedSlot, setSelectedSlot] = useState('');
-  const [topic, setTopic] = useState('Batch 3 Interview - MERN Stack Architecture & Coding');
+  const [topic, setTopic] = useState('Full Stack Interview - MERN Architecture & Coding');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -408,8 +408,8 @@ const Booking = () => {
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
                 >
-                  <option value="Batch 3 Interview - MERN Stack Architecture & Coding">Batch 3 Interview - MERN Stack Architecture (React, Node, Express, MongoDB)</option>
-                  <option value="Batch 3 ML Interview - Machine Learning & AI Engineering">Batch 3 ML Interview - Machine Learning & AI Engineering (Python, PyTorch, LLMs)</option>
+                  <option value="Full Stack Interview - MERN Architecture & Coding">Full Stack Interview - MERN Architecture (React, Node, Express, MongoDB)</option>
+                  <option value="Machine Learning & AI Engineering Interview">Machine Learning & AI Engineering (Python, PyTorch, LLMs)</option>
                 </select>
               </div>
 
