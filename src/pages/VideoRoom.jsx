@@ -38,6 +38,9 @@ const VideoRoom = () => {
   const [interview, setInterview] = useState(null);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isVideoOn, setIsVideoOn] = useState(true);
+  const [isMirrored, setIsMirrored] = useState(true);
+  const [partnerMicOn, setPartnerMicOn] = useState(true);
+  const [partnerVideoOn, setPartnerVideoOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [mediaError, setMediaError] = useState(null);
@@ -71,21 +74,37 @@ const VideoRoom = () => {
   const currentCallRef = useRef(null);
   const dataConnRef = useRef(null);
   const chatBottomRef = useRef(null);
+  
+  // Connection state refs to prevent stale closure loops and duplicate calling
+  const isCallConnectedRef = useRef(false);
+  const isCallingRef = useRef(false);
 
   // Clean IDs for PeerJS (alphanumeric only)
   const cleanRoomId = roomId.replace(/[^a-zA-Z0-9]/g, '');
   const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
   const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
-  // 1. Fetch interview details if ID present
+  // 1. Fetch interview details if ID present & auto-confirm role
   useEffect(() => {
     if (interviewId) {
       fetch(`${API_BASE_URL}/api/interviews/${interviewId}`)
         .then(res => res.json())
-        .then(data => setInterview(data))
+        .then(data => {
+          setInterview(data);
+          const loggedUserId = localStorage.getItem('userId');
+          if (loggedUserId && data) {
+            const interviewerUserId = data.interviewerId?._id || data.interviewerId;
+            const candidateUserId = data.candidateId?._id || data.candidateId;
+            if (loggedUserId === interviewerUserId && !roleParam) {
+              setCurrentRole('interviewer');
+            } else if (loggedUserId === candidateUserId && !roleParam) {
+              setCurrentRole('candidate');
+            }
+          }
+        })
         .catch(err => console.error('Error loading interview:', err));
     }
-  }, [interviewId]);
+  }, [interviewId, roleParam]);
 
   // 2. Timer effect
   useEffect(() => {
@@ -102,14 +121,18 @@ const VideoRoom = () => {
     return `${m}:${s}`;
   };
 
-  // 3. Initialize Camera & Mic
+  // 3. Initialize Camera & Mic with echo cancellation & noise suppression
   const startCamera = async () => {
     try {
       setMediaError(null);
       setConnectionStatus('Requesting camera & microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: true
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
 
       mediaStreamRef.current = stream;
@@ -119,6 +142,17 @@ const VideoRoom = () => {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
         localVideoRef.current.play().catch(e => console.warn('Local play warning:', e));
+      }
+
+      // If already in an active call, update media tracks on active sender
+      if (currentCallRef.current && currentCallRef.current.peerConnection) {
+        const senders = currentCallRef.current.peerConnection.getSenders();
+        const vTrack = stream.getVideoTracks()[0];
+        const aTrack = stream.getAudioTracks()[0];
+        senders.forEach(s => {
+          if (s.track?.kind === 'video' && vTrack) s.replaceTrack(vTrack);
+          if (s.track?.kind === 'audio' && aTrack) s.replaceTrack(aTrack);
+        });
       }
 
       setConnectionStatus('Camera connected. Ready for partner call.');
@@ -162,10 +196,29 @@ const VideoRoom = () => {
     }
   }, [remoteStream, isCallConnected]);
 
+  // Setup data connection handlers
+  const attachDataHandlers = (conn) => {
+    dataConnRef.current = conn;
+    conn.on('data', (data) => {
+      if (data?.type === 'media_state') {
+        if (typeof data.isMicOn === 'boolean') setPartnerMicOn(data.isMicOn);
+        if (typeof data.isVideoOn === 'boolean') setPartnerVideoOn(data.isVideoOn);
+      } else if (data && data.text) {
+        setMessages(prev => [...prev, data]);
+      }
+    });
+  };
+
   // 4. WebRTC PeerJS Setup
   useEffect(() => {
     let peerInstance = null;
     let callRetryInterval = null;
+
+    // Reset connection refs on role or room change
+    isCallConnectedRef.current = false;
+    isCallingRef.current = false;
+    setIsCallConnected(false);
+    setRemoteStream(null);
 
     try {
       setConnectionStatus(`Connecting as ${currentRole}...`);
@@ -190,6 +243,24 @@ const VideoRoom = () => {
       // Handle Incoming Call
       peerInstance.on('call', (incomingCall) => {
         console.log('Incoming WebRTC Call from:', incomingCall.peer);
+
+        // If we already have a healthy connected call, ignore redundant incoming call
+        if (
+          isCallConnectedRef.current && 
+          currentCallRef.current && 
+          currentCallRef.current.peerConnection && 
+          (currentCallRef.current.peerConnection.connectionState === 'connected' ||
+           currentCallRef.current.peerConnection.iceConnectionState === 'connected')
+        ) {
+          console.log('Already in active call, ignoring redundant incoming call');
+          return;
+        }
+
+        // Close any dead previous call
+        if (currentCallRef.current && currentCallRef.current !== incomingCall) {
+          try { currentCallRef.current.close(); } catch (e) {}
+        }
+
         currentCallRef.current = incomingCall;
 
         incomingCall.answer(mediaStreamRef.current || undefined);
@@ -198,45 +269,57 @@ const VideoRoom = () => {
           console.log('Received remote live video stream!');
           setRemoteStream(stream);
           setIsCallConnected(true);
+          isCallConnectedRef.current = true;
+          isCallingRef.current = false;
           setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
         });
 
         incomingCall.on('close', () => {
-          console.log('Call closed');
-          setIsCallConnected(false);
-          setRemoteStream(null);
-          setConnectionStatus(`${partnerName} disconnected.`);
+          if (currentCallRef.current === incomingCall) {
+            console.log('Incoming call closed');
+            setIsCallConnected(false);
+            isCallConnectedRef.current = false;
+            isCallingRef.current = false;
+            setRemoteStream(null);
+            setConnectionStatus(`${partnerName} disconnected. Waiting for reconnect...`);
+          }
         });
 
         incomingCall.on('error', (err) => {
           console.warn('Call stream error:', err);
+          if (currentCallRef.current === incomingCall) {
+            isCallingRef.current = false;
+          }
         });
       });
 
-      // Handle Incoming Data Connection for Chat
+      // Handle Incoming Data Connection for Chat & Media States
       peerInstance.on('connection', (conn) => {
-        dataConnRef.current = conn;
-        conn.on('data', (data) => {
-          if (data && data.text) {
-            setMessages(prev => [...prev, data]);
-          }
-        });
+        attachDataHandlers(conn);
       });
 
       peerInstance.on('error', (err) => {
         console.warn('PeerJS notice:', err.type, err.message);
         if (err.type === 'unavailable-id') {
-          // If ID collision occurs, handle gracefully
           setConnectionStatus(`Ready. Attempting partner connection...`);
         }
       });
 
-      // Periodic check to call partner
+      // Stable Periodic Check: Only attempts call when NOT connected and NOT already calling
       callRetryInterval = setInterval(() => {
-        if (!isCallConnected && peerInstance && !peerInstance.destroyed && mediaStreamRef.current) {
-          callPartner();
+        if (
+          !isCallConnectedRef.current && 
+          !isCallingRef.current && 
+          peerRef.current && 
+          !peerRef.current.destroyed && 
+          mediaStreamRef.current
+        ) {
+          // Candidate acts as caller to prevent simultaneous glare collision
+          if (currentRole === 'candidate') {
+            callPartner();
+          }
         }
-      }, 3500);
+      }, 3000);
 
     } catch (e) {
       console.error('PeerJS init failed:', e);
@@ -255,9 +338,13 @@ const VideoRoom = () => {
 
   // Outgoing Call Function
   const callPartner = () => {
-    if (!peerRef.current || !mediaStreamRef.current || isCallConnected) return;
+    if (!peerRef.current || !mediaStreamRef.current) return;
+    if (isCallConnectedRef.current || isCallingRef.current) return;
+    if (peerRef.current.destroyed || peerRef.current.disconnected) return;
 
     try {
+      isCallingRef.current = true;
+      console.log('Initiating outbound call to partner:', partnerPeerId);
       const call = peerRef.current.call(partnerPeerId, mediaStreamRef.current);
       if (call) {
         currentCallRef.current = call;
@@ -266,30 +353,42 @@ const VideoRoom = () => {
           console.log('Remote stream connected from outgoing call!');
           setRemoteStream(stream);
           setIsCallConnected(true);
+          isCallConnectedRef.current = true;
+          isCallingRef.current = false;
           setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
         });
 
         call.on('close', () => {
-          setIsCallConnected(false);
-          setRemoteStream(null);
-          setConnectionStatus(`Waiting for ${partnerName} to reconnect...`);
+          if (currentCallRef.current === call) {
+            console.log('Outgoing call closed');
+            setIsCallConnected(false);
+            isCallConnectedRef.current = false;
+            isCallingRef.current = false;
+            setRemoteStream(null);
+            setConnectionStatus(`Waiting for ${partnerName} to reconnect...`);
+          }
         });
+
+        call.on('error', (err) => {
+          console.warn('Outbound call error:', err);
+          if (currentCallRef.current === call) {
+            isCallingRef.current = false;
+          }
+        });
+      } else {
+        isCallingRef.current = false;
       }
 
-      // Also open data connection for real-time chat
-      if (!dataConnRef.current) {
+      // Also open data connection for real-time chat if needed
+      if (!dataConnRef.current || !dataConnRef.current.open) {
         const conn = peerRef.current.connect(partnerPeerId);
         conn.on('open', () => {
-          dataConnRef.current = conn;
-        });
-        conn.on('data', (data) => {
-          if (data && data.text) {
-            setMessages(prev => [...prev, data]);
-          }
+          attachDataHandlers(conn);
         });
       }
     } catch (err) {
-      console.warn('Outbound call attempt:', err.message);
+      console.warn('Outbound call attempt failed:', err.message);
+      isCallingRef.current = false;
     }
   };
 
@@ -300,24 +399,44 @@ const VideoRoom = () => {
 
   // Toggle Microphone
   const toggleMic = () => {
+    const nextState = !isMicOn;
     if (mediaStreamRef.current) {
       const audioTracks = mediaStreamRef.current.getAudioTracks();
       audioTracks.forEach(track => {
-        track.enabled = !isMicOn;
+        track.enabled = nextState;
       });
     }
-    setIsMicOn(prev => !prev);
+    setIsMicOn(nextState);
+
+    // Notify partner of mute state
+    if (dataConnRef.current && dataConnRef.current.open) {
+      dataConnRef.current.send({
+        type: 'media_state',
+        isMicOn: nextState,
+        isVideoOn
+      });
+    }
   };
 
   // Toggle Camera
   const toggleVideo = () => {
+    const nextState = !isVideoOn;
     if (mediaStreamRef.current) {
       const videoTracks = mediaStreamRef.current.getVideoTracks();
       videoTracks.forEach(track => {
-        track.enabled = !isVideoOn;
+        track.enabled = nextState;
       });
     }
-    setIsVideoOn(prev => !prev);
+    setIsVideoOn(nextState);
+
+    // Notify partner of camera state
+    if (dataConnRef.current && dataConnRef.current.open) {
+      dataConnRef.current.send({
+        type: 'media_state',
+        isMicOn,
+        isVideoOn: nextState
+      });
+    }
   };
 
   // Toggle Screen Share
@@ -560,6 +679,18 @@ const VideoRoom = () => {
               backgroundColor: '#0f172a'
             }}
           >
+            {/* Mirror / Flip Camera View Button */}
+            <button
+              type="button"
+              onClick={() => setIsMirrored(prev => !prev)}
+              title="Flip / Mirror Camera View"
+              className="absolute top-3 right-3 bg-black/60 hover:bg-black/85 text-gray-300 hover:text-white px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5 transition-all z-20 backdrop-blur"
+              style={{ border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer' }}
+            >
+              <RefreshCw size={12} />
+              <span>{isMirrored ? 'Mirrored' : 'Normal'}</span>
+            </button>
+
             {/* Always-mounted local video to guarantee ref attachment */}
             <video 
               ref={localVideoRef} 
@@ -568,7 +699,7 @@ const VideoRoom = () => {
               muted 
               className="w-full h-full object-cover"
               style={{ 
-                transform: isScreenSharing ? 'none' : 'scaleX(-1)',
+                transform: isScreenSharing ? 'none' : (isMirrored ? 'scaleX(-1)' : 'none'),
                 display: cameraActive && isVideoOn ? 'block' : 'none' 
               }}
             />
@@ -596,10 +727,10 @@ const VideoRoom = () => {
             )}
 
             {/* Bottom Label Tag */}
-            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2 z-20">
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
               <span>You ({currentRole})</span>
-              {!isMicOn && <MicOff size={13} className="text-danger" />}
+              {!isMicOn && <MicOff size={13} className="text-danger" title="You are muted" />}
               {isScreenSharing && <span className="badge badge-info text-[10px] py-0 px-1.5">Screen Sharing</span>}
             </div>
           </div>
@@ -622,6 +753,14 @@ const VideoRoom = () => {
               className="w-full h-full object-cover"
               style={{ display: isCallConnected && remoteStream ? 'block' : 'none' }}
             />
+
+            {/* When partner turns camera off during active call */}
+            {isCallConnected && remoteStream && !partnerVideoOn && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 bg-slate-900/95 backdrop-blur z-10">
+                <VideoOff size={48} className="mb-2 text-gray-500" />
+                <span className="text-sm font-semibold">{partnerName}&apos;s Camera is Off</span>
+              </div>
+            )}
 
             {/* When partner is not yet sending live video */}
             {(!isCallConnected || !remoteStream) && (
@@ -674,9 +813,10 @@ const VideoRoom = () => {
             )}
 
             {/* Bottom Label Tag */}
-            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2">
+            <div className="absolute bottom-3 left-3 bg-black/75 backdrop-blur px-3 py-1 rounded-lg text-xs font-semibold text-white flex items-center gap-2 z-20">
               <span className={`w-2 h-2 rounded-full ${isCallConnected ? 'bg-emerald-500' : 'bg-amber-400'} inline-block`}></span>
               <span>{partnerName} ({partnerRole})</span>
+              {!partnerMicOn && <MicOff size={13} className="text-danger" title="Partner is muted" />}
               {isCallConnected && <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">LIVE HD</span>}
             </div>
           </div>

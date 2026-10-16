@@ -25,6 +25,7 @@ const userSchema = new mongoose.Schema({
   },
   title: String,
   company: String,
+  domain: String,
   hourlyRate: Number,
   bio: String,
   skills: [String],

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Lock, Calendar as CalendarIcon, Clock, CheckCircle2, Download, ShieldCheck, FileText, CreditCard } from 'lucide-react';
+import { ArrowLeft, Lock, Calendar as CalendarIcon, Clock, CheckCircle2, Download, ShieldCheck, FileText, CreditCard, Building2, Briefcase } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PaymentModal from '../components/PaymentModal';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
@@ -252,7 +252,7 @@ const Booking = () => {
           </button>
 
           <div className="flex gap-3 justify-center">
-            <Link to={`/room?interviewId=${successBooking._id}`} className="flex-1">
+            <Link to={`/room?interviewId=${successBooking._id}&role=candidate`} className="flex-1">
               <button className="btn btn-primary w-full py-2.5">
                 Go to Video Room
               </button>
@@ -307,30 +307,50 @@ const Booking = () => {
                       borderWidth: selectedInterviewer?._id === prof._id ? '2px' : '1px'
                     }}
                   >
-                    <div className="flex items-center gap-3">
-                      <img 
-                        src={prof.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
-                        alt={prof.name} 
-                        className="profile-avatar"
-                        style={{ width: '48px', height: '48px' }}
-                      />
-                      <div>
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="relative flex-shrink-0">
+                        <img 
+                          src={prof.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
+                          alt={prof.name} 
+                          className="profile-avatar shadow-sm"
+                          style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--border)' }}
+                        />
+                        <span 
+                          className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2" 
+                          style={{ borderColor: 'var(--card-bg, #fff)' }}
+                          title="Available for booking"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
                         <div className="font-bold text-sm flex items-center gap-2">
-                          {prof.name}
+                          <span className="truncate">{prof.name}</span>
+                          <CheckCircle2 size={13} className="text-primary flex-shrink-0" />
                           {selectedInterviewer?._id === prof._id && (
                             <span className="badge badge-info text-xs">Selected</span>
                           )}
                         </div>
-                        <div className="text-xs text-muted">{prof.title}</div>
-                        <div className="text-xs font-medium mt-0.5" style={{ color: '#f59e0b' }}>
-                          ⭐ {prof.rating} ({prof.reviewsCount} reviews)
+
+                        {/* 1. Company Name */}
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 mt-1 truncate">
+                          <Building2 size={13} className="text-primary flex-shrink-0" />
+                          <span className="truncate">{prof.company || 'Tech Leader'}</span>
+                        </div>
+
+                        {/* 2. Domain */}
+                        <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5 truncate">
+                          <Briefcase size={12} className="text-muted flex-shrink-0" />
+                          <span className="truncate">{prof.domain || prof.title || 'Full Stack Engineering'}</span>
+                        </div>
+
+                        <div className="text-xs font-medium mt-1 flex items-center gap-1 text-amber-500">
+                          ⭐ {prof.rating || 4.9} ({prof.reviewsCount || 45} reviews)
                         </div>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="font-bold text-sm">₹{prof.hourlyRate}</div>
-                      <div className="text-xs text-muted">/ session</div>
+                    <div className="text-right flex-shrink-0 pl-3">
+                      <div className="font-bold text-base text-primary">₹{prof.hourlyRate}</div>
+                      <div className="text-[11px] text-muted font-medium">/ session</div>
                     </div>
                   </div>
                 ))}

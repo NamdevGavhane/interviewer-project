@@ -367,7 +367,7 @@ const Interviews = () => {
 
                     {item.status === 'scheduled' && (
                       <>
-                        <Link to={`/room?interviewId=${item._id}`}>
+                        <Link to={`/room?interviewId=${item._id}&role=${userRole === 'professional' ? 'interviewer' : 'candidate'}`}>
                           <button className="btn btn-primary">
                             <Video size={16} />
                             Join Room

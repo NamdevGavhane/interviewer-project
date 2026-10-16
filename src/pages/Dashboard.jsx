@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, CheckCircle2, DollarSign, Clock, Video, Plus, Trash2, ArrowRight, Bot, Receipt, ShieldCheck, Download } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckCircle2, DollarSign, Clock, Video, Plus, Trash2, ArrowRight, Bot, Receipt, ShieldCheck, Download, Building2, Briefcase } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
 import { API_BASE_URL } from '../config/api';
@@ -295,7 +295,7 @@ const Dashboard = () => {
                         </div>
                       </div>
 
-                      <Link to={`/room?interviewId=${session._id}`}>
+                      <Link to={`/room?interviewId=${session._id}&role=${isProfessional ? 'interviewer' : 'candidate'}`}>
                         <button className="btn btn-primary flex items-center gap-1">
                           <Video size={16} />
                           Join Call
@@ -435,29 +435,73 @@ const Dashboard = () => {
           ) : (
             /* Candidate: Recommended Interviewers Card */
             <div className="card">
-              <h3 className="font-bold text-lg mb-4">Available Interviewers</h3>
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="font-bold text-lg">Available Interviewers</h3>
+                <span className="badge badge-info text-xs font-semibold uppercase tracking-wider">Verified Mentors</span>
+              </div>
               <p className="text-sm text-muted mb-4">Book a 1-on-1 mock interview with verified industry seniors.</p>
 
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3.5">
                 {interviewers.map(prof => (
-                  <div key={prof._id} className="p-3 border rounded-xl flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-                    <div className="flex items-center gap-3">
-                      <img 
-                        src={prof.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
-                        alt={prof.name} 
-                        className="profile-avatar"
-                        style={{ width: '44px', height: '44px' }}
-                      />
-                      <div>
-                        <div className="font-bold text-sm">{prof.name}</div>
-                        <div className="text-xs text-muted">{prof.company}</div>
-                        <div className="text-xs font-semibold text-primary">₹{prof.hourlyRate}/session</div>
+                  <div 
+                    key={prof._id} 
+                    className="p-3.5 border rounded-xl flex items-center justify-between gap-3 transition-all hover:border-primary/40 hover:shadow-sm" 
+                    style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-hover, rgba(255,255,255,0.02))' }}
+                  >
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      {/* Avatar with status dot */}
+                      <div className="relative flex-shrink-0 mt-0.5">
+                        <img 
+                          src={prof.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
+                          alt={prof.name} 
+                          className="profile-avatar shadow-sm"
+                          style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--border)' }}
+                        />
+                        <span 
+                          className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2" 
+                          style={{ borderColor: 'var(--card-bg, #fff)' }}
+                          title="Online & Available"
+                        />
+                      </div>
+
+                      {/* Structured Info: Name -> 1. Company Name -> 2. Domain -> Rate & Rating */}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-sm text-foreground flex items-center gap-1.5 truncate">
+                          <span>{prof.name}</span>
+                          <CheckCircle2 size={13} className="text-primary flex-shrink-0" title="Verified Expert" />
+                        </div>
+
+                        {/* 1. Company Name */}
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 mt-1 truncate">
+                          <Building2 size={13} className="text-primary flex-shrink-0" />
+                          <span className="truncate">{prof.company || 'Tech Leader'}</span>
+                        </div>
+
+                        {/* 2. Domain */}
+                        <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5 truncate">
+                          <Briefcase size={12} className="text-muted flex-shrink-0" />
+                          <span className="truncate">{prof.domain || prof.title || 'Full Stack Engineering'}</span>
+                        </div>
+
+                        {/* Rate Tag & Rating */}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                            ₹{prof.hourlyRate}/session
+                          </span>
+                          <span className="text-[11px] text-amber-500 font-semibold flex items-center gap-0.5">
+                            ★ {prof.rating || 4.9}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <Link to={`/booking?interviewerId=${prof._id}`}>
-                      <button className="btn btn-primary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
-                        Book
+                    <Link to={`/booking?interviewerId=${prof._id}`} className="flex-shrink-0">
+                      <button 
+                        className="btn btn-primary flex items-center gap-1.5 shadow-sm hover:shadow transition-all font-semibold" 
+                        style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem' }}
+                      >
+                        <CalendarIcon size={14} />
+                        <span>Book</span>
                       </button>
                     </Link>
                   </div>

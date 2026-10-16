@@ -37,11 +37,12 @@ router.get('/:id', async (req, res) => {
 // @access  Public
 router.put('/:id', async (req, res) => {
   try {
-    const { name, title, company, hourlyRate, bio, skills, availabilitySlots } = req.body;
+    const { name, title, company, domain, hourlyRate, bio, skills, availabilitySlots } = req.body;
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (title !== undefined) updateData.title = title;
     if (company !== undefined) updateData.company = company;
+    if (domain !== undefined) updateData.domain = domain;
     if (hourlyRate !== undefined) updateData.hourlyRate = Number(hourlyRate);
     if (bio !== undefined) updateData.bio = bio;
     if (skills !== undefined) updateData.skills = skills;
