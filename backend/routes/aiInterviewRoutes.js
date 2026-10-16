@@ -445,6 +445,13 @@ router.post('/evaluate', async (req, res) => {
       });
       savedInterview = await interview.save();
 
+      const formattedQAList = (evaluation.qaPairs || qaPairs || []).map(item => ({
+        question: item.question,
+        candidateAnswer: item.candidateAnswer,
+        feedback: item.critique || item.feedback || 'Evaluated for technical depth and clarity.',
+        score: item.score || 85
+      }));
+
       const feedback = new Feedback({
         interviewId: savedInterview._id,
         candidateId,
@@ -453,6 +460,7 @@ router.post('/evaluate', async (req, res) => {
         technicalScore: evaluation.technicalScore,
         communicationScore: evaluation.communicationScore,
         relevanceScore: evaluation.relevanceScore,
+        qaList: formattedQAList,
         strengths: evaluation.strengths,
         improvements: evaluation.improvements,
         suggestedTopics: evaluation.suggestedTopics,

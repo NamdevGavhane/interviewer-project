@@ -35,7 +35,53 @@ const getDefaultQAList = (topic = '') => {
     ];
   }
 
-  // Default: MERN / Full Stack / Frontend & Backend Engineering
+  if (lowerTopic.includes('system design') || lowerTopic.includes('cloud') || lowerTopic.includes('devops') || lowerTopic.includes('microservice')) {
+    return [
+      {
+        question: 'How do you design a high-throughput distributed rate limiter with strict SLA requirements?',
+        candidateAnswer: 'I utilize a token-bucket or sliding-window counter algorithm backed by Redis clusters using Lua scripts for atomic increments. For fallback and resilience, local in-memory token buckets handle network partitions.',
+        feedback: 'Solid architectural grasp of distributed synchronization, Redis Lua atomicity, and partition resilience.',
+        score: 90
+      },
+      {
+        question: 'How do you address database bottlenecks in write-heavy systems with millions of daily transactions?',
+        candidateAnswer: 'I introduce write-behind caching via Kafka message queues, shard databases based on hash-partitioned tenant keys, and separate read replicas using CQRS patterns.',
+        feedback: 'Great explanation of decoupling write spikes with asynchronous event streaming and sharding.',
+        score: 88
+      },
+      {
+        question: 'Explain your approach to ensuring data consistency across multiple microservices without 2-phase commit.',
+        candidateAnswer: 'I implement the Saga pattern with choreographed or orchestrated events and idempotent compensating transactions. Outbox patterns ensure database commits and message publication remain atomic.',
+        feedback: 'In-depth understanding of transactional outbox pattern and event-driven eventual consistency.',
+        score: 91
+      }
+    ];
+  }
+
+  if (lowerTopic.includes('frontend') || lowerTopic.includes('react') || lowerTopic.includes('next')) {
+    return [
+      {
+        question: 'How does React manage virtual DOM diffing, reconciler fibers, and concurrent batching?',
+        candidateAnswer: 'React Fiber splits rendering into interruptible work units categorized by priority lanes. In concurrent mode, React can pause low-priority diffing to handle user clicks, committing completed work in a synchronous DOM phase.',
+        feedback: 'Thorough conceptual understanding of Fiber architecture, priority lanes, and atomic commit.',
+        score: 90
+      },
+      {
+        question: 'What strategies do you adopt for optimal Core Web Vitals (LCP, INP, CLS) in large frontend applications?',
+        candidateAnswer: 'I implement route-level code splitting, prioritize critical CSS, preload hero images with modern formats (AVIF/WebP), minimize main-thread blocking tasks via web workers, and reserve layout dimensions to avoid CLS.',
+        feedback: 'Accurate and practical application of web performance metrics and optimization strategies.',
+        score: 88
+      },
+      {
+        question: 'Explain state synchronization, caching, and optimistic updates across complex component trees.',
+        candidateAnswer: 'I use TanStack Query or SWR for server cache invalidation and mutation rollbacks. For global client state, I leverage Zustand or Redux Toolkit with normalized slices to prevent unnecessary re-renders.',
+        feedback: 'Clear separation of server state versus client state and optimistic UI paradigms.',
+        score: 89
+      }
+    ];
+  }
+
+  // Default: Full Stack / MERN / General Software Engineering
   return [
     {
       question: 'How does the React Fiber reconciler handle concurrent rendering, interrupts, and DOM updates?',
@@ -90,7 +136,9 @@ router.post('/', async (req, res) => {
 
     // Retrieve interview to inspect topic for defaults
     const interview = await Interview.findById(interviewId);
-    const defaultQA = getDefaultQAList(interview?.topic);
+    const defaultQA = (interview?.questions && interview.questions.length > 0)
+      ? interview.questions
+      : getDefaultQAList(interview?.topic);
 
     // Check if feedback already exists
     let feedback = await Feedback.findOne({ interviewId });
@@ -128,8 +176,13 @@ router.post('/', async (req, res) => {
       await feedback.save();
     }
 
-    // Mark interview as completed
-    await Interview.findByIdAndUpdate(interviewId, { status: 'completed' });
+    // Mark interview as completed and sync questions into Interview collection
+    const updateFields = { status: 'completed' };
+    const finalQAList = (qaList && Array.isArray(qaList) && qaList.length > 0) ? qaList : feedback.qaList;
+    if (finalQAList && finalQAList.length > 0) {
+      updateFields.questions = finalQAList;
+    }
+    await Interview.findByIdAndUpdate(interviewId, { $set: updateFields });
 
     const populated = await Feedback.findById(feedback._id)
       .populate('candidateId', 'name email avatar')
@@ -141,6 +194,8 @@ router.post('/', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+
 
 // @route   GET /api/feedbacks/interview/:interviewId
 // @desc    Get feedback report for a specific interview
@@ -159,16 +214,19 @@ router.get('/interview/:interviewId', async (req, res) => {
         .populate('interviewerId', 'name email avatar title company');
 
       if (interview) {
-        const defaultQA = getDefaultQAList(interview.topic);
+        const qaToUse = (interview.questions && interview.questions.length > 0)
+          ? interview.questions
+          : getDefaultQAList(interview.topic);
+
         const newFeedback = new Feedback({
           interviewId: interview._id,
           candidateId: interview.candidateId._id,
           interviewerId: interview.interviewerId._id,
-          overallScore: 82,
-          technicalScore: 85,
-          communicationScore: 80,
-          relevanceScore: 80,
-          qaList: defaultQA,
+          overallScore: 85,
+          technicalScore: 88,
+          communicationScore: 82,
+          relevanceScore: 85,
+          qaList: qaToUse,
           strengths: [
             'Clear communication and structured technical explanations',
             'Solid comprehension of core architectural principles',
@@ -178,7 +236,7 @@ router.get('/interview/:interviewId', async (req, res) => {
             'Deepen edge case handling in high-concurrency scenarios',
             'Adopt STAR method for system architecture trade-offs'
           ],
-          suggestedTopics: ['Distributed Caching & Redis', 'React 19 & Fullstack State Synchronization'],
+          suggestedTopics: [interview.topic || 'System Design', 'State Synchronization'],
           detailedNotes: `Candidate demonstrated solid competence during the mock evaluation for ${interview.topic}. Clear aptitude shown with targeted areas highlighted for FAANG-level loops.`
         });
         await newFeedback.save();
@@ -190,11 +248,17 @@ router.get('/interview/:interviewId', async (req, res) => {
       } else {
         return res.status(404).json({ message: 'No feedback report found for this interview.' });
       }
-    } else if (!feedback.qaList || feedback.qaList.length === 0) {
-      // Backfill Q&A if existing feedback had empty qaList
-      const topic = feedback.interviewId?.topic || '';
-      feedback.qaList = getDefaultQAList(topic);
-      await feedback.save();
+    } else {
+      // If interview has actual live recorded questions, sync them to feedback
+      const interview = await Interview.findById(req.params.interviewId);
+      if (interview && interview.questions && interview.questions.length > 0) {
+        feedback.qaList = interview.questions;
+        await feedback.save();
+      } else if (!feedback.qaList || feedback.qaList.length === 0) {
+        const topic = feedback.interviewId?.topic || '';
+        feedback.qaList = getDefaultQAList(topic);
+        await feedback.save();
+      }
     }
 
     res.json(feedback);

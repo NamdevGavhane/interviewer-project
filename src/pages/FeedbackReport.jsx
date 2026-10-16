@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Building2,
   Check,
-  Award
+  Award,
+  MessageSquare
 } from 'lucide-react';
 import { Link, useSearchParams, useParams } from 'react-router-dom';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
@@ -30,6 +31,9 @@ const FeedbackReport = () => {
   const justCompleted = searchParams.get('completed') === 'true';
 
   const [feedback, setFeedback] = useState(null);
+  const [interview, setInterview] = useState(null);
+  const [transcript, setTranscript] = useState([]);
+  const [showTranscript, setShowTranscript] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -90,6 +94,16 @@ const FeedbackReport = () => {
 
   const currentUserId = localStorage.getItem('userId');
   const currentUserRole = localStorage.getItem('userRole') || 'candidate';
+  const roleQuery = searchParams.get('role');
+
+  const isInterviewerOrEvaluator = 
+    currentUserRole === 'professional' ||
+    currentUserRole === 'interviewer' ||
+    roleQuery === 'interviewer' ||
+    roleQuery === 'professional' ||
+    (feedback?.interviewerId?._id && String(feedback.interviewerId._id) === String(currentUserId)) ||
+    (interview?.interviewerId?._id && String(interview.interviewerId._id) === String(currentUserId)) ||
+    justCompleted;
 
   const fetchFeedback = async () => {
     try {
@@ -101,41 +115,63 @@ const FeedbackReport = () => {
         url = `${API_BASE_URL}/api/feedbacks/candidate/${currentUserId}`;
       }
 
-      if (!url) {
-        setLoading(false);
-        return;
+      // Fetch feedback and interview session data in parallel
+      const [feedbackRes, interviewRes] = await Promise.all([
+        url ? fetch(url).catch(() => null) : Promise.resolve(null),
+        interviewId ? fetch(`${API_BASE_URL}/api/interviews/${interviewId}`).catch(() => null) : Promise.resolve(null)
+      ]);
+
+      let singleFeedback = null;
+      if (feedbackRes && feedbackRes.ok) {
+        const data = await feedbackRes.json();
+        singleFeedback = Array.isArray(data) ? data[0] : data;
       }
 
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        // If array returned (candidate feedbacks), pick first/latest
-        const singleFeedback = Array.isArray(data) ? data[0] : data;
-        setFeedback(singleFeedback);
-        if (singleFeedback) {
-          setFormData(prev => ({
-            ...prev,
-            overallScore: singleFeedback.overallScore ?? 82,
-            technicalScore: singleFeedback.technicalScore ?? 85,
-            communicationScore: singleFeedback.communicationScore ?? 80,
-            relevanceScore: singleFeedback.relevanceScore ?? 80,
-            qaList: (singleFeedback.qaList && singleFeedback.qaList.length > 0) ? singleFeedback.qaList : prev.qaList,
-            strengths: singleFeedback.strengths || prev.strengths,
-            improvements: singleFeedback.improvements || prev.improvements,
-            suggestedTopics: singleFeedback.suggestedTopics || prev.suggestedTopics,
-            detailedNotes: singleFeedback.detailedNotes || prev.detailedNotes,
-            strengthInput: '',
-            improvementInput: '',
-            topicInput: '',
-            newQuestion: '',
-            newAnswer: '',
-            newCritique: '',
-            newScore: 85
-          }));
-        }
+      let interviewData = null;
+      if (interviewRes && interviewRes.ok) {
+        interviewData = await interviewRes.json();
+      }
+
+      setFeedback(singleFeedback);
+      setInterview(interviewData);
+
+      if (interviewData?.transcript && Array.isArray(interviewData.transcript)) {
+        setTranscript(interviewData.transcript);
+      }
+
+      // Prioritize live recorded questions from interview session
+      const liveQuestions = (interviewData?.questions && Array.isArray(interviewData.questions) && interviewData.questions.length > 0)
+        ? interviewData.questions
+        : null;
+
+      const feedbackQuestions = (singleFeedback?.qaList && Array.isArray(singleFeedback.qaList) && singleFeedback.qaList.length > 0)
+        ? singleFeedback.qaList
+        : null;
+
+      const activeQuestions = liveQuestions || feedbackQuestions;
+
+      if (singleFeedback || interviewData) {
+        setFormData(prev => ({
+          ...prev,
+          overallScore: singleFeedback?.overallScore ?? 82,
+          technicalScore: singleFeedback?.technicalScore ?? 85,
+          communicationScore: singleFeedback?.communicationScore ?? 80,
+          relevanceScore: singleFeedback?.relevanceScore ?? 80,
+          qaList: (activeQuestions && activeQuestions.length > 0) ? activeQuestions : prev.qaList,
+          strengths: singleFeedback?.strengths || prev.strengths,
+          improvements: singleFeedback?.improvements || prev.improvements,
+          suggestedTopics: singleFeedback?.suggestedTopics || (interviewData?.topic ? [interviewData.topic] : prev.suggestedTopics),
+          detailedNotes: singleFeedback?.detailedNotes || (interviewData?.topic ? `Mock interview conducted for ${interviewData.topic}.` : prev.detailedNotes),
+          strengthInput: '',
+          improvementInput: '',
+          topicInput: '',
+          newQuestion: '',
+          newAnswer: '',
+          newCritique: '',
+          newScore: 85
+        }));
       } else {
-        // If not found yet and is interviewer, open creation form
-        if (currentUserRole === 'professional') {
+        if (currentUserRole === 'professional' || currentUserRole === 'interviewer' || justCompleted) {
           setShowForm(true);
         }
       }
@@ -196,7 +232,7 @@ const FeedbackReport = () => {
           question: prev.newQuestion.trim(),
           candidateAnswer: prev.newAnswer.trim() || 'Candidate provided detailed verbal explanation.',
           feedback: prev.newCritique.trim() || 'Evaluated for conceptual accuracy and clarity.',
-          score: Number(prev.newScore) || 80
+          score: Number(prev.newScore) || 85
         }
       ],
       newQuestion: '',
@@ -204,6 +240,48 @@ const FeedbackReport = () => {
       newCritique: '',
       newScore: 85
     }));
+  };
+
+  const handleEditQA = (idx) => {
+    const item = formData.qaList[idx];
+    setFormData(prev => ({
+      ...prev,
+      newQuestion: item.question,
+      newAnswer: item.candidateAnswer,
+      newCritique: item.feedback,
+      newScore: item.score || 85,
+      qaList: prev.qaList.filter((_, i) => i !== idx)
+    }));
+  };
+
+  const handleClearQA = () => {
+    if (window.confirm('Clear all questions to record the actual questions asked?')) {
+      setFormData(prev => ({ ...prev, qaList: [] }));
+    }
+  };
+
+  const handleLoadDomainPreset = (domain) => {
+    if (domain === 'mern') {
+      setFormData(prev => ({
+        ...prev,
+        newQuestion: 'How does the React Fiber reconciler handle concurrent rendering and interrupts?'
+      }));
+    } else if (domain === 'system_design') {
+      setFormData(prev => ({
+        ...prev,
+        newQuestion: 'How do you design a high-throughput distributed rate limiter with Redis and sliding windows?'
+      }));
+    } else if (domain === 'dsa') {
+      setFormData(prev => ({
+        ...prev,
+        newQuestion: 'Explain the algorithm and time/space complexity to detect cycles in a directed graph.'
+      }));
+    } else if (domain === 'ai') {
+      setFormData(prev => ({
+        ...prev,
+        newQuestion: 'Explain the bias-variance tradeoff and methods you use to avoid overfitting in production models.'
+      }));
+    }
   };
 
   const handleRemoveQA = (idx) => {
@@ -227,8 +305,8 @@ const FeedbackReport = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interviewId,
-          candidateId: feedback?.candidateId?._id || currentUserId,
-          interviewerId: feedback?.interviewerId?._id || currentUserId,
+          candidateId: feedback?.candidateId?._id || interview?.candidateId?._id || currentUserId,
+          interviewerId: feedback?.interviewerId?._id || interview?.interviewerId?._id || currentUserId,
           overallScore: Number(formData.overallScore),
           technicalScore: Number(formData.technicalScore),
           communicationScore: Number(formData.communicationScore),
@@ -241,6 +319,13 @@ const FeedbackReport = () => {
         })
       });
 
+      // Synchronize directly into Interview.questions as well
+      await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions: formData.qaList })
+      }).catch(err => console.warn('Questions sync notice:', err));
+
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.message || 'Failed to save evaluation');
@@ -248,8 +333,9 @@ const FeedbackReport = () => {
 
       const updated = await res.json();
       setFeedback(updated);
+      setInterview(prev => prev ? ({ ...prev, questions: formData.qaList }) : prev);
       setShowForm(false);
-      alert('Evaluation and Q&A report saved successfully to database!');
+      alert('Evaluation and actual Q&A report saved successfully to database!');
     } catch (err) {
       alert(err.message);
     } finally {
@@ -308,12 +394,17 @@ const FeedbackReport = () => {
   const strengthsList = (feedback && feedback.strengths?.length > 0) ? feedback.strengths : formData.strengths;
   const improvementsList = (feedback && feedback.improvements?.length > 0) ? feedback.improvements : formData.improvements;
   const topicsList = (feedback && feedback.suggestedTopics?.length > 0) ? feedback.suggestedTopics : formData.suggestedTopics;
-  const qaListToDisplay = (feedback && feedback.qaList?.length > 0) ? feedback.qaList : formData.qaList;
-  const interviewerName = feedback?.interviewerId?.name || 'HR & Senior Interviewer';
-  const interviewerTitle = feedback?.interviewerId?.title || 'Senior Technical Lead & HR Evaluator';
-  const interviewerCompany = feedback?.interviewerId?.company || 'InterviewPro Expert';
-  const candidateName = feedback?.candidateId?.name || localStorage.getItem('userName') || 'Candidate';
-  const topicName = feedback?.interviewId?.topic || 'Mock Technical & HR Interview';
+  
+  // Live questions priority: interview.questions -> feedback.qaList -> formData.qaList
+  const liveQuestionsFromInterview = (interview?.questions && Array.isArray(interview.questions) && interview.questions.length > 0) ? interview.questions : null;
+  const feedbackQuestions = (feedback?.qaList && Array.isArray(feedback.qaList) && feedback.qaList.length > 0) ? feedback.qaList : null;
+  const qaListToDisplay = liveQuestionsFromInterview || feedbackQuestions || formData.qaList;
+
+  const interviewerName = feedback?.interviewerId?.name || interview?.interviewerId?.name || 'Shushant Gaikwad';
+  const interviewerTitle = feedback?.interviewerId?.title || interview?.interviewerId?.title || 'Senior Technical Lead & HR Evaluator';
+  const interviewerCompany = feedback?.interviewerId?.company || interview?.interviewerId?.company || 'Cognizant';
+  const candidateName = feedback?.candidateId?.name || interview?.candidateId?.name || localStorage.getItem('userName') || 'Candidate';
+  const topicName = feedback?.interviewId?.topic || interview?.topic || 'Mock Technical & HR Interview';
 
   return (
     <div>
@@ -326,7 +417,7 @@ const FeedbackReport = () => {
         <div className="flex items-center gap-2">
           {/* Prominent PDF Download Button */}
           <button 
-            type="button"
+            type="button" 
             className="btn btn-primary flex items-center gap-2 shadow-sm"
             onClick={handleDownloadPDF}
             disabled={downloading}
@@ -335,9 +426,9 @@ const FeedbackReport = () => {
             <span>{downloading ? 'Generating PDF...' : 'Download PDF Report'}</span>
           </button>
 
-          {currentUserRole === 'professional' && (
+          {isInterviewerOrEvaluator && (
             <button 
-              type="button"
+              type="button" 
               className="btn btn-outline flex items-center gap-2"
               onClick={() => setShowForm(!showForm)}
             >
@@ -452,35 +543,78 @@ const FeedbackReport = () => {
 
             {/* Questions Asked by HR & Candidate Answers Editor */}
             <div className="p-4 rounded-xl border bg-white" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex justify-between items-center mb-3">
-                <label className="font-bold text-sm block">
-                  Questions Asked by HR & Candidate Answers ({formData.qaList.length})
-                </label>
-                <span className="text-xs text-muted">Will appear in PDF report</span>
+              <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                <div>
+                  <label className="font-bold text-sm block">
+                    Questions Asked by HR & Candidate Answers ({formData.qaList.length})
+                  </label>
+                  <span className="text-xs text-muted">Directly synced to evaluation report and PDF</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {formData.qaList.length > 0 && (
+                    <button 
+                      type="button" 
+                      onClick={handleClearQA}
+                      className="btn btn-outline text-xs text-danger py-1 px-2.5 flex items-center gap-1"
+                      style={{ borderColor: 'var(--danger)' }}
+                      title="Clear template questions to add actual questions asked"
+                    >
+                      <Trash2 size={13} /> Clear All
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Topic Preset Chips */}
+              <div className="flex items-center gap-1.5 mb-3 flex-wrap p-2 rounded-lg bg-gray-50 border" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-[11px] font-semibold text-gray-500">Quick Topic Presets:</span>
+                <button type="button" onClick={() => handleLoadDomainPreset('mern')} className="text-[11px] px-2 py-0.5 rounded border bg-white hover:bg-blue-50 text-gray-700">React / MERN</button>
+                <button type="button" onClick={() => handleLoadDomainPreset('system_design')} className="text-[11px] px-2 py-0.5 rounded border bg-white hover:bg-blue-50 text-gray-700">System Design</button>
+                <button type="button" onClick={() => handleLoadDomainPreset('dsa')} className="text-[11px] px-2 py-0.5 rounded border bg-white hover:bg-blue-50 text-gray-700">DSA</button>
+                <button type="button" onClick={() => handleLoadDomainPreset('ai')} className="text-[11px] px-2 py-0.5 rounded border bg-white hover:bg-blue-50 text-gray-700">AI / ML</button>
               </div>
 
               {/* List of currently recorded Q&As */}
               <div className="flex flex-col gap-3 mb-4">
-                {formData.qaList.map((qa, idx) => (
-                  <div key={idx} className="p-3 bg-gray-50 rounded-lg border flex flex-col gap-1 text-xs" style={{ borderColor: 'var(--border)' }}>
-                    <div className="flex justify-between items-start font-bold">
-                      <span className="text-primary">Q{idx + 1} (HR): {qa.question}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="badge badge-info text-[10px]">{qa.score || 85}%</span>
-                        <button type="button" onClick={() => handleRemoveQA(idx)} className="text-danger p-0.5">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="text-gray-700 italic">Ans: "{qa.candidateAnswer}"</div>
-                    {qa.feedback && <div className="text-muted text-[11px]">Critique: {qa.feedback}</div>}
+                {formData.qaList.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-muted border border-dashed rounded-lg">
+                    No questions in list. Use the form below to add questions actually asked by the interviewer and candidate answers.
                   </div>
-                ))}
+                ) : (
+                  formData.qaList.map((qa, idx) => (
+                    <div key={idx} className="p-3 bg-gray-50 rounded-lg border flex flex-col gap-1 text-xs" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex justify-between items-start font-bold">
+                        <span className="text-primary">Q{idx + 1} (HR): {qa.question}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="badge badge-info text-[10px]">{qa.score || 85}%</span>
+                          <button 
+                            type="button" 
+                            onClick={() => handleEditQA(idx)} 
+                            className="text-primary p-0.5 hover:text-blue-700" 
+                            title="Edit this question"
+                          >
+                            <Edit3 size={13} />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => handleRemoveQA(idx)} 
+                            className="text-danger p-0.5 hover:text-red-700" 
+                            title="Delete this question"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-gray-700 italic">Ans: "{qa.candidateAnswer}"</div>
+                      {qa.feedback && <div className="text-muted text-[11px]">Critique: {qa.feedback}</div>}
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* Add New Question & Answer */}
               <div className="p-3 bg-blue-50/50 rounded-lg border flex flex-col gap-3" style={{ borderColor: '#dbeafe' }}>
-                <span className="font-semibold text-xs text-primary">+ Add New HR Question & Candidate Response:</span>
+                <span className="font-semibold text-xs text-primary">+ Add / Edit Question Asked by HR & Candidate Response:</span>
                 <input 
                   type="text" 
                   className="input-field text-xs" 
@@ -663,7 +797,7 @@ const FeedbackReport = () => {
 
       {/* CORE FEATURE: Questions Asked by HR & Candidate Answers */}
       <div className="card mb-6">
-        <div className="flex justify-between items-center mb-5 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex justify-between items-center mb-5 border-b pb-4 flex-wrap gap-3" style={{ borderColor: 'var(--border)' }}>
           <div>
             <h3 className="font-bold text-lg flex items-center gap-2">
               <FileText size={20} className="text-primary" />
@@ -673,47 +807,128 @@ const FeedbackReport = () => {
               Live Q&A transcript and individual answer scores assessed by the interviewer.
             </p>
           </div>
-          <span className="badge badge-info text-xs px-2.5 py-1">
-            {qaListToDisplay.length} Questions Evaluated
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {liveQuestionsFromInterview ? (
+              <span className="badge badge-success text-xs font-semibold px-2.5 py-1">
+                ✓ {qaListToDisplay.length} Live Session Questions
+              </span>
+            ) : (
+              <span className="badge badge-info text-xs px-2.5 py-1">
+                {qaListToDisplay.length} Questions Evaluated
+              </span>
+            )}
+
+            {transcript && transcript.length > 0 && (
+              <button 
+                type="button" 
+                onClick={() => setShowTranscript(p => !p)}
+                className="btn btn-outline text-xs py-1 px-2.5 flex items-center gap-1"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <MessageSquare size={13} />
+                <span>{showTranscript ? 'Hide Chat' : `Chat Transcript (${transcript.length})`}</span>
+              </button>
+            )}
+
+            {isInterviewerOrEvaluator && (
+              <button 
+                type="button" 
+                onClick={() => setShowForm(true)}
+                className="btn btn-outline text-xs py-1 px-3 flex items-center gap-1.5"
+                style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+              >
+                <Edit3 size={13} />
+                <span>Edit / Record Actual Q&A</span>
+              </button>
+            )}
+          </div>
         </div>
 
+        {/* Expandable Chat Transcript from Video Session */}
+        {showTranscript && transcript && transcript.length > 0 && (
+          <div className="p-3 mb-4 rounded-xl border bg-gray-50 flex flex-col gap-2 text-xs" style={{ borderColor: 'var(--border)' }}>
+            <div className="font-bold text-gray-700 flex items-center gap-1.5">
+              <MessageSquare size={14} className="text-primary" />
+              Live In-Call Chat Transcript
+            </div>
+            <div className="max-h-48 overflow-y-auto flex flex-col gap-1.5">
+              {transcript.map((t, idx) => (
+                <div key={idx} className="p-2 rounded bg-white border" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex justify-between text-muted text-[10px] mb-0.5">
+                    <strong className="text-gray-700">{t.sender}</strong>
+                    <span>{t.time}</span>
+                  </div>
+                  <div className="text-gray-800">{t.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-4">
-          {qaListToDisplay.map((item, idx) => (
-            <div 
-              key={idx} 
-              className="p-4 rounded-xl border transition-all"
-              style={{ backgroundColor: '#ffffff', borderColor: 'var(--border)' }}
-            >
-              {/* Question Header */}
-              <div className="flex justify-between items-start gap-4 mb-2">
-                <div className="flex items-start gap-2.5">
-                  <span 
-                    style={{ 
-                      backgroundColor: 'var(--primary)', 
-                      color: 'white', 
-                      fontSize: '0.75rem', 
-                      fontWeight: 'bold', 
-                      padding: '0.2rem 0.55rem', 
-                      borderRadius: '6px' 
-                    }}
-                  >
-                    Q{idx + 1}
-                  </span>
-                  <div>
-                    <span className="text-xs uppercase font-bold text-primary block tracking-wider">
-                      Question Asked by HR:
+          {qaListToDisplay.length === 0 ? (
+            <div className="p-6 text-center text-muted border border-dashed rounded-xl">
+              No questions recorded yet for this session.
+              {isInterviewerOrEvaluator && (
+                <div className="mt-2">
+                  <button type="button" onClick={() => setShowForm(true)} className="btn btn-primary text-xs py-1.5 px-3">
+                    + Add Actual Questions Asked
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            qaListToDisplay.map((item, idx) => (
+              <div 
+                key={idx} 
+                className="p-4 rounded-xl border transition-all"
+                style={{ backgroundColor: '#ffffff', borderColor: 'var(--border)' }}
+              >
+                {/* Question Header */}
+                <div className="flex justify-between items-start gap-4 mb-2">
+                  <div className="flex items-start gap-2.5">
+                    <span 
+                      style={{ 
+                        backgroundColor: 'var(--primary)', 
+                        color: 'white', 
+                        fontSize: '0.75rem', 
+                        fontWeight: 'bold', 
+                        padding: '0.2rem 0.55rem', 
+                        borderRadius: '6px' 
+                      }}
+                    >
+                      Q{idx + 1}
                     </span>
-                    <h4 className="font-semibold text-base mt-0.5" style={{ color: '#0f172a' }}>
-                      {item.question}
-                    </h4>
+                    <div>
+                      <span className="text-xs uppercase font-bold text-primary block tracking-wider">
+                        Question Asked by HR:
+                      </span>
+                      <h4 className="font-semibold text-base mt-0.5" style={{ color: '#0f172a' }}>
+                        {item.question}
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="badge badge-success text-xs font-semibold px-2 py-1">
+                      Score: {item.score || 85}%
+                    </span>
+                    {isInterviewerOrEvaluator && (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setShowForm(true);
+                          handleEditQA(idx);
+                        }}
+                        className="text-primary hover:text-blue-700 p-1"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        title="Edit this question"
+                      >
+                        <Edit3 size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                <span className="badge badge-success text-xs font-semibold px-2 py-1 flex-shrink-0">
-                  Score: {item.score || 85}%
-                </span>
-              </div>
 
               {/* Candidate Answer Box */}
               <div 
@@ -742,7 +957,7 @@ const FeedbackReport = () => {
                 </div>
               )}
             </div>
-          ))}
+          )))}
         </div>
       </div>
 

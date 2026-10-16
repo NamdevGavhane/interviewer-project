@@ -69,7 +69,22 @@ const interviewSchema = new mongoose.Schema({
   invoiceNumber: {
     type: String,
     default: '',
-  }
+  },
+  questions: [
+    {
+      question: { type: String, required: true },
+      candidateAnswer: { type: String, default: '' },
+      feedback: { type: String, default: '' },
+      score: { type: Number, default: 85 }
+    }
+  ],
+  transcript: [
+    {
+      sender: { type: String },
+      text: { type: String },
+      time: { type: String }
+    }
+  ]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Interview', interviewSchema);

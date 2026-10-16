@@ -15,7 +15,12 @@ import {
   Check,
   RefreshCw,
   Radio,
-  Users
+  Users,
+  ListChecks,
+  Plus,
+  Trash2,
+  Sparkles,
+  CheckCircle2
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Peer from 'peerjs';
@@ -74,6 +79,15 @@ const VideoRoom = () => {
   ]);
   const [chatInput, setChatInput] = useState('');
 
+  // Live Q&A and Evaluation States
+  const [drawerTab, setDrawerTab] = useState('chat'); // 'chat' | 'questions'
+  const [liveQuestions, setLiveQuestions] = useState([]);
+  const [newQuestionText, setNewQuestionText] = useState('');
+  const [newCandidateAnswer, setNewCandidateAnswer] = useState('');
+  const [newQuestionCritique, setNewQuestionCritique] = useState('');
+  const [newQuestionScore, setNewQuestionScore] = useState(85);
+  const [isSavingQuestion, setIsSavingQuestion] = useState(false);
+
   // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -116,6 +130,9 @@ const VideoRoom = () => {
         .then(res => res.json())
         .then(data => {
           setInterview(data);
+          if (data && data.questions && Array.isArray(data.questions) && data.questions.length > 0) {
+            setLiveQuestions(data.questions);
+          }
           if (loggedUserId && data) {
             const interviewerUserId = String(data.interviewerId?._id || data.interviewerId || '');
             const candidateUserId = String(data.candidateId?._id || data.candidateId || '');
@@ -305,6 +322,10 @@ const VideoRoom = () => {
       if (data?.type === 'media_state') {
         if (typeof data.isMicOn === 'boolean') setPartnerMicOn(data.isMicOn);
         if (typeof data.isVideoOn === 'boolean') setPartnerVideoOn(data.isVideoOn);
+      } else if (data?.type === 'qa_update') {
+        if (Array.isArray(data.questions)) {
+          setLiveQuestions(data.questions);
+        }
       } else if (data && data.text) {
         setMessages(prev => [...prev, data]);
       }
@@ -678,6 +699,105 @@ const VideoRoom = () => {
     }
   };
 
+  // Topic-specific question suggestions for interviewer
+  const getTopicQuestionSuggestions = () => {
+    const topic = (interview?.topic || '').toLowerCase();
+    if (topic.includes('ml') || topic.includes('ai') || topic.includes('python')) {
+      return [
+        'Explain the bias-variance tradeoff and methods you use to avoid overfitting.',
+        'How does a RAG architecture work with vector embeddings and vector DBs?',
+        'Describe methods to optimize model inference latency in production.',
+        'How do you detect and handle data drift or model degradation in production?'
+      ];
+    }
+    if (topic.includes('system') || topic.includes('cloud') || topic.includes('microservice')) {
+      return [
+        'How do you design a high-throughput distributed rate limiter with Redis?',
+        'Explain CQRS and event sourcing patterns in distributed microservices.',
+        'How do you handle distributed transactions and eventual consistency (Saga)?',
+        'Describe your caching strategy with Redis/CDN and cache invalidation.'
+      ];
+    }
+    // Default: Frontend, MERN, Full Stack
+    return [
+      'How does the React Fiber reconciler handle concurrent rendering and interrupts?',
+      'Explain your strategy for state management, caching, and race condition prevention.',
+      'How do you design scalable MongoDB schemas and compound indexes (ESR rule)?',
+      'Can you walk through how you ensure security in Node.js REST APIs (JWT, CSRF, rate limiting)?'
+    ];
+  };
+
+  // Add / Log Live Question Asked by HR during session
+  const handleAddLiveQuestion = async (e) => {
+    if (e) e.preventDefault();
+    if (!newQuestionText.trim()) {
+      alert('Please enter a question asked to the candidate.');
+      return;
+    }
+
+    const newQA = {
+      question: newQuestionText.trim(),
+      candidateAnswer: newCandidateAnswer.trim() || 'Verbal explanation provided by candidate during live session.',
+      feedback: newQuestionCritique.trim() || 'Assessed for technical depth, accuracy, and communication.',
+      score: Number(newQuestionScore) || 85
+    };
+
+    const updated = [...liveQuestions, newQA];
+    setLiveQuestions(updated);
+    setNewQuestionText('');
+    setNewCandidateAnswer('');
+    setNewQuestionCritique('');
+    setNewQuestionScore(85);
+
+    if (interviewId) {
+      try {
+        setIsSavingQuestion(true);
+        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questions: updated, transcript: messages })
+        });
+      } catch (err) {
+        console.warn('Error saving question:', err);
+      } finally {
+        setIsSavingQuestion(false);
+      }
+    }
+
+    // Sync to partner via WebRTC data channel
+    if (dataConnRef.current && dataConnRef.current.open) {
+      dataConnRef.current.send({
+        type: 'qa_update',
+        questions: updated
+      });
+    }
+  };
+
+  // Delete a live question
+  const handleDeleteLiveQuestion = async (idx) => {
+    const updated = liveQuestions.filter((_, i) => i !== idx);
+    setLiveQuestions(updated);
+
+    if (interviewId) {
+      try {
+        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questions: updated, transcript: messages })
+        });
+      } catch (err) {
+        console.warn('Error syncing deleted question:', err);
+      }
+    }
+
+    if (dataConnRef.current && dataConnRef.current.open) {
+      dataConnRef.current.send({
+        type: 'qa_update',
+        questions: updated
+      });
+    }
+  };
+
   // End Call & Complete Session
   const handleEndCall = async () => {
     const confirmEnd = window.confirm('Are you sure you want to end this interview session?');
@@ -701,10 +821,20 @@ const VideoRoom = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'completed' })
         });
+
+        // Always save live questions and chat transcript to database
+        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questions: liveQuestions,
+            transcript: messages
+          })
+        });
       } catch (err) {
         console.error('Error marking interview complete:', err);
       }
-      navigate(`/feedback?interviewId=${interviewId}&completed=true`);
+      navigate(`/feedback?interviewId=${interviewId}&completed=true&role=${currentRole}`);
     } else {
       navigate('/interviews');
     }
@@ -1266,70 +1396,280 @@ const VideoRoom = () => {
         </div>
       </main>
 
-      {/* Dynamic In-Call Chat Drawer */}
+      {/* Dynamic In-Call Drawer: Chat & Live Q&A */}
       {isChatOpen && (
         <aside 
           className="flex flex-col border-l"
           style={{ 
-            width: '340px', 
+            width: '380px', 
             height: '100%',
             flexShrink: 0,
-              backgroundColor: '#1e293b', 
-              borderColor: 'rgba(255,255,255,0.1)' 
-            }}
-          >
-            <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
-              <div className="flex items-center gap-2">
-                <MessageSquare size={18} className="text-primary" />
-                <h3 className="font-bold text-sm text-white">Live In-Call Chat</h3>
+            backgroundColor: '#0f172a', 
+            borderColor: 'rgba(255,255,255,0.1)' 
+          }}
+        >
+          {/* Drawer Top Navigation Tabs */}
+          <div className="flex border-b" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#1e293b' }}>
+            <button
+              type="button"
+              onClick={() => setDrawerTab('chat')}
+              className="flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              style={{
+                backgroundColor: drawerTab === 'chat' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                color: drawerTab === 'chat' ? '#38bdf8' : '#94a3b8',
+                borderBottom: drawerTab === 'chat' ? '2px solid #38bdf8' : '2px solid transparent',
+                borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer'
+              }}
+            >
+              <MessageSquare size={15} />
+              <span>In-Call Chat ({messages.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrawerTab('questions')}
+              className="flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              style={{
+                backgroundColor: drawerTab === 'questions' ? 'rgba(255,255,255,0.06)' : 'transparent',
+                color: drawerTab === 'questions' ? '#38bdf8' : '#94a3b8',
+                borderBottom: drawerTab === 'questions' ? '2px solid #38bdf8' : '2px solid transparent',
+                borderTop: 'none', borderLeft: 'none', borderRight: 'none', cursor: 'pointer'
+              }}
+            >
+              <ListChecks size={15} />
+              <span>Live Q&A ({liveQuestions.length})</span>
+            </button>
+            <button 
+              onClick={() => setIsChatOpen(false)} 
+              className="px-3 text-gray-400 hover:text-white" 
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+              title="Close Drawer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* TAB 1: Chat Content */}
+          {drawerTab === 'chat' && (
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+              <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
+                {messages.map((m, idx) => (
+                  <div key={idx} className="flex flex-col gap-1">
+                    <div className="flex justify-between items-center text-xs text-gray-400">
+                      <span className="font-semibold text-gray-200">{m.sender}</span>
+                      <span>{m.time}</span>
+                    </div>
+                    <div 
+                      className="p-3 rounded-xl text-sm"
+                      style={{ 
+                        backgroundColor: m.sender.includes('You') ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
+                        color: 'white',
+                        maxWidth: '90%',
+                        alignSelf: m.sender.includes('You') ? 'flex-end' : 'flex-start'
+                      }}
+                    >
+                      {m.text}
+                    </div>
+                  </div>
+                ))}
+                <div ref={chatBottomRef} />
               </div>
-              <button onClick={() => setIsChatOpen(false)} className="text-gray-400 hover:text-white" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
-              {messages.map((m, idx) => (
-                <div key={idx} className="flex flex-col gap-1">
-                  <div className="flex justify-between items-center text-xs text-gray-400">
-                    <span className="font-semibold text-gray-200">{m.sender}</span>
-                    <span>{m.time}</span>
-                  </div>
-                  <div 
-                    className="p-3 rounded-xl text-sm"
-                    style={{ 
-                      backgroundColor: m.sender.includes('You') ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
-                      color: 'white',
-                      maxWidth: '90%',
-                      alignSelf: m.sender.includes('You') ? 'flex-end' : 'flex-start'
-                    }}
-                  >
-                    {m.text}
-                  </div>
+              <form onSubmit={handleSendMessage} className="p-3 border-t flex gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#1e293b' }}>
+                <input 
+                  type="text" 
+                  placeholder="Type a message or code snippet..." 
+                  className="input-field flex-1"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)', fontSize: '0.85rem' }}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                />
+                <button type="submit" className="btn btn-primary" style={{ padding: '0.5rem 0.8rem' }}>
+                  <Send size={16} />
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2: Live Q&A Assessment Content */}
+          {drawerTab === 'questions' && (
+            <div className="flex-1 flex flex-col h-full overflow-y-auto p-4 gap-4">
+              {/* Header Info */}
+              <div className="p-3 rounded-lg border text-xs" style={{ backgroundColor: 'rgba(56, 189, 248, 0.08)', borderColor: 'rgba(56, 189, 248, 0.25)', color: '#bae6fd' }}>
+                <div className="font-bold flex items-center gap-1.5 mb-1 text-white">
+                  <ListChecks size={14} className="text-primary" />
+                  Live Q&A Transcript & Assessment
                 </div>
-              ))}
-              <div ref={chatBottomRef} />
-            </div>
+                <span>Questions and candidate answers logged here are automatically synced to the official Evaluation Report.</span>
+              </div>
 
-            <form onSubmit={handleSendMessage} className="p-3 border-t flex gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
-              <input 
-                type="text" 
-                placeholder="Type a message or code snippet..." 
-                className="input-field flex-1"
-                style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)', fontSize: '0.85rem' }}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-              />
-              <button type="submit" className="btn btn-primary" style={{ padding: '0.5rem 0.8rem' }}>
-                <Send size={16} />
-              </button>
-            </form>
-          </aside>
-        )}
+              {/* Interviewer Form to Log Question Asked & Candidate Answer */}
+              {isInterviewer ? (
+                <form onSubmit={handleAddLiveQuestion} className="p-3.5 rounded-xl border flex flex-col gap-3" style={{ backgroundColor: '#1e293b', borderColor: 'rgba(255,255,255,0.12)' }}>
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-xs text-white flex items-center gap-1">
+                      <Plus size={14} className="text-primary" /> Log Question Asked by You
+                    </span>
+                    <span className="text-[10px] text-gray-400">Score: {newQuestionScore}%</span>
+                  </div>
+
+                  {/* Quick Domain Suggestion Chips */}
+                  <div>
+                    <span className="text-[10px] text-gray-400 block mb-1">Suggested questions for this session:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {getTopicQuestionSuggestions().slice(0, 3).map((sugg, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setNewQuestionText(sugg)}
+                          className="text-[10px] px-2 py-0.5 rounded border text-left truncate max-w-full"
+                          style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.1)', color: '#94a3b8' }}
+                          title={sugg}
+                        >
+                          + {sugg}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Question Asked Input */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-300 block mb-1">Question Asked by Interviewer:</label>
+                    <input 
+                      type="text" 
+                      className="input-field text-xs w-full"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)' }}
+                      placeholder="e.g. How does React Fiber handle concurrent rendering?"
+                      value={newQuestionText}
+                      onChange={(e) => setNewQuestionText(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Candidate Answer Given */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-300 block mb-1">Candidate's Answer / Summary:</label>
+                    <textarea 
+                      className="input-field text-xs w-full"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)' }}
+                      rows={2}
+                      placeholder="Summarize key points answered by the candidate..."
+                      value={newCandidateAnswer}
+                      onChange={(e) => setNewCandidateAnswer(e.target.value)}
+                    />
+                  </div>
+
+                  {/* HR Feedback Critique */}
+                  <div>
+                    <label className="text-[11px] font-semibold text-gray-300 block mb-1">HR Critique / Feedback Note:</label>
+                    <input 
+                      type="text" 
+                      className="input-field text-xs w-full"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.3)', color: 'white', borderColor: 'rgba(255,255,255,0.2)' }}
+                      placeholder="e.g. In-depth understanding of Fiber architecture and state scheduling."
+                      value={newQuestionCritique}
+                      onChange={(e) => setNewQuestionCritique(e.target.value)}
+                    />
+                  </div>
+
+                  {/* Score Slider */}
+                  <div>
+                    <div className="flex justify-between items-center text-[11px] text-gray-300 mb-1">
+                      <span>Candidate Score on this Question:</span>
+                      <span className="font-bold text-success">{newQuestionScore}%</span>
+                    </div>
+                    <input 
+                      type="range" min="0" max="100" 
+                      className="w-full"
+                      value={newQuestionScore} 
+                      onChange={(e) => setNewQuestionScore(e.target.value)} 
+                    />
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary text-xs py-2 flex items-center justify-center gap-1.5"
+                    disabled={isSavingQuestion}
+                  >
+                    <Plus size={14} />
+                    <span>{isSavingQuestion ? 'Saving to Database...' : 'Log Question & Score'}</span>
+                  </button>
+                </form>
+              ) : (
+                <div className="p-3 rounded-xl border text-xs text-gray-300" style={{ backgroundColor: '#1e293b', borderColor: 'rgba(255,255,255,0.1)' }}>
+                  <span className="font-semibold text-white">Live Candidate View:</span>
+                  <p className="mt-1 text-gray-400">Questions asked by the interviewer and your responses will appear below in real-time as they are evaluated.</p>
+                </div>
+              )}
+
+              {/* Recorded Questions List */}
+              <div className="flex flex-col gap-3">
+                <span className="text-xs font-bold text-gray-300 flex items-center justify-between">
+                  <span>Questions Evaluated ({liveQuestions.length}):</span>
+                  {liveQuestions.length > 0 && <span className="text-[10px] text-success">● Synced to Report</span>}
+                </span>
+
+                {liveQuestions.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-gray-400 border border-dashed rounded-lg" style={{ borderColor: 'rgba(255,255,255,0.15)' }}>
+                    No questions logged yet for this interview.
+                  </div>
+                ) : (
+                  liveQuestions.map((item, idx) => (
+                    <div 
+                      key={idx}
+                      className="p-3 rounded-lg border flex flex-col gap-2"
+                      style={{ backgroundColor: '#1e293b', borderColor: 'rgba(255,255,255,0.1)' }}
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex items-start gap-1.5">
+                          <span style={{ backgroundColor: 'var(--primary)', color: 'white', fontSize: '10px', fontWeight: 'bold', padding: '1px 5px', borderRadius: '4px' }}>
+                            Q{idx + 1}
+                          </span>
+                          <span className="font-bold text-xs text-white leading-tight">
+                            {item.question}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="badge badge-success text-[10px] font-bold">
+                            {item.score || 85}%
+                          </span>
+                          {isInterviewer && (
+                            <button 
+                              type="button" 
+                              onClick={() => handleDeleteLiveQuestion(idx)} 
+                              className="text-danger p-0.5 hover:text-red-400"
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+                              title="Delete Question"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Candidate Answer Display */}
+                      <div className="p-2 rounded text-[11px] italic text-gray-300 border-l-2" style={{ backgroundColor: 'rgba(0,0,0,0.25)', borderLeftColor: 'var(--primary)' }}>
+                        <span className="font-semibold not-italic text-[10px] text-gray-400 block mb-0.5">Candidate Answer:</span>
+                        "{item.candidateAnswer}"
+                      </div>
+
+                      {/* HR Feedback Display */}
+                      {item.feedback && (
+                        <div className="text-[11px] text-gray-400 flex items-center gap-1">
+                          <Sparkles size={11} className="text-warning flex-shrink-0" />
+                          <span><strong>Feedback:</strong> {item.feedback}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </aside>
+      )}
       </div>
 
       {/* Controls Footer */}
-      <footer className="p-3 flex justify-center items-center gap-6 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0b1120' }}>
+      <footer className="p-3 flex justify-center items-center gap-5 border-t" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0b1120' }}>
         {/* Mic Toggle */}
         <button 
           onClick={toggleMic}
@@ -1375,24 +1715,74 @@ const VideoRoom = () => {
           <span className="text-[11px] font-medium">{isScreenSharing ? 'Stop Share' : 'Share Screen'}</span>
         </button>
         
-        {/* In-Call Chat */}
+        {/* In-Call Chat Button */}
         <button 
-          onClick={() => setIsChatOpen(prev => !prev)}
+          onClick={() => {
+            if (isChatOpen && drawerTab === 'chat') {
+              setIsChatOpen(false);
+            } else {
+              setIsChatOpen(true);
+              setDrawerTab('chat');
+            }
+          }}
           className="flex flex-col items-center gap-1 transition-colors"
-          style={{ color: isChatOpen ? 'var(--primary)' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
+          style={{ color: (isChatOpen && drawerTab === 'chat') ? 'var(--primary)' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
         >
           <div 
             className="p-3 rounded-full transition-colors"
-            style={{ backgroundColor: isChatOpen ? 'rgba(26, 115, 232, 0.2)' : '#1e293b' }}
+            style={{ backgroundColor: (isChatOpen && drawerTab === 'chat') ? 'rgba(26, 115, 232, 0.2)' : '#1e293b' }}
           >
-            <MessageSquare size={20} className={isChatOpen ? 'text-primary' : 'text-white'} />
+            <MessageSquare size={20} className={(isChatOpen && drawerTab === 'chat') ? 'text-primary' : 'text-white'} />
           </div>
           <span className="text-[11px] font-medium">Chat ({messages.length})</span>
         </button>
 
+        {/* Live Q&A Assessment Button */}
+        <button 
+          onClick={() => {
+            if (isChatOpen && drawerTab === 'questions') {
+              setIsChatOpen(false);
+            } else {
+              setIsChatOpen(true);
+              setDrawerTab('questions');
+            }
+          }}
+          className="flex flex-col items-center gap-1 transition-colors"
+          style={{ color: (isChatOpen && drawerTab === 'questions') ? 'var(--primary)' : '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer' }}
+        >
+          <div 
+            className="p-3 rounded-full transition-colors relative"
+            style={{ backgroundColor: (isChatOpen && drawerTab === 'questions') ? 'rgba(26, 115, 232, 0.2)' : '#1e293b' }}
+          >
+            <ListChecks size={20} className={(isChatOpen && drawerTab === 'questions') ? 'text-primary' : 'text-white'} />
+            {liveQuestions.length > 0 && (
+              <span 
+                style={{ 
+                  position: 'absolute', 
+                  top: '-3px', 
+                  right: '-3px', 
+                  backgroundColor: '#10b981', 
+                  color: 'white', 
+                  borderRadius: '50%', 
+                  width: '18px', 
+                  height: '18px', 
+                  fontSize: '10px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontWeight: 'bold' 
+                }}
+              >
+                {liveQuestions.length}
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] font-medium">Live Q&A ({liveQuestions.length})</span>
+        </button>
+
         {/* View / Submit Feedback Button */}
         {interviewId && (
-          <Link to={`/feedback?interviewId=${interviewId}`}>
+          <Link to={`/feedback?interviewId=${interviewId}&role=${currentRole}`}>
             <button className="btn btn-outline text-xs text-white border-gray-600 flex items-center gap-1.5 py-2 px-3">
               <FileText size={15} />
               <span>Evaluation Report</span>
