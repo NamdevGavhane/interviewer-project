@@ -8,6 +8,8 @@ const Profile = () => {
   const profileUserId = searchParams.get('userId');
 
   const currentUserId = localStorage.getItem('userId');
+  const currentUserRole = localStorage.getItem('userRole') || 'candidate';
+  const isCandidate = currentUserRole === 'candidate';
   const targetId = profileUserId || currentUserId;
 
   const [profileData, setProfileData] = useState(null);
@@ -233,7 +235,7 @@ const Profile = () => {
                     <span className="text-2xl font-bold">₹{profileData.hourlyRate}</span>
                     <span className="text-muted text-sm"> / session</span>
                   </div>
-                  {!isOwnProfile && (
+                  {!isOwnProfile && isCandidate && (
                     <Link to={`/booking?interviewerId=${profileData._id}`}>
                       <button className="btn btn-primary px-6">Book Mock Interview</button>
                     </Link>
@@ -282,7 +284,7 @@ const Profile = () => {
                       <Clock size={16} className="text-primary" />
                       <div className="text-sm font-medium">{slot}</div>
                     </div>
-                    {!isOwnProfile && (
+                    {!isOwnProfile && isCandidate && (
                       <Link to={`/booking?interviewerId=${profileData._id}`}>
                         <button className="btn btn-primary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}>Book</button>
                       </Link>

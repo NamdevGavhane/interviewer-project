@@ -1032,11 +1032,13 @@ const FeedbackReport = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Link to="/booking">
-              <button type="button" className="btn btn-outline text-xs">
-                Book Another Interview
-              </button>
-            </Link>
+            {currentUserRole === 'candidate' && (
+              <Link to="/booking">
+                <button type="button" className="btn btn-outline text-xs">
+                  Book Another Interview
+                </button>
+              </Link>
+            )}
             <button 
               type="button"
               className="btn btn-primary flex items-center gap-2 text-xs py-2 px-4 shadow-sm"

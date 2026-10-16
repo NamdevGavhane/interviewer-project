@@ -157,6 +157,8 @@ const Dashboard = () => {
     : 82;
 
   const isProfessional = userData.role === 'professional';
+  const isCandidate = userData.role === 'candidate';
+  const isAdmin = userData.role === 'admin';
 
   return (
     <div>
@@ -167,14 +169,16 @@ const Dashboard = () => {
           <p className="text-muted mt-1">
             {isProfessional 
               ? 'Manage your scheduled interview sessions, rates, and candidate evaluations.' 
+              : isAdmin
+              ? 'Oversee users, verify professionals, and monitor mock interview operations.'
               : 'Prepare, book live mock interviews, and review feedback reports to level up.'}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="badge badge-info text-sm py-1 px-3">
-            {isProfessional ? '👨‍💼 Professional Interviewer' : '🎓 Candidate'}
+            {isProfessional ? '👨‍💼 Professional Interviewer' : isAdmin ? '🛡️ Administrator' : '🎓 Candidate'}
           </span>
-          {!isProfessional && (
+          {isCandidate && (
             <div className="flex items-center gap-2">
               <Link to="/ai-interview">
                 <button className="btn btn-outline flex items-center gap-1.5" style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}>
@@ -258,7 +262,7 @@ const Dashboard = () => {
               <div className="text-center py-8 text-muted">
                 <CalendarIcon size={36} className="mx-auto mb-2 opacity-40" style={{ margin: '0 auto 0.5rem auto' }} />
                 <p>No upcoming interviews scheduled.</p>
-                {!isProfessional && (
+                {isCandidate && (
                   <Link to="/booking">
                     <button className="btn btn-primary mt-4">Schedule Your First Mock Interview</button>
                   </Link>
@@ -432,7 +436,7 @@ const Dashboard = () => {
                 )}
               </div>
             </>
-          ) : (
+          ) : isCandidate ? (
             /* Candidate: Recommended Interviewers Card */
             <div className="card">
               <div className="flex justify-between items-center mb-1">
@@ -512,7 +516,7 @@ const Dashboard = () => {
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

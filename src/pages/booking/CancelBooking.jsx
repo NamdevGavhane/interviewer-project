@@ -102,11 +102,13 @@ const CancelBooking = () => {
           <h2 className="text-2xl font-bold mt-1">Cancel / Reschedule Booking</h2>
           <p className="text-muted text-sm">Review your active interview bookings and initiate a cancellation request.</p>
         </div>
-        <Link to="/booking">
-          <button className="btn btn-outline text-xs">
-            + Book Alternative Slot
-          </button>
-        </Link>
+        {userRole === 'candidate' && (
+          <Link to="/booking">
+            <button className="btn btn-outline text-xs">
+              + Book Alternative Slot
+            </button>
+          </Link>
+        )}
       </div>
 
       {/* Cancellation Policy Banner */}
@@ -129,9 +131,11 @@ const CancelBooking = () => {
           <Calendar size={48} className="text-muted mx-auto mb-4" style={{ margin: '0 auto 1rem auto' }} />
           <h3 className="text-lg font-bold mb-2">No Active Bookings to Cancel</h3>
           <p className="text-muted mb-6">You do not currently have any scheduled upcoming mock interview sessions.</p>
-          <Link to="/booking">
-            <button className="btn btn-primary">Book New Mock Interview</button>
-          </Link>
+          {userRole === 'candidate' && (
+            <Link to="/booking">
+              <button className="btn btn-primary">Book New Mock Interview</button>
+            </Link>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-4">

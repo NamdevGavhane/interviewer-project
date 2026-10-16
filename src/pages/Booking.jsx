@@ -49,6 +49,12 @@ const Booking = () => {
   const userId = localStorage.getItem('userId');
 
   useEffect(() => {
+    const userRole = localStorage.getItem('userRole');
+    if (userRole === 'professional' || userRole === 'admin') {
+      navigate('/');
+      return;
+    }
+
     // Fetch professionals
     const fetchProfessionals = async () => {
       try {

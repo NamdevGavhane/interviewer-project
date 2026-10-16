@@ -21,7 +21,7 @@ import {
   ChevronUp,
   Loader2
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { API_BASE_URL } from '../config/api';
 
@@ -33,7 +33,15 @@ Featured Project: E-Commerce & Real-time Mock Interview Platform.
 - Implemented MongoDB aggregation pipelines for user analytics and session tracking.`;
 
 const AIInterview = () => {
+  const navigate = useNavigate();
   const userId = localStorage.getItem('userId');
+
+  useEffect(() => {
+    const userRole = localStorage.getItem('userRole');
+    if (userRole === 'professional' || userRole === 'admin') {
+      navigate('/');
+    }
+  }, [navigate]);
 
   // Screen Stages: 'setup' | 'room' | 'report'
   const [stage, setStage] = useState('setup');

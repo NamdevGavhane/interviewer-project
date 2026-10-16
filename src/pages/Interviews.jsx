@@ -112,11 +112,13 @@ const Interviews = () => {
           <h2 className="text-2xl font-bold">My Interview Sessions</h2>
           <p className="text-muted mt-1">Manage scheduled sessions, live rooms, and evaluation reports.</p>
         </div>
-        <Link to="/booking">
-          <button className="btn btn-primary">
-            + Book New Interview
-          </button>
-        </Link>
+        {userRole === 'candidate' && (
+          <Link to="/booking">
+            <button className="btn btn-primary">
+              + Book New Interview
+            </button>
+          </Link>
+        )}
       </div>
 
       {/* Tabs */}
@@ -280,9 +282,11 @@ const Interviews = () => {
               ? 'You do not have any upcoming interviews scheduled right now.' 
               : 'You have not completed any interview sessions yet.'}
           </p>
-          <Link to="/booking">
-            <button className="btn btn-primary">Browse Interviewers</button>
-          </Link>
+          {userRole === 'candidate' && (
+            <Link to="/booking">
+              <button className="btn btn-primary">Browse Interviewers</button>
+            </Link>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-4">

@@ -32,7 +32,12 @@ const SidebarLayout = () => {
         if (!res.ok) throw new Error('Not found');
         return res.json();
       })
-      .then(data => setUserData(data))
+      .then(data => {
+        setUserData(data);
+        if (data?.role) {
+          localStorage.setItem('userRole', data.role);
+        }
+      })
       .catch(err => {
         console.error(err);
         localStorage.removeItem('userId');
@@ -46,6 +51,9 @@ const SidebarLayout = () => {
     localStorage.removeItem('userRole');
     navigate('/login');
   };
+
+  const currentRole = userData?.role || localStorage.getItem('userRole') || 'candidate';
+  const isCandidate = currentRole === 'candidate';
 
   return (
     <div className="app-container">
@@ -64,19 +72,23 @@ const SidebarLayout = () => {
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
           </NavLink>
-          <NavLink to="/ai-interview" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <Bot size={18} className="text-primary" />
-            <span>AI Mock Interview</span>
-            <span className="badge badge-info text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>AI</span>
-          </NavLink>
+          {isCandidate && (
+            <NavLink to="/ai-interview" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <Bot size={18} className="text-primary" />
+              <span>AI Mock Interview</span>
+              <span className="badge badge-info text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>AI</span>
+            </NavLink>
+          )}
           <NavLink to="/interviews" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
             <Calendar size={18} />
             <span>My Interviews</span>
           </NavLink>
-          <NavLink to="/booking" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <Users size={18} />
-            <span>Book Interview</span>
-          </NavLink>
+          {isCandidate && (
+            <NavLink to="/booking" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <Users size={18} />
+              <span>Book Interview</span>
+            </NavLink>
+          )}
           <NavLink to="/feedback" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
             <FileText size={18} />
             <span>Feedback Reports</span>
@@ -90,7 +102,7 @@ const SidebarLayout = () => {
             <User size={18} />
             <span>My Profile</span>
           </NavLink>
-          {userData?.role === 'admin' && (
+          {currentRole === 'admin' && (
             <NavLink to="/admin" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
               <ShieldCheck size={18} className="text-danger" />
               <span>Admin Console</span>
