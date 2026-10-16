@@ -561,9 +561,10 @@ const VideoRoom = () => {
     ? (currentRole === 'interviewer' ? (interview.candidateId?.name || 'Candidate') : (interview.interviewerId?.name || 'Shushant Gaikwad')) 
     : (currentRole === 'interviewer' ? 'Candidate' : 'Shushant Gaikwad');
 
-  const partnerTitle = interview
+  const rawPartnerTitle = interview
     ? (currentRole === 'interviewer' ? 'Software Candidate' : (interview.interviewerId?.title || 'Senior Full Stack MERN Developer'))
     : (currentRole === 'interviewer' ? 'Software Candidate' : 'Senior Full Stack MERN Developer');
+  const partnerTitle = rawPartnerTitle?.includes('Batch 3') ? 'Senior Full Stack MERN Developer' : rawPartnerTitle;
 
   const partnerAvatar = interview
     ? (currentRole === 'interviewer' ? interview.candidateId?.avatar : interview.interviewerId?.avatar)

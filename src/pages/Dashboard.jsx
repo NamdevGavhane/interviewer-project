@@ -474,22 +474,26 @@ const Dashboard = () => {
                         {/* 1. Company Name */}
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 mt-1 truncate">
                           <Building2 size={13} className="text-primary flex-shrink-0" />
-                          <span className="truncate">{prof.company || 'Tech Leader'}</span>
+                          <span className="truncate">
+                            {prof.name?.includes('Shushant') || prof.company?.includes('Batch 3') ? 'Cognizant' : (prof.company || 'Tech Leader')}
+                          </span>
                         </div>
 
                         {/* 2. Domain */}
                         <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5 truncate">
                           <Briefcase size={12} className="text-muted flex-shrink-0" />
-                          <span className="truncate">{prof.domain || prof.title || 'Full Stack Engineering'}</span>
+                          <span className="truncate">
+                            {prof.name?.includes('Shushant') || prof.title?.includes('Batch 3') || prof.domain?.includes('Batch 3') ? 'MERN Stack Development' : (prof.domain || prof.title || 'Full Stack Engineering')}
+                          </span>
                         </div>
 
                         {/* Rate Tag & Rating */}
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                            ₹{prof.hourlyRate}/session
+                            ₹{prof.hourlyRate || 100}/session
                           </span>
                           <span className="text-[11px] text-amber-500 font-semibold flex items-center gap-0.5">
-                            ★ {prof.rating || 4.9}
+                            ★ {prof.rating || 4.98}
                           </span>
                         </div>
                       </div>

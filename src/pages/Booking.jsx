@@ -333,13 +333,17 @@ const Booking = () => {
                         {/* 1. Company Name */}
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 mt-1 truncate">
                           <Building2 size={13} className="text-primary flex-shrink-0" />
-                          <span className="truncate">{prof.company || 'Tech Leader'}</span>
+                          <span className="truncate">
+                            {prof.name?.includes('Shushant') || prof.company?.includes('Batch 3') ? 'Cognizant' : (prof.company || 'Tech Leader')}
+                          </span>
                         </div>
 
                         {/* 2. Domain */}
                         <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5 truncate">
                           <Briefcase size={12} className="text-muted flex-shrink-0" />
-                          <span className="truncate">{prof.domain || prof.title || 'Full Stack Engineering'}</span>
+                          <span className="truncate">
+                            {prof.name?.includes('Shushant') || prof.title?.includes('Batch 3') || prof.domain?.includes('Batch 3') ? 'MERN Stack Development' : (prof.domain || prof.title || 'Full Stack Engineering')}
+                          </span>
                         </div>
 
                         <div className="text-xs font-medium mt-1 flex items-center gap-1 text-amber-500">
