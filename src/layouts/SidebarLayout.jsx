@@ -97,8 +97,10 @@ const SidebarLayout = () => {
           )}
           <NavLink to="/payments" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
             <Receipt size={18} className="text-success" />
-            <span>Billing & Invoices</span>
-            <span className="badge badge-success text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>₹ Paid</span>
+            <span>{currentRole === 'professional' ? 'Earnings & Payouts' : 'Billing & Invoices'}</span>
+            <span className="badge badge-success text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>
+              {currentRole === 'professional' ? '₹ Earned' : '₹ Paid'}
+            </span>
           </NavLink>
           <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
             <User size={18} />

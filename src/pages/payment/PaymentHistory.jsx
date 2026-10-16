@@ -73,11 +73,21 @@ const PaymentHistory = () => {
       <div className="flex justify-between items-center mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <span className="badge badge-info text-xs font-semibold uppercase">Payment Module</span>
-            <span className="text-xs text-muted">Billing & Invoices</span>
+            <span className="badge badge-info text-xs font-semibold uppercase">
+              {userRole === 'professional' ? 'Professional Module' : 'Payment Module'}
+            </span>
+            <span className="text-xs text-muted">
+              {userRole === 'professional' ? 'Earnings & Payouts' : 'Billing & Invoices'}
+            </span>
           </div>
-          <h2 className="text-2xl font-bold mt-1">Payment History & Tax Invoices</h2>
-          <p className="text-muted text-sm">Download official GST tax invoices, review gateway transactions, and inspect payment receipts.</p>
+          <h2 className="text-2xl font-bold mt-1">
+            {userRole === 'professional' ? 'Earnings & Payout Statements' : 'Payment History & Tax Invoices'}
+          </h2>
+          <p className="text-muted text-sm">
+            {userRole === 'professional' 
+              ? 'Track your completed interview session earnings, download payout vouchers, and inspect gateway settlement records.' 
+              : 'Download official GST tax invoices, review gateway transactions, and inspect payment receipts.'}
+          </p>
         </div>
       </div>
 
@@ -105,11 +115,13 @@ const PaymentHistory = () => {
 
         <div className="card">
           <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
-            <span>Invoice Generation</span>
+            <span>{userRole === 'professional' ? 'Payout Voucher' : 'Invoice Generation'}</span>
             <Receipt size={18} className="text-primary" />
           </div>
           <div className="text-sm font-bold mt-2">Instant PDF Ready</div>
-          <div className="text-xs text-muted mt-1">100% Tax Compliant receipts</div>
+          <div className="text-xs text-muted mt-1">
+            {userRole === 'professional' ? 'Verified earnings statement' : '100% Tax Compliant receipts'}
+          </div>
         </div>
       </div>
 
@@ -141,20 +153,20 @@ const PaymentHistory = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Invoice #</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Voucher #' : 'Invoice #'}</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Transaction ID</th>
                   <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Candidate' : 'Interviewer'}</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Amount</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Payout Earned' : 'Amount'}</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Method</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Invoice Action</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{userRole === 'professional' ? 'Payout Voucher' : 'Invoice Action'}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRecords.length === 0 ? (
                   <tr>
                     <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                      No payment records found. Once you book or conduct an interview, official invoices will appear here.
+                      No transaction records found. Once an interview session is conducted or booked, official records will appear here.
                     </td>
                   </tr>
                 ) : (
@@ -207,7 +219,7 @@ const PaymentHistory = () => {
                             })}
                           >
                             <Download size={14} />
-                            <span>Download PDF</span>
+                            <span>{userRole === 'professional' ? 'Download Voucher' : 'Download PDF'}</span>
                           </button>
                         </td>
                       </tr>
