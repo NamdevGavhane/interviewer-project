@@ -626,9 +626,9 @@ const VideoRoom = () => {
         : '/shushant-gaikwad.png');
 
   return (
-    <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', minHeight: '100vh', backgroundColor: '#090d16' }}>
+    <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#090d16' }}>
       {/* Header */}
-      <header className="flex justify-between items-center p-3 px-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0f172a' }}>
+      <header className="flex justify-between items-center p-3 px-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0f172a', flexShrink: 0 }}>
         <div className="flex items-center gap-3">
           <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>IP</div>
           <div>
@@ -722,35 +722,54 @@ const VideoRoom = () => {
       )}
 
       {/* Main Area: Videos + Sliding Chat */}
-      <div className="flex-1 flex overflow-hidden" style={{ minHeight: 'calc(100vh - 145px)' }}>
+      <div style={{ flex: 1, minHeight: 0, height: 'calc(100vh - 138px)', display: 'flex', overflow: 'hidden' }}>
         {/* Video Grid */}
         <main 
           style={{ 
             flex: 1, 
+            minWidth: 0,
+            minHeight: 0,
+            height: '100%',
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center', 
-            padding: '1.5rem', 
-            gap: '1.5rem', 
+            padding: '0.75rem 1.25rem', 
             position: 'relative', 
             backgroundColor: '#090d16',
-            width: '100%',
+            boxSizing: 'border-box',
             overflow: 'hidden'
           }}
         >
-          {/* Local Video (You) */}
+          {/* 2-Column Equal Fixed Stage Grid */}
           <div 
             style={{ 
-              position: 'relative',
-              width: '48%', 
-              aspectRatio: '16/10', 
-              borderRadius: '16px',
-              overflow: 'hidden',
-              border: '2px solid rgba(255, 255, 255, 0.15)',
-              backgroundColor: '#0f172a',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)'
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', 
+              gap: '1.25rem', 
+              width: '100%', 
+              maxWidth: '1360px', 
+              height: '100%', 
+              maxHeight: 'calc(100vh - 165px)',
+              alignItems: 'center',
+              boxSizing: 'border-box'
             }}
           >
+            {/* Local Video (You) */}
+            <div 
+              style={{ 
+                position: 'relative',
+                width: '100%', 
+                aspectRatio: '16 / 9', 
+                maxHeight: 'calc(100vh - 175px)',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                border: '2px solid rgba(255, 255, 255, 0.15)',
+                backgroundColor: '#0f172a',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
+                boxSizing: 'border-box',
+                margin: '0 auto'
+              }}
+            >
             {/* Mirror / Flip Camera View Button */}
             <button
               type="button"
@@ -910,15 +929,18 @@ const VideoRoom = () => {
           <div 
             style={{ 
               position: 'relative',
-              width: '48%', 
-              aspectRatio: '16/10', 
+              width: '100%', 
+              aspectRatio: '16 / 9', 
+              maxHeight: 'calc(100vh - 175px)',
               borderRadius: '16px',
               overflow: 'hidden',
               border: isCallConnected ? '2px solid #10b981' : '2px solid rgba(255,255,255,0.15)',
               backgroundColor: '#0f172a',
               boxShadow: isCallConnected 
                 ? '0 0 25px rgba(16, 185, 129, 0.25), 0 20px 25px -5px rgba(0, 0, 0, 0.5)' 
-                : '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+                : '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+              boxSizing: 'border-box',
+              margin: '0 auto'
             }}
           >
             {/* Always-mounted remote video element */}
@@ -1085,14 +1107,17 @@ const VideoRoom = () => {
               )}
             </div>
           </div>
-        </main>
+        </div>
+      </main>
 
-        {/* Dynamic In-Call Chat Drawer */}
-        {isChatOpen && (
-          <aside 
-            className="flex flex-col border-l"
-            style={{ 
-              width: '340px', 
+      {/* Dynamic In-Call Chat Drawer */}
+      {isChatOpen && (
+        <aside 
+          className="flex flex-col border-l"
+          style={{ 
+            width: '340px', 
+            height: '100%',
+            flexShrink: 0,
               backgroundColor: '#1e293b', 
               borderColor: 'rgba(255,255,255,0.1)' 
             }}
