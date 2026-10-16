@@ -313,7 +313,7 @@ const Dashboard = () => {
           </div>
 
           {/* If Candidate: Show Recent Feedback */}
-          {!isProfessional && feedbacks.length > 0 && (
+          {isCandidate && feedbacks.length > 0 && (
             <div className="card">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-lg">Latest Interview Feedback</h3>

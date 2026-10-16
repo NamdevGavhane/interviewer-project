@@ -89,10 +89,12 @@ const SidebarLayout = () => {
               <span>Book Interview</span>
             </NavLink>
           )}
-          <NavLink to="/feedback" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <FileText size={18} />
-            <span>Feedback Reports</span>
-          </NavLink>
+          {isCandidate && (
+            <NavLink to="/feedback" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <FileText size={18} />
+              <span>Feedback Reports</span>
+            </NavLink>
+          )}
           <NavLink to="/payments" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
             <Receipt size={18} className="text-success" />
             <span>Billing & Invoices</span>
