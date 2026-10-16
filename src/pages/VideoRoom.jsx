@@ -77,11 +77,13 @@ const VideoRoom = () => {
   // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const peerRef = useRef(null);
   const currentCallRef = useRef(null);
   const dataConnRef = useRef(null);
   const chatBottomRef = useRef(null);
+  const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
   
   // Connection state refs to prevent stale closure loops and duplicate calling
   const isCallConnectedRef = useRef(false);
@@ -147,18 +149,27 @@ const VideoRoom = () => {
     return `${m}:${s}`;
   };
 
-  // 3. Initialize Camera & Mic with echo cancellation & noise suppression
+  // 3. Initialize Camera & Mic with echo cancellation
   const startCamera = async () => {
     try {
       setMediaError(null);
       setConnectionStatus('Requesting camera & microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 },
+          facingMode: 'user'
+        },
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false, // Prevents Windows audio enhancements from aggressively silencing voice
           autoGainControl: true
         }
+      });
+
+      // Explicitly ensure all audio tracks are unmuted and active
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = true;
       });
 
       mediaStreamRef.current = stream;
@@ -170,22 +181,33 @@ const VideoRoom = () => {
         localVideoRef.current.play().catch(e => console.warn('Local play warning:', e));
       }
 
-      // If already in an active call, update media tracks on active sender
+      // If already in an active call, update or add media tracks to WebRTC connection
       if (currentCallRef.current && currentCallRef.current.peerConnection) {
-        const senders = currentCallRef.current.peerConnection.getSenders();
+        const pc = currentCallRef.current.peerConnection;
+        const senders = pc.getSenders();
         const vTrack = stream.getVideoTracks()[0];
         const aTrack = stream.getAudioTracks()[0];
-        senders.forEach(s => {
-          if (s.track?.kind === 'video' && vTrack) s.replaceTrack(vTrack);
-          if (s.track?.kind === 'audio' && aTrack) s.replaceTrack(aTrack);
-        });
+
+        const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+        if (audioSender && aTrack) {
+          audioSender.replaceTrack(aTrack);
+        } else if (aTrack && pc.addTrack) {
+          try { pc.addTrack(aTrack, stream); } catch (e) { console.warn('addTrack audio notice:', e); }
+        }
+
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender && vTrack) {
+          videoSender.replaceTrack(vTrack);
+        } else if (vTrack && pc.addTrack) {
+          try { pc.addTrack(vTrack, stream); } catch (e) { console.warn('addTrack video notice:', e); }
+        }
       }
 
-      setConnectionStatus('Camera connected. Ready for partner call.');
+      setConnectionStatus('Camera and microphone ready.');
       return stream;
     } catch (err) {
       console.warn('Camera error:', err);
-      setMediaError('Camera permission blocked or no webcam found. Click "Enable Camera" or allow access in browser URL bar.');
+      setMediaError('Camera/microphone permission blocked or no mic found. Click "Enable Camera" or allow access in browser URL bar.');
       setCameraActive(false);
       setConnectionStatus('Camera permission required.');
       return null;
@@ -193,10 +215,7 @@ const VideoRoom = () => {
   };
 
   useEffect(() => {
-    let localStream = null;
-    startCamera().then(stream => {
-      localStream = stream;
-    });
+    startCamera().catch(e => console.warn('Initial camera start:', e));
 
     return () => {
       if (mediaStreamRef.current) {
@@ -204,6 +223,38 @@ const VideoRoom = () => {
       }
     };
   }, []);
+
+  // Dedicated function to play remote audio and video cleanly through browser pipelines
+  const playRemoteMedia = (stream) => {
+    if (!stream) return;
+
+    // 1. Dedicated remote audio playback (immune to video display/layout changes)
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = stream;
+      remoteAudioRef.current.volume = 1.0;
+      remoteAudioRef.current.muted = false;
+      const audioPromise = remoteAudioRef.current.play();
+      if (audioPromise !== undefined) {
+        audioPromise
+          .then(() => {
+            console.log('Remote audio playing successfully!');
+            setAudioAutoplayBlocked(false);
+          })
+          .catch(err => {
+            console.warn('Browser autoplay blocked partner audio, user gesture required:', err);
+            setAudioAutoplayBlocked(true);
+          });
+      }
+    }
+
+    // 2. Remote video playback
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = stream;
+      remoteVideoRef.current.volume = 1.0;
+      remoteVideoRef.current.muted = false;
+      remoteVideoRef.current.play().catch(e => console.warn('Remote video play warning:', e));
+    }
+  };
 
   // Ensure local video always plays when cameraActive or ref updates
   useEffect(() => {
@@ -214,13 +265,38 @@ const VideoRoom = () => {
     }
   }, [cameraActive, isVideoOn]);
 
-  // Ensure remote video plays when remoteStream updates
+  // Ensure remote audio/video plays when remoteStream updates
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      remoteVideoRef.current.play().catch(e => console.warn('Remote video play:', e));
+    if (remoteStream) {
+      playRemoteMedia(remoteStream);
     }
   }, [remoteStream, isCallConnected]);
+
+  // Global user interaction listener to immediately unlock any browser autoplay restrictions
+  useEffect(() => {
+    const unlockAudio = () => {
+      if (remoteAudioRef.current && remoteAudioRef.current.srcObject) {
+        remoteAudioRef.current.muted = false;
+        remoteAudioRef.current.play()
+          .then(() => setAudioAutoplayBlocked(false))
+          .catch(() => {});
+      }
+      if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
+        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
 
   // Setup data connection handlers
   const attachDataHandlers = (conn) => {
@@ -266,8 +342,8 @@ const VideoRoom = () => {
         setConnectionStatus(`Online as ${currentRole}. Waiting for ${partnerRole}...`);
       });
 
-      // Handle Incoming Call
-      peerInstance.on('call', (incomingCall) => {
+      // Handle Incoming Call with robust audio & video answering
+      peerInstance.on('call', async (incomingCall) => {
         console.log('Incoming WebRTC Call from:', incomingCall.peer);
 
         // If we already have a healthy connected call, ignore redundant incoming call
@@ -289,15 +365,32 @@ const VideoRoom = () => {
 
         currentCallRef.current = incomingCall;
 
-        incomingCall.answer(mediaStreamRef.current || undefined);
+        // Ensure we answer with an active local media stream containing AUDIO and VIDEO
+        let streamToAnswer = mediaStreamRef.current;
+        if (!streamToAnswer) {
+          console.log('Awaiting local stream before answering call to ensure audio is included...');
+          try {
+            streamToAnswer = await startCamera();
+          } catch (err) {
+            console.warn('Error starting camera on incoming call:', err);
+          }
+        }
+
+        if (streamToAnswer) {
+          streamToAnswer.getAudioTracks().forEach(t => { t.enabled = true; });
+          incomingCall.answer(streamToAnswer);
+        } else {
+          incomingCall.answer();
+        }
 
         incomingCall.on('stream', (stream) => {
-          console.log('Received remote live video stream!');
+          console.log('Received remote live stream with tracks:', stream.getTracks().map(t => `${t.kind}: enabled=${t.enabled}`));
           setRemoteStream(stream);
           setIsCallConnected(true);
           isCallConnectedRef.current = true;
           isCallingRef.current = false;
           setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
+          playRemoteMedia(stream);
         });
 
         incomingCall.on('close', () => {
@@ -363,11 +456,24 @@ const VideoRoom = () => {
     };
   }, [myPeerId, partnerPeerId, currentRole]);
 
-  // Outgoing Call Function
-  const callPartner = () => {
-    if (!peerRef.current || !mediaStreamRef.current) return;
+  // Outgoing Call Function with robust audio/video verification
+  const callPartner = async () => {
+    if (!peerRef.current || peerRef.current.destroyed || peerRef.current.disconnected) return;
     if (isCallConnectedRef.current || isCallingRef.current) return;
-    if (peerRef.current.destroyed || peerRef.current.disconnected) return;
+
+    let streamToCall = mediaStreamRef.current;
+    if (!streamToCall) {
+      console.log('Acquiring local stream before calling partner to ensure audio is sent...');
+      try {
+        streamToCall = await startCamera();
+      } catch (err) {
+        console.warn('Error acquiring local stream for call:', err);
+      }
+    }
+    if (!streamToCall) return;
+
+    // Ensure audio tracks are active
+    streamToCall.getAudioTracks().forEach(t => { t.enabled = true; });
 
     try {
       isCallingRef.current = true;
@@ -380,17 +486,18 @@ const VideoRoom = () => {
         }
       }, 3500);
 
-      const call = peerRef.current.call(partnerPeerId, mediaStreamRef.current);
+      const call = peerRef.current.call(partnerPeerId, streamToCall);
       if (call) {
         currentCallRef.current = call;
 
         call.on('stream', (stream) => {
-          console.log('Remote stream connected from outgoing call!');
+          console.log('Remote stream connected from outgoing call with tracks:', stream.getTracks().map(t => `${t.kind}: enabled=${t.enabled}`));
           setRemoteStream(stream);
           setIsCallConnected(true);
           isCallConnectedRef.current = true;
           isCallingRef.current = false;
           setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
+          playRemoteMedia(stream);
         });
 
         call.on('close', () => {
@@ -441,6 +548,15 @@ const VideoRoom = () => {
       const audioTracks = mediaStreamRef.current.getAudioTracks();
       audioTracks.forEach(track => {
         track.enabled = nextState;
+      });
+    }
+    // Also update sender audio tracks in active WebRTC call
+    if (currentCallRef.current && currentCallRef.current.peerConnection) {
+      const senders = currentCallRef.current.peerConnection.getSenders();
+      senders.forEach(s => {
+        if (s.track && s.track.kind === 'audio') {
+          s.track.enabled = nextState;
+        }
       });
     }
     setIsMicOn(nextState);
@@ -627,6 +743,46 @@ const VideoRoom = () => {
 
   return (
     <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#090d16' }}>
+      {/* Dedicated high-priority WebRTC remote audio element */}
+      <audio 
+        ref={remoteAudioRef} 
+        autoPlay 
+        playsInline 
+        style={{ position: 'fixed', opacity: 0, pointerEvents: 'none', width: '1px', height: '1px', bottom: 0, left: 0 }} 
+      />
+
+      {/* Browser Autoplay Blocked Banner */}
+      {audioAutoplayBlocked && (
+        <div 
+          onClick={() => {
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.muted = false;
+              remoteAudioRef.current.play().then(() => setAudioAutoplayBlocked(false));
+            }
+          }}
+          style={{
+            position: 'absolute',
+            top: '70px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100,
+            backgroundColor: '#f59e0b',
+            color: '#0f172a',
+            padding: '8px 20px',
+            borderRadius: '25px',
+            fontWeight: 'bold',
+            fontSize: '0.82rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 15px rgba(245, 158, 11, 0.4)'
+          }}
+        >
+          <span>🔊 Audio muted by browser — Click anywhere to unmute live partner</span>
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex justify-between items-center p-3 px-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0f172a', flexShrink: 0 }}>
         <div className="flex items-center gap-3">
