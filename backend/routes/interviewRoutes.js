@@ -14,6 +14,12 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Missing required booking fields.' });
     }
 
+    // Ensure interviewer is an active, verified professional (Requirement 11)
+    const interviewer = await User.findById(interviewerId);
+    if (!interviewer || interviewer.role !== 'professional' || interviewer.isDeactivated || interviewer.accountStatus !== 'active' || !interviewer.isVerified) {
+      return res.status(400).json({ message: 'Selected interviewer is not an active verified professional.' });
+    }
+
     // Check if duplicate session already exists for this candidate/slot
     const existing = await Interview.findOne({
       candidateId,

@@ -8,6 +8,8 @@ import Profile from './pages/Profile';
 import FeedbackReport from './pages/FeedbackReport';
 import Interviews from './pages/Interviews';
 import AIInterview from './pages/AIInterview';
+import AcceptInvitation from './pages/AcceptInvitation';
+import ProfessionalLogin from './pages/ProfessionalLogin';
 import Availability from './pages/professional/Availability';
 import Earnings from './pages/professional/Earnings';
 import PaymentHistory from './pages/payment/PaymentHistory';
@@ -20,6 +22,8 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/professional/login" element={<ProfessionalLogin />} />
+        <Route path="/accept-invite" element={<AcceptInvitation />} />
         <Route path="/room" element={<VideoRoom />} />
         
         {/* Protected routes with sidebar */}
@@ -30,6 +34,7 @@ function App() {
           <Route path="interviews" element={<Interviews />} />
 
           {/* Professional Module */}
+          <Route path="professional/dashboard" element={<Dashboard />} />
           <Route path="professional/availability" element={<Availability />} />
           <Route path="professional/earnings" element={<Earnings />} />
 

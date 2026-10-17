@@ -21,6 +21,8 @@ const SidebarLayout = () => {
 
   const userId = localStorage.getItem('userId');
 
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+
   useEffect(() => {
     if (!userId) {
       navigate('/login');
@@ -36,6 +38,16 @@ const SidebarLayout = () => {
         setUserData(data);
         if (data?.role) {
           localStorage.setItem('userRole', data.role);
+          if (data.role === 'admin') {
+            fetch(`${API_BASE_URL}/api/admin/stats`)
+              .then(s => s.json())
+              .then(statData => {
+                if (statData?.pendingRequestsCount) {
+                  setPendingRequestsCount(statData.pendingRequestsCount);
+                }
+              })
+              .catch(err => console.error('Error fetching admin stats:', err));
+          }
         }
       })
       .catch(err => {
@@ -110,7 +122,13 @@ const SidebarLayout = () => {
             <NavLink to="/admin" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
               <ShieldCheck size={18} className="text-danger" />
               <span>Admin Console</span>
-              <span className="badge badge-danger text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>Admin</span>
+              {pendingRequestsCount > 0 ? (
+                <span className="badge badge-warning text-xs font-bold" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto', backgroundColor: '#f59e0b', color: 'white' }}>
+                  {pendingRequestsCount} Req
+                </span>
+              ) : (
+                <span className="badge badge-danger text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>Admin</span>
+              )}
             </NavLink>
           )}
           <NavLink to="/room" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
