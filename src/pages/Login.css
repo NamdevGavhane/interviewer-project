@@ -1,0 +1,664 @@
+/* ==========================================================================
+   InterviewPro - Modern SaaS Login Page Styles
+   Clean Two-Column Split-Screen Layout (Branding Left, Form Right)
+   ========================================================================== */
+
+.ip-login-wrapper {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background-color: #ffffff;
+  color: #0f172a;
+  overflow-x: hidden;
+}
+
+/* ==========================================================================
+   LEFT SECTION — BRANDING AND ILLUSTRATION (~50% width)
+   ========================================================================== */
+.ip-left-section {
+  flex: 1;
+  min-width: 0;
+  background: linear-gradient(150deg, #f0f7ff 0%, #e3effd 55%, #edf5fe 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 3rem 3.5rem;
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid #e0edfd;
+}
+
+/* Subtle decorative background shapes */
+.ip-bg-shape-1 {
+  position: absolute;
+  top: -80px;
+  right: -80px;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.09) 0%, rgba(37, 99, 235, 0) 70%);
+  pointer-events: none;
+}
+
+.ip-bg-shape-2 {
+  position: absolute;
+  bottom: 8%;
+  left: -60px;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0) 70%);
+  pointer-events: none;
+}
+
+.ip-bg-shape-3 {
+  position: absolute;
+  top: 45%;
+  right: 10%;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.07) 0%, rgba(96, 165, 250, 0) 70%);
+  pointer-events: none;
+}
+
+/* Brand header */
+.ip-brand-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  position: relative;
+  z-index: 2;
+}
+
+.ip-logo-badge {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: -0.5px;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ip-logo-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.4px;
+}
+
+.ip-logo-tag {
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+/* Main copy & features */
+.ip-left-content {
+  position: relative;
+  z-index: 2;
+  margin: 1.75rem 0;
+  max-width: 520px;
+}
+
+.ip-main-heading {
+  font-size: 2.25rem;
+  font-weight: 800;
+  line-height: 1.22;
+  color: #0f172a;
+  letter-spacing: -0.8px;
+  margin-bottom: 0.85rem;
+}
+
+.ip-main-heading .ip-highlight {
+  background: linear-gradient(135deg, #2563eb 0%, #0284c7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ip-supporting-text {
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: #475569;
+  margin-bottom: 1.5rem;
+}
+
+/* Feature grid */
+.ip-features-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+}
+
+.ip-feature-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.04);
+  transition: all 0.2s ease;
+}
+
+.ip-feature-card:hover {
+  background: #ffffff;
+  border-color: #bfdbfe;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+}
+
+.ip-feature-icon-wrapper {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ip-feature-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* Illustration container */
+.ip-illustration-wrapper {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ip-illustration-card {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 16px 36px -10px rgba(37, 99, 235, 0.15), 0 0 0 1px rgba(191, 219, 254, 0.6);
+  background: #ffffff;
+  max-width: 440px;
+  width: 100%;
+}
+
+.ip-illustration-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.ip-illustration-card:hover .ip-illustration-img {
+  transform: scale(1.015);
+}
+
+/* Motivational tagline */
+.ip-tagline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding: 0.4rem 1rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #bfdbfe;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+  font-size: 0.825rem;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+/* ==========================================================================
+   RIGHT SECTION — LOGIN FORM (~50% width)
+   ========================================================================== */
+.ip-right-section {
+  flex: 1;
+  min-width: 0;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 2rem;
+  position: relative;
+  overflow-y: auto;
+}
+
+/* Centered Login Card */
+.ip-login-card {
+  width: 100%;
+  max-width: 450px;
+  background: #ffffff;
+  border: 1px solid #dbeafe;
+  border-radius: 24px;
+  box-shadow: 0 20px 45px -15px rgba(37, 99, 235, 0.08), 0 4px 16px rgba(0, 0, 0, 0.03);
+  padding: 2.75rem 2.25rem;
+  transition: all 0.25s ease;
+}
+
+.ip-card-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.ip-card-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.ip-card-heading {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+  margin-bottom: 0.35rem;
+}
+
+.ip-card-subtitle {
+  font-size: 0.9rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Form controls */
+.ip-form-group {
+  margin-bottom: 1.25rem;
+}
+
+.ip-form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.45rem;
+}
+
+.ip-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ip-input-icon {
+  position: absolute;
+  left: 1rem;
+  color: #94a3b8;
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.ip-input-field {
+  width: 100%;
+  padding: 0.8rem 1rem 0.8rem 2.75rem;
+  font-size: 0.925rem;
+  font-family: inherit;
+  color: #0f172a;
+  background-color: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.ip-input-field:focus {
+  background-color: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.ip-input-container:focus-within .ip-input-icon {
+  color: #2563eb;
+}
+
+.ip-input-field::placeholder {
+  color: #94a3b8;
+}
+
+.ip-password-toggle {
+  position: absolute;
+  right: 0.9rem;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 0.2s;
+}
+
+.ip-password-toggle:hover {
+  color: #2563eb;
+}
+
+/* Remember me & Forgot Password row */
+.ip-options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 1.1rem 0 1.5rem;
+  font-size: 0.85rem;
+}
+
+.ip-remember-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #475569;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+}
+
+.ip-remember-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.ip-forgot-link {
+  color: #2563eb;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.85rem;
+  transition: color 0.15s ease;
+}
+
+.ip-forgot-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* Full-width blue gradient Sign In button */
+.ip-submit-btn {
+  width: 100%;
+  padding: 0.85rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+  transition: all 0.2s ease;
+}
+
+.ip-submit-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.38);
+}
+
+.ip-submit-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ip-submit-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* Divider with "or" */
+.ip-divider {
+  display: flex;
+  align-items: center;
+  margin: 1.5rem 0;
+  width: 100%;
+}
+
+.ip-divider-line {
+  flex: 1;
+  height: 1px;
+  background-color: #e2e8f0;
+}
+
+.ip-divider-text {
+  padding: 0 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #94a3b8;
+  text-transform: lowercase;
+}
+
+/* Continue with Google button */
+.ip-google-btn {
+  width: 100%;
+  padding: 0.78rem 1.25rem;
+  font-size: 0.925rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: #1e293b;
+  background-color: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.ip-google-btn:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Card footer */
+.ip-card-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.ip-toggle-btn {
+  color: #2563eb;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.875rem;
+  margin-left: 0.35rem;
+  transition: color 0.15s;
+}
+
+.ip-toggle-btn:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+/* Dedicated Professional portal link at bottom */
+.ip-pro-link-wrapper {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px dashed #e2e8f0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.ip-pro-link {
+  color: #4f46e5;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: color 0.15s;
+}
+
+.ip-pro-link:hover {
+  color: #4338ca;
+  text-decoration: underline;
+}
+
+/* Error message banner */
+.ip-error-banner {
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  line-height: 1.4;
+}
+
+/* Success notification banner */
+.ip-success-banner {
+  margin-bottom: 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  background-color: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN (Desktop, Tablet, Mobile)
+   ========================================================================== */
+
+/* Tablet (1024px and below) */
+@media (max-width: 1024px) {
+  .ip-left-section {
+    padding: 2.5rem 2rem;
+  }
+
+  .ip-main-heading {
+    font-size: 1.85rem;
+  }
+
+  .ip-supporting-text {
+    font-size: 0.9rem;
+  }
+
+  .ip-features-grid {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .ip-illustration-card {
+    max-width: 360px;
+  }
+
+  .ip-login-card {
+    padding: 2.25rem 1.75rem;
+  }
+}
+
+/* Mobile & Small Tablets (768px and below) */
+@media (max-width: 768px) {
+  .ip-login-wrapper {
+    flex-direction: column;
+  }
+
+  /* Left branding section becomes a clean compact top banner */
+  .ip-left-section {
+    padding: 2rem 1.5rem 2rem;
+    border-right: none;
+    border-bottom: 1px solid #e0edfd;
+  }
+
+  .ip-main-heading {
+    font-size: 1.6rem;
+  }
+
+  .ip-supporting-text {
+    font-size: 0.875rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .ip-features-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .ip-feature-card {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .ip-feature-title {
+    font-size: 0.8rem;
+  }
+
+  /* Hide large illustration on mobile to keep form accessible immediately */
+  .ip-illustration-wrapper {
+    display: none;
+  }
+
+  .ip-right-section {
+    padding: 2rem 1rem 3rem;
+  }
+
+  .ip-login-card {
+    border: none;
+    box-shadow: none;
+    padding: 0.5rem 0.5rem;
+    max-width: 100%;
+  }
+
+  .ip-card-heading {
+    font-size: 1.5rem;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .ip-features-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ip-options-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+}

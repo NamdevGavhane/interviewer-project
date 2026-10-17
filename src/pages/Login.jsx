@@ -1,9 +1,43 @@
-import { Eye, X, UserPlus, ShieldCheck, Briefcase, User, CheckCircle2, Clock, AlertTriangle, ArrowRight, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { 
+  Mail, 
+  Lock, 
+  Eye, 
+  EyeOff, 
+  Bot, 
+  Users, 
+  FileText, 
+  TrendingUp, 
+  Sparkles, 
+  AlertCircle, 
+  CheckCircle2, 
+  ArrowRight, 
+  UserPlus, 
+  X, 
+  User, 
+  Check, 
+  HelpCircle,
+  Briefcase
+} from 'lucide-react';
 import { API_BASE_URL } from '../config/api';
+import './Login.css';
 
 const DEFAULT_GOOGLE_ACCOUNTS = [
+  {
+    name: 'Namdev Sharma',
+    email: 'namdev.sharma@gmail.com',
+    role: 'candidate',
+    initial: 'N',
+    color: '#1a73e8',
+  },
+  {
+    name: 'Priya Patil',
+    email: 'priya.patil@gmail.com',
+    role: 'candidate',
+    initial: 'P',
+    color: '#34a853',
+  },
   {
     name: 'Shushant Gaikwad',
     email: 'shushant@example.com',
@@ -11,21 +45,6 @@ const DEFAULT_GOOGLE_ACCOUNTS = [
     initial: 'S',
     color: '#1a73e8',
     avatar: '/shushant-gaikwad.png',
-  },
-  {
-    name: 'Raju Bojane',
-    email: 'raju@example.com',
-    role: 'professional',
-    initial: 'R',
-    color: '#8b5cf6',
-    avatar: '/raju-bojane.png',
-  },
-  {
-    name: 'Namdev Sharma',
-    email: 'namdev.sharma@gmail.com',
-    role: 'candidate',
-    initial: 'N',
-    color: '#1a73e8',
   },
   {
     name: 'Namdev Gavhane',
@@ -39,66 +58,46 @@ const DEFAULT_GOOGLE_ACCOUNTS = [
 
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const [activeRoleTab, setActiveRoleTab] = useState('candidate'); // 'candidate' | 'professional' | 'admin'
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
-  const [formData, setFormData] = useState({
-    name: '',
-    email: 'namdev.sharma@gmail.com',
-    password: 'password123',
-    role: 'candidate',
-    title: '',
-    company: '',
-    domain: 'Full Stack MERN',
-    hourlyRate: 100,
-    experience: '3+ Years',
-    skills: 'React, Node.js, System Design',
-    bio: '',
-    linkedin: ''
-  });
-
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  // Status Modals
-  const [pendingModalData, setPendingModalData] = useState(null); // when professional login is pending
-  const [rejectedModalData, setRejectedModalData] = useState(null); // when professional application is rejected
-  const [applicationSubmittedData, setApplicationSubmittedData] = useState(null); // when professional signs up
+  // Forgot password modal
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotStatus, setForgotStatus] = useState({ sent: false, loading: false });
 
   // Google Accounts List State
   const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [selectedAccountLoading, setSelectedAccountLoading] = useState(null);
   const [googleAccounts, setGoogleAccounts] = useState([]);
-  
-  // "Use another account" view state
   const [isAddingNewGoogle, setIsAddingNewGoogle] = useState(false);
   const [newGoogleEmail, setNewGoogleEmail] = useState('');
   const [newGoogleName, setNewGoogleName] = useState('');
 
   const navigate = useNavigate();
 
-  // Load stored Google accounts from localStorage or use defaults
+  // Load remembered candidate email and Google accounts
   useEffect(() => {
-    const saved = localStorage.getItem('interviewpro_google_accounts');
-    if (saved) {
+    const savedEmail = localStorage.getItem('interviewpro_candidate_email');
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
+
+    const savedAccounts = localStorage.getItem('interviewpro_google_accounts');
+    if (savedAccounts) {
       try {
-        let parsed = JSON.parse(saved).filter(a => a.email !== 'rahul@example.com');
-        if (!parsed.some(a => a.email === 'shushant@example.com')) {
-          parsed.unshift(DEFAULT_GOOGLE_ACCOUNTS[0]);
-        }
-        if (!parsed.some(a => a.email === 'raju@example.com')) {
-          parsed.splice(1, 0, DEFAULT_GOOGLE_ACCOUNTS[1]);
-        }
-        if (!parsed.some(a => a.email === 'namdev.sharma@gmail.com')) {
-          parsed.push(DEFAULT_GOOGLE_ACCOUNTS[2]);
-        }
-        if (!parsed.some(a => a.email === 'namdevgavhane41@gmail.com')) {
-          parsed.push(DEFAULT_GOOGLE_ACCOUNTS[3]);
-        }
+        const parsed = JSON.parse(savedAccounts);
         setGoogleAccounts(parsed);
-        localStorage.setItem('interviewpro_google_accounts', JSON.stringify(parsed));
       } catch {
         setGoogleAccounts(DEFAULT_GOOGLE_ACCOUNTS);
-        localStorage.setItem('interviewpro_google_accounts', JSON.stringify(DEFAULT_GOOGLE_ACCOUNTS));
       }
     } else {
       setGoogleAccounts(DEFAULT_GOOGLE_ACCOUNTS);
@@ -106,62 +105,37 @@ const Login = () => {
     }
   }, []);
 
-  // Sync role tab with formData.role
-  const handleRoleTabChange = (role) => {
-    setActiveRoleTab(role);
-    setFormData(prev => ({
-      ...prev,
-      role: role === 'admin' ? 'admin' : role
-    }));
-
-    // Pre-fill convenient demo credentials if switching in Login mode
-    if (isLogin) {
-      if (role === 'candidate') {
-        setFormData(prev => ({
-          ...prev,
-          email: 'namdev.sharma@gmail.com',
-          password: 'password123',
-          role: 'candidate'
-        }));
-      } else if (role === 'professional') {
-        setFormData(prev => ({
-          ...prev,
-          email: 'shushant@example.com',
-          password: 'password123',
-          role: 'professional'
-        }));
-      } else if (role === 'admin') {
-        setFormData(prev => ({
-          ...prev,
-          email: 'namdevgavhane41@gmail.com',
-          password: 'Namu7654321@',
-          role: 'admin'
-        }));
-      }
-    }
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Standard Form Submit (email/password)
+  // Standard Form Submit (Email / Password)
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
+
+    if (!email.trim() || !password) {
+      setError('Please provide both email address and password.');
+      return;
+    }
+
+    if (!isLogin && !name.trim()) {
+      setError('Please enter your full name to create an account.');
+      return;
+    }
+
     setLoading(true);
 
-    const url = isLogin 
-      ? `${API_BASE_URL}/api/users/login` 
-      : `${API_BASE_URL}/api/users/register`;
-      
     try {
+      const url = isLogin 
+        ? `${API_BASE_URL}/api/users/login` 
+        : `${API_BASE_URL}/api/users/register`;
+
+      // Requirement 9: Public registration strictly creates a candidate/user account
       const payload = isLogin 
-        ? { email: formData.email, password: formData.password } 
+        ? { email: email.trim().toLowerCase(), password } 
         : {
-            ...formData,
-            role: activeRoleTab === 'professional' ? 'professional' : 'candidate'
+            name: name.trim(),
+            email: email.trim().toLowerCase(),
+            password,
+            role: 'candidate'
           };
 
       const response = await fetch(url, {
@@ -174,48 +148,30 @@ const Login = () => {
 
       const data = await response.json();
 
-      // Handle Professional Pending Review
-      if (response.status === 403 && data.pendingApproval) {
-        setPendingModalData({
-          name: data.name || formData.name || 'Applicant',
-          email: data.email || formData.email,
-          message: data.message,
-          appliedAt: data.appliedAt || new Date().toISOString()
-        });
-        return;
-      }
-
-      // Handle Professional Rejected
-      if (response.status === 403 && data.rejected) {
-        setRejectedModalData({
-          name: data.name || formData.name || 'Applicant',
-          email: data.email || formData.email,
-          message: data.message
-        });
-        return;
-      }
-
       if (!response.ok) {
-        throw new Error(data.message || 'Something went wrong');
+        throw new Error(data.message || (isLogin ? 'Failed to sign in' : 'Registration failed'));
       }
 
-      // When newly registered as a professional -> show application submitted card
-      if (!isLogin && data.pendingApproval) {
-        setApplicationSubmittedData({
-          name: formData.name,
-          email: formData.email,
-          title: formData.title || 'Technical Interviewer',
-          company: formData.company || 'Tech Company',
-          domain: formData.domain || 'Software Engineering',
-          hourlyRate: formData.hourlyRate || 100
-        });
-        return;
+      // If registered successfully, switch to login or direct login
+      if (!isLogin) {
+        setSuccessMessage('Account created successfully! Signing you in...');
       }
 
-      // Successful login or candidate registration
-      localStorage.setItem('userId', data.userId);
-      localStorage.setItem('userRole', data.role);
-      
+      // Handle "Remember Me"
+      if (rememberMe) {
+        localStorage.setItem('interviewpro_candidate_email', email.trim().toLowerCase());
+      } else {
+        localStorage.removeItem('interviewpro_candidate_email');
+      }
+
+      // Set user session
+      localStorage.setItem('userId', data.userId || data.user?.id);
+      localStorage.setItem('userRole', data.role || data.user?.role || 'candidate');
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      }
+
+      // Role redirection
       if (data.role === 'admin') {
         navigate('/admin');
       } else {
@@ -223,7 +179,7 @@ const Login = () => {
       }
     } catch (err) {
       if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
-        setError('Cannot connect to backend server. Please verify the backend API is running.');
+        setError('Cannot connect to the server. Please ensure the backend service is running.');
       } else {
         setError(err.message);
       }
@@ -232,7 +188,7 @@ const Login = () => {
     }
   };
 
-  // Authenticate chosen Google account with backend
+  // Google Login Handler
   const handleSelectGoogleAccount = async (account) => {
     try {
       setSelectedAccountLoading(account.email);
@@ -246,681 +202,479 @@ const Login = () => {
         body: JSON.stringify({
           email: account.email,
           name: account.name,
-          role: account.role || activeRoleTab || 'candidate',
+          role: account.role || 'candidate',
           avatar: account.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80'
         }),
       });
 
       const data = await response.json();
 
-      if (response.status === 403 && data.pendingApproval) {
-        setPendingModalData({
-          name: data.name || account.name,
-          email: data.email || account.email,
-          message: data.message
-        });
-        setShowGoogleModal(false);
-        return;
-      }
-
-      if (response.status === 403 && data.rejected) {
-        setRejectedModalData({
-          name: data.name || account.name,
-          email: data.email || account.email,
-          message: data.message
-        });
-        setShowGoogleModal(false);
-        return;
-      }
-
       if (!response.ok) {
         throw new Error(data.message || 'Google authentication failed');
       }
 
-      if (data.pendingApproval) {
-        setApplicationSubmittedData({
-          name: data.name || account.name,
-          email: data.email || account.email,
-          title: 'Professional Interviewer',
-          domain: 'Tech Expert'
-        });
-        setShowGoogleModal(false);
-        return;
-      }
-
       localStorage.setItem('userId', data.userId);
       localStorage.setItem('userRole', data.role);
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+      }
+
       setShowGoogleModal(false);
-      
+
       if (data.role === 'admin') {
         navigate('/admin');
       } else {
         navigate('/');
       }
     } catch (err) {
-      if (err.name === 'TypeError' && err.message.toLowerCase().includes('fetch')) {
-        setError('Cannot connect to backend server. Please verify backend is running.');
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
       setShowGoogleModal(false);
     } finally {
       setSelectedAccountLoading(null);
     }
   };
 
-  // Add a new custom Gmail account to the list and log in
+  // Add custom Google Account
   const handleAddNewGoogleAccount = (e) => {
     e.preventDefault();
     if (!newGoogleEmail.trim()) return;
 
-    const email = newGoogleEmail.trim().toLowerCase();
-    const name = newGoogleName.trim() || email.split('@')[0];
-    const initial = name.charAt(0).toUpperCase();
+    const cleanEmail = newGoogleEmail.trim().toLowerCase();
+    const cleanName = newGoogleName.trim() || cleanEmail.split('@')[0];
+    const initial = cleanName.charAt(0).toUpperCase();
 
     const colors = ['#1a73e8', '#34a853', '#ea4335', '#fbbc04', '#8b5cf6'];
     const color = colors[Math.floor(Math.random() * colors.length)];
 
     const newAccount = {
-      name,
-      email,
-      role: activeRoleTab === 'professional' ? 'professional' : 'candidate',
+      name: cleanName,
+      email: cleanEmail,
+      role: 'candidate',
       initial,
       color
     };
 
-    const updatedList = [newAccount, ...googleAccounts.filter(a => a.email !== email)];
+    const updatedList = [newAccount, ...googleAccounts.filter(a => a.email !== cleanEmail)];
     setGoogleAccounts(updatedList);
     localStorage.setItem('interviewpro_google_accounts', JSON.stringify(updatedList));
 
     handleSelectGoogleAccount(newAccount);
   };
 
-  return (
-    <div className="flex h-full w-full" style={{ minHeight: '100vh', backgroundColor: 'var(--bg-color)' }}>
-      {/* Left side - Login / Signup Form */}
-      <div className="flex-1 flex flex-col justify-center px-6 lg:px-12 py-10" style={{ backgroundColor: 'white', overflowY: 'auto' }}>
-        <div style={{ maxWidth: '440px', margin: '0 auto', width: '100%' }}>
-          
-          {/* Logo */}
-          <div className="flex items-center gap-2 mb-6">
-            <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.3rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>IP</div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--primary)' }}>InterviewPro</h1>
-            <span className="badge badge-info text-xs ml-auto" style={{ fontSize: '0.7rem' }}>Platform 2.0</span>
-          </div>
+  // Handle Forgot Password submission
+  const handleForgotSubmit = (e) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
 
-          {/* Heading */}
-          <h2 className="text-2xl font-bold mb-1">
-            {isLogin 
-              ? (activeRoleTab === 'professional' ? 'Professional Interviewer Sign In' : activeRoleTab === 'admin' ? 'Admin Portal Sign In' : 'Candidate Welcome Back') 
-              : 'Create Candidate Account'}
-          </h2>
-          <p className="text-muted mb-5 text-sm">
-            {isLogin 
-              ? (activeRoleTab === 'professional' 
-                  ? 'Sign in to access your interview schedule, ratings, and payouts' 
-                  : activeRoleTab === 'admin' 
-                  ? 'Manage users, invite professionals, and oversee platform' 
-                  : 'Sign in to practice mock interviews and access AI feedback')
-              : 'Public registration creates a Candidate (User) account. Professional accounts are invitation-only.'}
+    setForgotStatus({ loading: true, sent: false });
+    setTimeout(() => {
+      setForgotStatus({ loading: false, sent: true });
+    }, 700);
+  };
+
+  return (
+    <div className="ip-login-wrapper">
+      {/* ==========================================================================
+          1. LEFT SECTION — BRANDING AND ILLUSTRATION (~50% width)
+          ========================================================================== */}
+      <section className="ip-left-section" aria-label="InterviewPro Branding">
+        {/* Subtle decorative shapes */}
+        <div className="ip-bg-shape-1" aria-hidden="true" />
+        <div className="ip-bg-shape-2" aria-hidden="true" />
+        <div className="ip-bg-shape-3" aria-hidden="true" />
+
+        {/* Top Brand Logo */}
+        <div className="ip-brand-header">
+          <div className="ip-logo-badge">IP</div>
+          <span className="ip-logo-title">InterviewPro</span>
+          <span className="ip-logo-tag">AI Prep</span>
+        </div>
+
+        {/* Main Pitch & 4 Feature Items */}
+        <div className="ip-left-content">
+          <h1 className="ip-main-heading">
+            Practice Today.<br />
+            <span className="ip-highlight">Build Your Tomorrow.</span>
+          </h1>
+
+          <p className="ip-supporting-text">
+            Ace your interviews with AI-powered mock interviews and connect with industry experts.
           </p>
 
-          {/* Dynamic Role Selector Tabs */}
-          <div style={{
-            display: 'flex',
-            backgroundColor: '#f1f5f9',
-            borderRadius: '12px',
-            padding: '4px',
-            marginBottom: '1.25rem',
-            border: '1px solid #e2e8f0'
-          }}>
-            <button
-              type="button"
-              onClick={() => handleRoleTabChange('candidate')}
-              style={{
-                flex: 1,
-                padding: '0.6rem 0.5rem',
-                borderRadius: '8px',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                backgroundColor: activeRoleTab === 'candidate' ? 'white' : 'transparent',
-                color: activeRoleTab === 'candidate' ? 'var(--primary)' : '#64748b',
-                boxShadow: activeRoleTab === 'candidate' ? '0 2px 4px rgba(0,0,0,0.08)' : 'none',
-                transition: 'all 0.2s'
-              }}
-            >
-              <User size={15} />
-              <span>User (Candidate)</span>
-            </button>
+          {/* 4 Feature items with blue icons */}
+          <div className="ip-features-grid">
+            <div className="ip-feature-card">
+              <div className="ip-feature-icon-wrapper">
+                <Bot size={19} />
+              </div>
+              <span className="ip-feature-title">AI Mock Interviews</span>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                handleRoleTabChange('professional');
-                if (!isLogin) {
-                  setIsLogin(true); // Professionals cannot register publicly (Requirement 9)
-                }
-              }}
-              style={{
-                flex: 1,
-                padding: '0.6rem 0.5rem',
-                borderRadius: '8px',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                backgroundColor: activeRoleTab === 'professional' ? 'white' : 'transparent',
-                color: activeRoleTab === 'professional' ? '#8b5cf6' : '#64748b',
-                boxShadow: activeRoleTab === 'professional' ? '0 2px 4px rgba(0,0,0,0.08)' : 'none',
-                transition: 'all 0.2s'
-              }}
-            >
-              <Briefcase size={15} />
-              <span>Professional</span>
-            </button>
+            <div className="ip-feature-card">
+              <div className="ip-feature-icon-wrapper">
+                <Users size={19} />
+              </div>
+              <span className="ip-feature-title">Expert Interviews</span>
+            </div>
 
-            {isLogin && (
-              <button
-                type="button"
-                onClick={() => handleRoleTabChange('admin')}
-                style={{
-                  padding: '0.6rem 0.75rem',
-                  borderRadius: '8px',
-                  border: 'none',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '4px',
-                  backgroundColor: activeRoleTab === 'admin' ? 'white' : 'transparent',
-                  color: activeRoleTab === 'admin' ? '#ef4444' : '#64748b',
-                  boxShadow: activeRoleTab === 'admin' ? '0 2px 4px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.2s'
-                }}
-                title="Platform Administrator Console"
-              >
-                <ShieldCheck size={15} />
-                <span>Admin</span>
-              </button>
-            )}
+            <div className="ip-feature-card">
+              <div className="ip-feature-icon-wrapper">
+                <FileText size={19} />
+              </div>
+              <span className="ip-feature-title">Detailed Feedback</span>
+            </div>
+
+            <div className="ip-feature-card">
+              <div className="ip-feature-icon-wrapper">
+                <TrendingUp size={19} />
+              </div>
+              <span className="ip-feature-title">Career Growth</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Student Illustration & Motivational Tagline */}
+        <div className="ip-illustration-wrapper">
+          <div className="ip-illustration-card">
+            <img 
+              src="/login-illustration.jpg" 
+              alt="Student practicing mock interviews on laptop" 
+              className="ip-illustration-img"
+              loading="eager"
+            />
           </div>
 
-          {/* Error Message */}
+          <div className="ip-tagline-badge">
+            <Sparkles size={14} className="text-primary" />
+            <span>Your growth matters</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ==========================================================================
+          2. RIGHT SECTION — LOGIN FORM (~50% width)
+          ========================================================================== */}
+      <section className="ip-right-section" aria-label="Sign In Form">
+        <div className="ip-login-card">
+          {/* Card Header with Logo, Heading & Subtitle */}
+          <div className="ip-card-header">
+            <div className="ip-card-logo">
+              <div className="ip-logo-badge" style={{ padding: '0.35rem 0.65rem', fontSize: '0.85rem' }}>IP</div>
+              <span className="ip-logo-title" style={{ fontSize: '1.25rem' }}>InterviewPro</span>
+            </div>
+
+            <h2 className="ip-card-heading">
+              {isLogin ? 'Welcome Back' : 'Create Account'}
+            </h2>
+            <p className="ip-card-subtitle">
+              {isLogin 
+                ? 'Sign in to continue your journey' 
+                : 'Sign up to practice mock interviews and get hired'}
+            </p>
+          </div>
+
+          {/* Error & Success Feedback Banners */}
           {error && (
-            <div className="mb-4 p-3 rounded-lg text-sm flex items-start gap-2" style={{ backgroundColor: 'rgba(234, 67, 53, 0.1)', color: 'var(--danger)', border: '1px solid rgba(234, 67, 53, 0.2)' }}>
-              <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+            <div className="ip-error-banner" role="alert">
+              <AlertCircle size={18} className="flex-shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Application Submitted Success View (After Professional Registration) */}
-          {applicationSubmittedData ? (
-            <div className="card p-6 text-center" style={{ border: '2px solid rgba(139, 92, 246, 0.3)', backgroundColor: '#faf5ff' }}>
-              <div style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                color: '#8b5cf6',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 1rem'
-              }}>
-                <Clock size={28} />
-              </div>
-
-              <h3 className="text-xl font-bold mb-1" style={{ color: '#6b21a8' }}>
-                Application Sent to Admin!
-              </h3>
-              <p className="text-xs text-muted mb-4">
-                Thank you <strong>{applicationSubmittedData.name}</strong>. Your application to join as a Professional Interviewer has been routed to the <strong>Admin Console</strong> for evaluation.
-              </p>
-
-              <div className="p-3 rounded-lg text-left text-xs mb-4" style={{ backgroundColor: 'white', border: '1px solid #e9d5ff' }}>
-                <div className="flex justify-between py-1 border-b" style={{ borderColor: '#f3e8ff' }}>
-                  <span className="text-muted">Account Email:</span>
-                  <span className="font-semibold">{applicationSubmittedData.email}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b" style={{ borderColor: '#f3e8ff' }}>
-                  <span className="text-muted">Domain Expertise:</span>
-                  <span className="font-semibold">{applicationSubmittedData.domain}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b" style={{ borderColor: '#f3e8ff' }}>
-                  <span className="text-muted">Hourly Rate:</span>
-                  <span className="font-semibold text-success">₹{applicationSubmittedData.hourlyRate || 100} / session</span>
-                </div>
-                <div className="flex justify-between py-1">
-                  <span className="text-muted">Current Status:</span>
-                  <span className="badge badge-warning" style={{ fontSize: '0.65rem' }}>Awaiting Admin Approval ⏳</span>
-                </div>
-              </div>
-
-              <div className="text-xs text-muted mb-4" style={{ lineHeight: 1.5 }}>
-                💡 <strong>What happens next?</strong> The administrator (Namdev) will inspect your credentials in the Admin Panel and decide whether to approve your professional account. Once approved, you can log in and conduct mock interviews.
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-primary w-full"
-                onClick={() => {
-                  setApplicationSubmittedData(null);
-                  setIsLogin(true);
-                  setActiveRoleTab('professional');
-                  setFormData(prev => ({
-                    ...prev,
-                    email: applicationSubmittedData.email,
-                    password: ''
-                  }));
-                }}
-              >
-                Back to Sign In
-              </button>
+          {successMessage && (
+            <div className="ip-success-banner" role="status">
+              <CheckCircle2 size={18} className="flex-shrink-0 mt-0.5" />
+              <span>{successMessage}</span>
             </div>
-          ) : (
-            /* Main Form */
-            <form onSubmit={handleSubmit}>
-              {!isLogin && (
-                <div className="input-group">
-                  <label>Full Name</label>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} noValidate>
+            {/* Full Name field (Only shown during Candidate Signup) */}
+            {!isLogin && (
+              <div className="ip-form-group">
+                <label className="ip-form-label" htmlFor="fullName">Full Name</label>
+                <div className="ip-input-container">
+                  <User size={18} className="ip-input-icon" />
                   <input 
-                    type="text" 
+                    id="fullName"
+                    type="text"
                     name="name"
-                    placeholder="Enter your full name" 
-                    className="input-field" 
-                    value={formData.name}
-                    onChange={handleInputChange}
+                    placeholder="Enter your full name"
+                    className="ip-input-field"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     required
                   />
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Informational notice when Professional tab is selected */}
-              {activeRoleTab === 'professional' && isLogin && (
-                <div className="p-3 rounded-xl mb-4 text-xs" style={{ backgroundColor: '#faf5ff', border: '1px solid #e9d5ff', color: '#6b21a8' }}>
-                  <div className="font-semibold flex items-center justify-between mb-1">
-                    <span>👨‍💼 Verified Professional Portal</span>
-                    <Link to="/professional/login" className="underline font-bold" style={{ color: '#7c3aed' }}>
-                      Dedicated Page →
-                    </Link>
-                  </div>
-                  <p className="text-muted text-[11px]" style={{ margin: 0, color: '#7e22ce' }}>
-                    Professional accounts are created exclusively by Admin invitation. Enter your Email and Password below to access your dashboard.
-                  </p>
-                </div>
-              )}
-
-              <div className="input-group">
-                <label>Email address</label>
+            {/* Email Address */}
+            <div className="ip-form-group">
+              <label className="ip-form-label" htmlFor="loginEmail">Email address</label>
+              <div className="ip-input-container">
+                <Mail size={18} className="ip-input-icon" />
                 <input 
-                  type="email" 
+                  id="loginEmail"
+                  type="email"
                   name="email"
-                  placeholder="Enter your email" 
-                  className="input-field" 
-                  value={formData.email}
-                  onChange={handleInputChange}
+                  placeholder="name@example.com"
+                  className="ip-input-field"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
                   required
                 />
               </div>
-              
-              <div className="input-group mb-5">
-                <label>Password</label>
-                <div style={{ position: 'relative' }}>
+            </div>
+
+            {/* Password */}
+            <div className="ip-form-group">
+              <label className="ip-form-label" htmlFor="loginPassword">Password</label>
+              <div className="ip-input-container">
+                <Lock size={18} className="ip-input-icon" />
+                <input 
+                  id="loginPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  name="password"
+                  placeholder="Enter your password"
+                  className="ip-input-field"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  required
+                />
+                <button
+                  type="button"
+                  className="ip-password-toggle"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Remember me & Forgot Password */}
+            {isLogin && (
+              <div className="ip-options-row">
+                <label className="ip-remember-label">
                   <input 
-                    type="password" 
-                    name="password"
-                    placeholder="Enter your password" 
-                    className="input-field w-full" 
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    required
+                    type="checkbox"
+                    className="ip-remember-checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
                   />
-                  <Eye size={18} className="text-muted" style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer' }} />
-                </div>
+                  <span>Remember me</span>
+                </label>
+
+                <button
+                  type="button"
+                  className="ip-forgot-link"
+                  onClick={() => {
+                    setForgotEmail(email);
+                    setForgotStatus({ sent: false, loading: false });
+                    setShowForgotModal(true);
+                  }}
+                >
+                  Forgot password?
+                </button>
               </div>
+            )}
 
-              <button 
-                type="submit" 
-                className={`btn ${activeRoleTab === 'professional' ? 'btn-primary' : activeRoleTab === 'admin' ? 'btn-danger' : 'btn-primary'} w-full mb-4`} 
-                style={{ 
-                  padding: '0.75rem',
-                  backgroundColor: activeRoleTab === 'professional' ? '#8b5cf6' : activeRoleTab === 'admin' ? '#ef4444' : 'var(--primary)',
-                  borderColor: activeRoleTab === 'professional' ? '#8b5cf6' : activeRoleTab === 'admin' ? '#ef4444' : 'var(--primary)'
-                }}
-                disabled={loading}
-              >
-                {loading ? 'Processing...' : (
-                  isLogin 
-                    ? `Sign In as ${activeRoleTab === 'admin' ? 'Admin' : activeRoleTab === 'professional' ? 'Professional' : 'Candidate'}` 
-                    : (activeRoleTab === 'professional' ? 'Submit Professional Application' : 'Create Account')
-                )}
-              </button>
-
-              {/* Quick Demo Switcher Pills in Login Mode */}
-              {isLogin && (
-                <div className="mb-4 p-3 rounded-xl border text-xs" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                  <div className="text-muted font-semibold mb-2 flex items-center justify-between">
-                    <span>⚡ Quick Test Login Accounts:</span>
-                    <Sparkles size={13} className="text-primary" />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-outline text-xs py-1 px-2 text-left"
-                      style={{ fontSize: '0.7rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
-                      onClick={() => {
-                        setActiveRoleTab('candidate');
-                        setFormData(prev => ({
-                          ...prev,
-                          email: 'namdev.sharma@gmail.com',
-                          password: 'password123',
-                          role: 'candidate'
-                        }));
-                      }}
-                    >
-                      <span className="font-bold text-primary">👨‍💻 Candidate</span>
-                      <span className="text-muted" style={{ fontSize: '0.65rem' }}>namdev.sharma@...</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-outline text-xs py-1 px-2 text-left"
-                      style={{ fontSize: '0.7rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
-                      onClick={() => {
-                        setActiveRoleTab('professional');
-                        setFormData(prev => ({
-                          ...prev,
-                          email: 'shushant@example.com',
-                          password: 'password123',
-                          role: 'professional'
-                        }));
-                      }}
-                    >
-                      <span className="font-bold text-success">💼 Professional (Approved)</span>
-                      <span className="text-muted" style={{ fontSize: '0.65rem' }}>shushant@example...</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-outline text-xs py-1 px-2 text-left"
-                      style={{ fontSize: '0.7rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
-                      onClick={() => {
-                        setActiveRoleTab('professional');
-                        setFormData(prev => ({
-                          ...prev,
-                          email: 'pooja.deshmukh@example.com',
-                          password: 'password123',
-                          role: 'professional'
-                        }));
-                      }}
-                      title="Test Pending Admin Approval behavior"
-                    >
-                      <span className="font-bold text-warning">⏳ Professional (Pending)</span>
-                      <span className="text-muted" style={{ fontSize: '0.65rem' }}>pooja.deshmukh@...</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn-outline text-xs py-1 px-2 text-left"
-                      style={{ fontSize: '0.7rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}
-                      onClick={() => {
-                        setActiveRoleTab('admin');
-                        setFormData(prev => ({
-                          ...prev,
-                          email: 'namdevgavhane41@gmail.com',
-                          password: 'Namu7654321@',
-                          role: 'admin'
-                        }));
-                      }}
-                    >
-                      <span className="font-bold text-danger">🛡️ Super Admin</span>
-                      <span className="text-muted" style={{ fontSize: '0.65rem' }}>namdevgavhane41@...</span>
-                    </button>
-                  </div>
-                </div>
+            {/* Full-width blue gradient Sign In button */}
+            <button
+              type="submit"
+              className="ip-submit-btn"
+              disabled={loading}
+            >
+              {loading ? (
+                <span>Processing...</span>
+              ) : (
+                <>
+                  <span>{isLogin ? 'Sign In' : 'Create Account'}</span>
+                  <ArrowRight size={17} />
+                </>
               )}
+            </button>
 
-              <div className="flex items-center gap-4 mb-4" style={{ margin: '1.25rem 0' }}>
-                <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border)' }}></div>
-                <span className="text-muted text-xs">or continue with</span>
-                <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border)' }}></div>
-              </div>
+            {/* Divider with "or" */}
+            <div className="ip-divider">
+              <span className="ip-divider-line" />
+              <span className="ip-divider-text">or</span>
+              <span className="ip-divider-line" />
+            </div>
 
-              {/* Working Continue with Google button */}
-              <button 
-                type="button" 
-                className="btn btn-outline w-full flex items-center justify-center gap-3 mb-2" 
-                style={{ padding: '0.75rem', fontWeight: 500, fontSize: '0.95rem' }}
-                onClick={() => {
-                  setIsAddingNewGoogle(false);
-                  setShowGoogleModal(true);
-                }}
-              >
-                <svg width="18" height="18" viewBox="0 0 48 48">
-                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                  <path fill="none" d="M0 0h48v48H0z"/>
-                </svg>
-                <span>Continue with Google</span>
-              </button>
-            </form>
-          )}
+            {/* Continue with Google button */}
+            <button
+              type="button"
+              className="ip-google-btn"
+              onClick={() => {
+                setIsAddingNewGoogle(false);
+                setShowGoogleModal(true);
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                <path fill="none" d="M0 0h48v48H0z"/>
+              </svg>
+              <span>Continue with Google</span>
+            </button>
+          </form>
 
-          {/* Toggle between Login and Signup */}
-          <p className="text-center text-sm text-muted mt-6">
-            {isLogin ? "Don't have an account? " : "Already registered? "}
-            <span 
-              className="font-semibold" 
-              style={{ color: 'var(--primary)', cursor: 'pointer' }}
+          {/* Footer: Toggle Login / Signup */}
+          <div className="ip-card-footer">
+            <span>{isLogin ? "Don't have an account?" : "Already have an account?"}</span>
+            <button
+              type="button"
+              className="ip-toggle-btn"
               onClick={() => {
                 setIsLogin(!isLogin);
                 setError('');
-                setApplicationSubmittedData(null);
+                setSuccessMessage('');
               }}
             >
-              {isLogin ? (activeRoleTab === 'professional' ? 'Apply as Professional' : 'Sign up') : 'Sign in'}
-            </span>
-          </p>
-        </div>
-      </div>
-
-      {/* Right side - Dynamic Information & Illustration */}
-      <div className="flex-1 hidden lg:flex flex-col items-center justify-center p-12" style={{ backgroundColor: '#f0f4f8' }}>
-        <img 
-          src={activeRoleTab === 'professional' 
-            ? "https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"
-            : "https://images.unsplash.com/photo-1516321497487-e288fb19713f?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"} 
-          alt="Illustration" 
-          style={{ maxWidth: '80%', maxHeight: '420px', objectFit: 'cover', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)' }} 
-        />
-        <div className="text-center mt-8" style={{ maxWidth: '440px' }}>
-          <h2 className="text-2xl font-bold mb-3">
-            {activeRoleTab === 'professional' 
-              ? "Conduct Interviews.\nMonetize Your Experience." 
-              : "Practice. Improve.\nLand Your Dream Offer."}
-          </h2>
-          <p className="text-muted text-sm" style={{ lineHeight: 1.6 }}>
-            {activeRoleTab === 'professional'
-              ? "Join elite engineers from Cognizant, NICE, and top tech companies. Admin manually accredits every interviewer to maintain the highest quality standards."
-              : "Mock interviews with vetted industry professionals and adaptive AI simulations. Detailed feedback reports that help you get hired."}
-          </p>
-        </div>
-      </div>
-
-      {/* ================= MODAL 1: PENDING ADMIN APPROVAL ================= */}
-      {pendingModalData && (
-        <div className="modal-overlay" onClick={() => setPendingModalData(null)}>
-          <div 
-            className="modal-card" 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: '460px', 
-              padding: '2.5rem 2rem', 
-              borderRadius: '24px',
-              textAlign: 'center'
-            }}
-          >
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(245, 158, 11, 0.15)',
-              color: '#d97706',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 1.25rem'
-            }}>
-              <Clock size={32} />
-            </div>
-
-            <span className="badge badge-warning text-xs font-semibold uppercase px-3 py-1 mb-2">
-              Application Under Review ⏳
-            </span>
-
-            <h3 className="text-xl font-bold mt-2 mb-2">Account Pending Admin Approval</h3>
-            <p className="text-muted text-xs mb-5" style={{ lineHeight: 1.5 }}>
-              Hello <strong>{pendingModalData.name}</strong>, your application to conduct mock interviews on InterviewPro is currently waiting for approval from the platform Administrator.
-            </p>
-
-            <div className="p-3 rounded-xl border text-left text-xs mb-5" style={{ backgroundColor: '#fefce8', borderColor: '#fef08a' }}>
-              <div className="flex justify-between py-1 border-b" style={{ borderColor: '#fef9c3' }}>
-                <span className="text-muted">Registered Email:</span>
-                <span className="font-semibold">{pendingModalData.email}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b" style={{ borderColor: '#fef9c3' }}>
-                <span className="text-muted">Target Role:</span>
-                <span className="font-semibold">Professional Interviewer</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-muted">Admin Approver:</span>
-                <span className="font-semibold text-primary">Namdev Gavhane (Admin)</span>
-              </div>
-            </div>
-
-            <div className="text-xs text-muted mb-6" style={{ lineHeight: 1.5 }}>
-              Once the administrator decides to approve your professional status, your access will be activated immediately and you can log in to set availability slots.
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                className="btn btn-outline flex-1"
-                onClick={() => setPendingModalData(null)}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary flex-1"
-                onClick={() => {
-                  setPendingModalData(null);
-                  setActiveRoleTab('admin');
-                  setFormData(prev => ({
-                    ...prev,
-                    email: 'namdevgavhane41@gmail.com',
-                    password: 'Namu7654321@',
-                    role: 'admin'
-                  }));
-                }}
-              >
-                Sign In as Admin to Review
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= MODAL 2: APPLICATION REJECTED ================= */}
-      {rejectedModalData && (
-        <div className="modal-overlay" onClick={() => setRejectedModalData(null)}>
-          <div 
-            className="modal-card" 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: '440px', 
-              padding: '2.5rem 2rem', 
-              borderRadius: '24px',
-              textAlign: 'center'
-            }}
-          >
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              color: '#dc2626',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 1.25rem'
-            }}>
-              <X size={32} />
-            </div>
-
-            <span className="badge badge-danger text-xs font-semibold uppercase px-3 py-1 mb-2">
-              Application Decision: Not Approved ⚠️
-            </span>
-
-            <h3 className="text-xl font-bold mt-2 mb-2">Professional Application Not Approved</h3>
-            <p className="text-muted text-xs mb-5" style={{ lineHeight: 1.5 }}>
-              {rejectedModalData.message || 'Your professional interviewer application was evaluated by the platform administrator and not approved at this time.'}
-            </p>
-
-            <button
-              type="button"
-              className="btn btn-primary w-full"
-              onClick={() => setRejectedModalData(null)}
-            >
-              Understood
+              {isLogin ? 'Create account' : 'Sign in'}
             </button>
           </div>
+
+          {/* Discreet link for Interviewers / Professionals (Requirement 3) */}
+          <div className="ip-pro-link-wrapper">
+            <span>Interviewer or Admin? </span>
+            <Link to="/professional/login" className="ip-pro-link">
+              <Briefcase size={13} />
+              <span>Professional Portal Sign In →</span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ==========================================================================
+          MODAL: FORGOT PASSWORD DIALOG
+          ========================================================================== */}
+      {showForgotModal && (
+        <div className="modal-overlay" onClick={() => setShowForgotModal(false)}>
+          <div 
+            className="modal-card" 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ maxWidth: '420px', padding: '2rem', borderRadius: '24px' }}
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold" style={{ color: '#0f172a' }}>
+                Reset Your Password
+              </h3>
+              <button 
+                type="button"
+                className="btn btn-ghost p-1"
+                onClick={() => setShowForgotModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {forgotStatus.sent ? (
+              <div className="text-center py-4">
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  backgroundColor: '#f0fdf4',
+                  color: '#16a34a',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1rem'
+                }}>
+                  <Check size={28} />
+                </div>
+                <h4 className="font-bold text-base mb-1">Check Your Inbox</h4>
+                <p className="text-xs text-muted mb-4" style={{ lineHeight: 1.5 }}>
+                  If an account exists for <strong>{forgotEmail}</strong>, password reset instructions have been sent. Please check your spam folder as well.
+                </p>
+                <button
+                  type="button"
+                  className="ip-submit-btn"
+                  onClick={() => setShowForgotModal(false)}
+                >
+                  Back to Sign In
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit}>
+                <p className="text-xs text-muted mb-4" style={{ lineHeight: 1.5 }}>
+                  Enter your registered email address and we will provide you with password reset instructions.
+                </p>
+                <div className="ip-form-group mb-4">
+                  <label className="ip-form-label">Email Address</label>
+                  <div className="ip-input-container">
+                    <Mail size={18} className="ip-input-icon" />
+                    <input 
+                      type="email"
+                      className="ip-input-field"
+                      placeholder="name@example.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-outline flex-1"
+                    onClick={() => setShowForgotModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="ip-submit-btn flex-1"
+                    disabled={forgotStatus.loading}
+                  >
+                    {forgotStatus.loading ? 'Sending...' : 'Send Reset Link'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         </div>
       )}
 
-      {/* ================= MODAL 3: GOOGLE AUTH CHOOSER ================= */}
+      {/* ==========================================================================
+          MODAL: GOOGLE ACCOUNT CHOOSER (Seamless Google Sign-In)
+          ========================================================================== */}
       {showGoogleModal && (
         <div className="modal-overlay" onClick={() => !selectedAccountLoading && setShowGoogleModal(false)}>
           <div 
             className="modal-card" 
             onClick={(e) => e.stopPropagation()} 
             style={{ 
-              maxWidth: '440px', 
-              padding: '2.5rem 2rem', 
-              borderRadius: '28px',
-              boxShadow: '0 8px 28px rgba(0,0,0,0.28)',
-              border: '1px solid rgba(0,0,0,0.08)'
+              maxWidth: '430px', 
+              padding: '2.25rem 2rem', 
+              borderRadius: '26px',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.18)',
+              border: '1px solid #e2e8f0'
             }}
           >
-            {/* Top Close Button & Google Logo */}
-            <div className="flex justify-between items-start mb-6">
+            <div className="flex justify-between items-start mb-5">
               <div className="flex flex-col items-start">
-                <svg width="24" height="24" viewBox="0 0 48 48" className="mb-4">
+                <svg width="24" height="24" viewBox="0 0 48 48" className="mb-3">
                   <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
                   <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
                   <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                   <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                   <path fill="none" d="M0 0h48v48H0z"/>
                 </svg>
-                <h3 className="text-xl font-medium" style={{ color: '#202124', letterSpacing: '-0.2px' }}>
+                <h3 className="text-xl font-semibold" style={{ color: '#202124' }}>
                   Choose an account
                 </h3>
-                <p className="text-sm mt-1" style={{ color: '#5f6368' }}>
-                  to continue to <span className="font-semibold" style={{ color: '#202124' }}>InterviewPro</span>
+                <p className="text-xs text-muted mt-1">
+                  to continue to <strong style={{ color: '#202124' }}>InterviewPro</strong>
                 </p>
               </div>
               <button 
@@ -942,11 +696,12 @@ const Login = () => {
                       <div
                         key={account.email}
                         onClick={() => !selectedAccountLoading && handleSelectGoogleAccount(account)}
-                        className="flex items-center justify-between p-3.5 transition-colors"
+                        className="flex items-center justify-between p-3 transition-colors"
                         style={{
                           cursor: selectedAccountLoading ? 'not-allowed' : 'pointer',
                           opacity: selectedAccountLoading && !isSigningIn ? 0.5 : 1,
-                          borderBottom: '1px solid #f1f3f4'
+                          borderBottom: '1px solid #f1f3f4',
+                          borderRadius: '8px'
                         }}
                         onMouseEnter={(e) => {
                           if (!selectedAccountLoading) e.currentTarget.style.backgroundColor = '#f8f9fa';
@@ -955,14 +710,14 @@ const Login = () => {
                           e.currentTarget.style.backgroundColor = 'transparent';
                         }}
                       >
-                        <div className="flex items-center gap-3.5">
+                        <div className="flex items-center gap-3">
                           {account.avatar ? (
                             <img 
                               src={account.avatar} 
                               alt={account.name}
                               style={{ 
-                                width: '40px', 
-                                height: '40px', 
+                                width: '38px', 
+                                height: '38px', 
                                 borderRadius: '50%', 
                                 objectFit: 'cover' 
                               }}
@@ -970,13 +725,13 @@ const Login = () => {
                           ) : (
                             <div 
                               style={{ 
-                                width: '40px', 
-                                height: '40px', 
+                                width: '38px', 
+                                height: '38px', 
                                 borderRadius: '50%', 
                                 backgroundColor: account.color || '#1a73e8',
                                 color: 'white',
-                                fontWeight: 500,
-                                fontSize: '1rem',
+                                fontWeight: 600,
+                                fontSize: '0.95rem',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -998,11 +753,11 @@ const Login = () => {
                         </div>
 
                         {isSigningIn ? (
-                          <span className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
+                          <span className="text-xs font-semibold" style={{ color: '#2563eb' }}>
                             Signing in...
                           </span>
                         ) : (
-                          <span className="badge badge-secondary text-xs" style={{ fontSize: '0.7rem' }}>
+                          <span className="badge badge-secondary text-xs" style={{ fontSize: '0.68rem' }}>
                             {account.role === 'admin' ? 'Admin' : account.role === 'professional' ? 'Interviewer' : 'Candidate'}
                           </span>
                         )}
@@ -1010,21 +765,18 @@ const Login = () => {
                     );
                   })}
 
-                  {/* "+ Use another account" Row */}
+                  {/* Use another account button */}
                   <div
                     onClick={() => !selectedAccountLoading && setIsAddingNewGoogle(true)}
-                    className="flex items-center gap-3.5 p-3.5 transition-colors"
-                    style={{
-                      cursor: 'pointer',
-                      borderBottom: '1px solid #e0e0e0'
-                    }}
+                    className="flex items-center gap-3 p-3 transition-colors mt-1"
+                    style={{ cursor: 'pointer', borderRadius: '8px' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
                     <div 
                       style={{ 
-                        width: '40px', 
-                        height: '40px', 
+                        width: '38px', 
+                        height: '38px', 
                         borderRadius: '50%', 
                         border: '1px solid #dadce0',
                         color: '#5f6368',
@@ -1034,20 +786,20 @@ const Login = () => {
                         flexShrink: 0
                       }}
                     >
-                      <UserPlus size={18} />
+                      <UserPlus size={17} />
                     </div>
-                    <div className="font-semibold text-sm" style={{ color: '#202124' }}>
+                    <div className="font-medium text-sm" style={{ color: '#202124' }}>
                       Use another account
                     </div>
                   </div>
                 </div>
 
-                <p className="text-xs text-muted mt-6 text-left" style={{ color: '#5f6368', lineHeight: 1.4 }}>
-                  To continue, Google will share your profile with InterviewPro according to the selected role.
+                <p className="text-xs text-muted mt-5 text-left" style={{ color: '#5f6368', lineHeight: 1.4 }}>
+                  To continue, Google will share your profile with InterviewPro according to the selected account.
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleAddNewGoogleAccount} className="flex flex-col gap-4">
+              <form onSubmit={handleAddNewGoogleAccount} className="flex flex-col gap-3">
                 <p className="text-sm font-medium" style={{ color: '#202124' }}>
                   Sign in with your Google Account
                 </p>
@@ -1069,14 +821,14 @@ const Login = () => {
                   <label className="text-xs font-medium">Your Name</label>
                   <input 
                     type="text" 
-                    placeholder="e.g. Priya Patil"
+                    placeholder="e.g. Namdev Sharma"
                     className="input-field text-sm"
                     value={newGoogleName}
                     onChange={(e) => setNewGoogleName(e.target.value)}
                   />
                 </div>
 
-                <div className="flex justify-between items-center mt-4">
+                <div className="flex justify-between items-center mt-3">
                   <button 
                     type="button" 
                     className="btn btn-ghost text-sm font-semibold"
@@ -1088,8 +840,8 @@ const Login = () => {
 
                   <button 
                     type="submit" 
-                    className="btn btn-primary text-sm px-6 py-2"
-                    style={{ borderRadius: '20px' }}
+                    className="ip-submit-btn"
+                    style={{ width: 'auto', padding: '0.6rem 1.25rem', fontSize: '0.85rem' }}
                   >
                     Continue
                   </button>
