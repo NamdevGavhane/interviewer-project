@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config/api';
+import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import apiClient from '../utils/apiClient';
 import { 
   LayoutDashboard, 
   Users, 
@@ -12,60 +13,98 @@ import {
   Video,
   Bot,
   Receipt,
-  ShieldCheck
+  ShieldCheck,
+  Check,
+  CheckCheck,
+  Clock,
+  Sparkles
 } from 'lucide-react';
 
 const SidebarLayout = () => {
-  const [userData, setUserData] = useState(null);
+  const { user: userData, role: currentRole, logout } = useAuth();
   const navigate = useNavigate();
-
-  const userId = localStorage.getItem('userId');
-
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
-  useEffect(() => {
-    if (!userId) {
-      navigate('/login');
-      return;
+  // Notifications state
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const notifRef = useRef(null);
+
+  const fetchNotifications = async () => {
+    if (!userData) return;
+    try {
+      const res = await apiClient.get('/api/notifications');
+      setNotifications(res.data.notifications || []);
+      setUnreadCount(res.data.unreadCount || 0);
+    } catch (err) {
+      // Quiet notice
     }
-
-    fetch(`${API_BASE_URL}/api/users/${userId}`)
-      .then(res => {
-        if (!res.ok) throw new Error('Not found');
-        return res.json();
-      })
-      .then(data => {
-        setUserData(data);
-        if (data?.role) {
-          localStorage.setItem('userRole', data.role);
-          if (data.role === 'admin') {
-            fetch(`${API_BASE_URL}/api/admin/stats`)
-              .then(s => s.json())
-              .then(statData => {
-                if (statData?.pendingRequestsCount) {
-                  setPendingRequestsCount(statData.pendingRequestsCount);
-                }
-              })
-              .catch(err => console.error('Error fetching admin stats:', err));
-          }
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        localStorage.removeItem('userId');
-        navigate('/login');
-      });
-  }, [userId, navigate]);
-
-  const handleLogout = (e) => {
-    e.preventDefault();
-    localStorage.removeItem('userId');
-    localStorage.removeItem('userRole');
-    navigate('/login');
   };
 
-  const currentRole = userData?.role || localStorage.getItem('userRole') || 'candidate';
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 45000); // Poll every 45s
+    return () => clearInterval(interval);
+  }, [userData]);
+
+  useEffect(() => {
+    if (currentRole === 'admin') {
+      apiClient.get('/api/admin/stats')
+        .then(statData => {
+          if (statData?.pendingRequestsCount) {
+            setPendingRequestsCount(statData.pendingRequestsCount);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [currentRole]);
+
+  // Click outside listener for notification dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setShowNotifDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleMarkAsRead = async (id, link) => {
+    try {
+      await apiClient.patch(`/api/notifications/${id}/read`);
+      setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      if (link) {
+        setShowNotifDropdown(false);
+        navigate(link);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await apiClient.patch('/api/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleLogout = async (e) => {
+    e.preventDefault();
+    await logout();
+  };
+
   const isCandidate = currentRole === 'candidate';
+
+  const userInitials = userData?.name
+    ? userData.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'IP';
 
   return (
     <div className="app-container">
@@ -140,12 +179,22 @@ const SidebarLayout = () => {
         {/* User Card in Sidebar Bottom */}
         {userData && (
           <div className="p-3 rounded-xl border mb-3 flex items-center gap-3" style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border)' }}>
-            <img 
-              src={userData.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
-              alt={userData.name} 
-              className="profile-avatar"
-              style={{ width: '36px', height: '36px' }}
-            />
+            <div 
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--primary)',
+                color: 'white',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.85rem'
+              }}
+            >
+              {userInitials}
+            </div>
             <div style={{ overflow: 'hidden' }}>
               <div className="text-xs font-bold" style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>{userData.name}</div>
               <span className={`badge ${userData.role === 'admin' ? 'badge-danger' : userData.role === 'professional' ? 'badge-info' : 'badge-success'}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem' }}>
@@ -168,20 +217,123 @@ const SidebarLayout = () => {
         <header className="header">
           <div className="flex items-center gap-3">
             <span className="badge badge-secondary text-xs">
-              Live Mongo API Connected 🟢
+              Live Database Connected 🟢
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <button className="btn btn-ghost" style={{ padding: '0.5rem', borderRadius: '50%' }}>
-              <Bell size={20} className="text-muted" />
-            </button>
+            {/* Notification Bell Dropdown */}
+            <div className="relative" ref={notifRef}>
+              <button 
+                type="button"
+                onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+                className="btn btn-ghost relative" 
+                style={{ padding: '0.5rem', borderRadius: '50%', cursor: 'pointer' }}
+                title="Notifications"
+              >
+                <Bell size={20} className={unreadCount > 0 ? 'text-primary' : 'text-muted'} />
+                {unreadCount > 0 && (
+                  <span 
+                    style={{
+                      position: 'absolute',
+                      top: '2px',
+                      right: '2px',
+                      backgroundColor: '#ef4444',
+                      color: 'white',
+                      fontSize: '0.65rem',
+                      fontWeight: 'bold',
+                      borderRadius: '50%',
+                      width: '18px',
+                      height: '18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Flyout Menu */}
+              {showNotifDropdown && (
+                <div 
+                  style={{
+                    position: 'absolute',
+                    top: '110%',
+                    right: 0,
+                    width: '320px',
+                    backgroundColor: 'white',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 30px -5px rgba(0,0,0,0.2)',
+                    border: '1px solid #e2e8f0',
+                    zIndex: 1000,
+                    overflow: 'hidden'
+                  }}
+                >
+                  <div className="p-3 border-b flex justify-between items-center bg-slate-50">
+                    <span className="font-bold text-xs text-slate-800">Notifications</span>
+                    {unreadCount > 0 && (
+                      <button 
+                        type="button"
+                        onClick={handleMarkAllRead}
+                        className="text-[11px] text-primary hover:underline font-semibold flex items-center gap-1"
+                      >
+                        <CheckCheck size={13} />
+                        <span>Mark all read</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-muted">
+                        No notifications yet.
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <div 
+                          key={n._id}
+                          onClick={() => handleMarkAsRead(n._id, n.link)}
+                          className={`p-3 border-b text-xs cursor-pointer transition-colors hover:bg-slate-50 ${!n.isRead ? 'bg-blue-50/40' : ''}`}
+                        >
+                          <div className="flex justify-between items-start gap-1">
+                            <span className={`font-semibold ${!n.isRead ? 'text-primary' : 'text-slate-800'}`}>
+                              {n.title}
+                            </span>
+                            {!n.isRead && (
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--primary)', marginTop: '4px' }}></span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{n.message}</p>
+                          <span className="text-[10px] text-slate-400 mt-1 block">
+                            {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">{userData?.name || 'Loading...'}</span>
-              <img 
-                src={userData?.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
-                alt="User Avatar" 
-                className="profile-avatar"
-              />
+              <span className="text-sm font-medium">{userData?.name || 'User'}</span>
+              <div 
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--primary)',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.8rem'
+                }}
+              >
+                {userInitials}
+              </div>
             </div>
             <button 
               onClick={handleLogout} 

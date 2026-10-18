@@ -2,12 +2,17 @@ import { jsPDF } from 'jspdf';
 
 /**
  * Generates and downloads a comprehensive, executive-grade PDF Report of the Mock Interview
- * detailing questions asked by HR, candidate answers, score breakdown, and evaluator feedback.
+ * detailing questions asked by evaluator, candidate answers, score breakdown, and feedback.
  * 
  * @param {Object} reportData - Feedback object containing interviewId, candidateId, interviewerId, qaList, scores, strengths, improvements, etc.
  */
 export const downloadInterviewReportPDF = (reportData) => {
   try {
+    if (!reportData || (reportData.overallScore === undefined && reportData.overallScore === null)) {
+      alert('Evaluation feedback has not been submitted yet for this session. A report can only be generated after the evaluator completes their evaluation.');
+      return false;
+    }
+
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'pt',
@@ -24,26 +29,26 @@ export const downloadInterviewReportPDF = (reportData) => {
     const interviewer = reportData.interviewerId || {};
 
     const candidateName = candidate.name || 'Candidate';
-    const candidateEmail = candidate.email || 'candidate@example.com';
-    const hrName = interviewer.name || 'HR & Senior Technical Lead';
-    const hrTitle = interviewer.title || 'Technical Specialist & HR Evaluator';
-    const hrCompany = interviewer.company || 'InterviewPro Expert';
+    const candidateEmail = candidate.email || 'N/A';
+    const hrName = interviewer.name || 'Professional Evaluator';
+    const hrTitle = interviewer.title || 'Technical Specialist';
+    const hrCompany = interviewer.company || 'InterviewPro';
 
-    const topic = interview.topic || reportData.topic || 'Frontend & Fullstack Mock Interview';
+    const topic = interview.topic || reportData.topic || 'Mock Technical Interview';
     const sessionDate = interview.date || reportData.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    const sessionSlot = interview.timeSlot || reportData.timeSlot || '45 Mins Live Session';
+    const sessionSlot = interview.timeSlot || reportData.timeSlot || 'Scheduled Session';
 
-    const overallScore = Number(reportData.overallScore ?? 82);
-    const technicalScore = Number(reportData.technicalScore ?? 85);
-    const commScore = Number(reportData.communicationScore ?? 80);
-    const relevanceScore = Number(reportData.relevanceScore ?? 80);
+    const overallScore = Number(reportData.overallScore || 0);
+    const technicalScore = reportData.technicalScore !== undefined ? Number(reportData.technicalScore) : overallScore;
+    const commScore = reportData.communicationScore !== undefined ? Number(reportData.communicationScore) : overallScore;
+    const relevanceScore = reportData.relevanceScore !== undefined ? Number(reportData.relevanceScore) : overallScore;
 
-    const reportId = `RPT-${(reportData._id || (interview._id ? interview._id.slice(-6) : Date.now().toString().slice(-6))).toUpperCase()}`;
-    const qaList = reportData.qaList && reportData.qaList.length > 0 ? reportData.qaList : [];
-    const strengths = reportData.strengths || ['Strong technical foundations', 'Articulate communication'];
-    const improvements = reportData.improvements || ['Structure complex responses using the STAR method'];
-    const topics = reportData.suggestedTopics || ['React 19 Server Components', 'System Design & Distributed Caching'];
-    const detailedNotes = reportData.detailedNotes || 'Candidate performed solidly across core architecture concepts with clear potential for senior engineering loops.';
+    const reportId = `RPT-${(reportData._id || (interview._id ? String(interview._id).slice(-6) : Date.now().toString().slice(-6))).toUpperCase()}`;
+    const qaList = Array.isArray(reportData.qaList) ? reportData.qaList : [];
+    const strengths = Array.isArray(reportData.strengths) ? reportData.strengths : [];
+    const improvements = Array.isArray(reportData.improvements) ? reportData.improvements : [];
+    const topics = Array.isArray(reportData.suggestedTopics) ? reportData.suggestedTopics : [];
+    const detailedNotes = reportData.detailedNotes || 'No additional summary notes provided by the evaluator.';
 
     const verdict = overallScore >= 85 ? 'STRONG HIRE' : overallScore >= 70 ? 'HIRE / RECOMMENDED' : 'NEEDS PRACTICE';
 
@@ -89,7 +94,6 @@ export const downloadInterviewReportPDF = (reportData) => {
     const ensureSpace = (neededHeight) => {
       if (y + neededHeight > pageHeight - 50) {
         doc.addPage();
-        // Mini top bar on subsequent pages
         doc.setFillColor(241, 245, 249);
         doc.rect(0, 0, pageWidth, 35, 'F');
         doc.setTextColor(100, 116, 139);
@@ -101,285 +105,242 @@ export const downloadInterviewReportPDF = (reportData) => {
       }
     };
 
-    // 1. Participant Details Cards (Two Columns)
-    const colWidth = (contentWidth - 16) / 2;
-
-    // Left Column: Candidate Info
+    // 1. Session & Candidate Summary Card
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(margin, y, colWidth, 75, 4, 4, 'F');
+    doc.roundedRect(margin, y, contentWidth, 75, 6, 6, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(margin, y, colWidth, 75, 4, 4, 'D');
+    doc.roundedRect(margin, y, contentWidth, 75, 6, 6, 'D');
 
-    doc.setTextColor(100, 116, 139);
+    // Candidate Col
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.text('CANDIDATE DETAILS', margin + 12, y + 16);
-
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(100, 116, 139);
+    doc.text('CANDIDATE INFORMATION', margin + 14, y + 18);
     doc.setFontSize(11);
-    doc.text(candidateName, margin + 12, y + 32);
-
+    doc.setTextColor(15, 23, 42);
+    doc.text(candidateName, margin + 14, y + 34);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Email: ${candidateEmail}`, margin + 12, y + 46);
-    doc.text(`Session Topic: ${topic}`, margin + 12, y + 60);
+    doc.text(`Email: ${candidateEmail}`, margin + 14, y + 48);
+    doc.text(`Target Focus: ${topic}`, margin + 14, y + 62);
 
-    // Right Column: Evaluator (HR / Interviewer) Info
-    const rightColX = margin + colWidth + 16;
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(rightColX, y, colWidth, 75, 4, 4, 'F');
-    doc.roundedRect(rightColX, y, colWidth, 75, 4, 4, 'D');
-
-    doc.setTextColor(100, 116, 139);
+    // Evaluator Col
+    const midX = margin + contentWidth * 0.45;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.text('INTERVIEWER / HR EVALUATOR', rightColX + 12, y + 16);
-
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(100, 116, 139);
+    doc.text('EVALUATOR DETAILS', midX, y + 18);
     doc.setFontSize(11);
-    doc.text(hrName, rightColX + 12, y + 32);
-
+    doc.setTextColor(15, 23, 42);
+    doc.text(hrName, midX, y + 34);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Role: ${hrTitle}`, rightColX + 12, y + 46);
-    doc.text(`Organization: ${hrCompany}  |  Slot: ${sessionSlot}`, rightColX + 12, y + 60);
+    doc.text(`${hrTitle} • ${hrCompany}`, midX, y + 48);
+    doc.text(`Session Slot: ${sessionSlot}`, midX, y + 62);
+
+    // Verdict Badge
+    const rightX = pageWidth - margin - 120;
+    const verdictBgColor = overallScore >= 80 ? [220, 252, 231] : overallScore >= 60 ? [254, 243, 199] : [254, 226, 226];
+    const verdictTextColor = overallScore >= 80 ? [21, 128, 61] : overallScore >= 60 ? [180, 83, 9] : [185, 28, 28];
+    doc.setFillColor(...verdictBgColor);
+    doc.roundedRect(rightX, y + 14, 110, 48, 6, 6, 'F');
+    doc.setTextColor(...verdictTextColor);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('FINAL VERDICT', rightX + 55, y + 28, { align: 'center' });
+    doc.setFontSize(10);
+    doc.text(verdict, rightX + 55, y + 44, { align: 'center' });
 
     y += 90;
 
-    // 2. Executive Scorecard Banner
-    doc.setFillColor(238, 242, 255); // Indigo Tint
-    doc.roundedRect(margin, y, contentWidth, 68, 6, 6, 'F');
-    doc.setDrawColor(199, 210, 254);
-    doc.roundedRect(margin, y, contentWidth, 68, 6, 6, 'D');
-
-    // Overall Score Pill
-    doc.setFillColor(26, 115, 232);
-    doc.roundedRect(margin + 16, y + 12, 90, 44, 4, 4, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text(`${overallScore}/100`, margin + 61, y + 36, { align: 'center' });
-    doc.setFontSize(7.5);
-    doc.setFont('helvetica', 'normal');
-    doc.text('OVERALL SCORE', margin + 61, y + 48, { align: 'center' });
-
-    // Individual Sub-Scores
-    const scoreStartX = margin + 125;
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text(`Technical Knowledge: ${technicalScore}%`, scoreStartX, y + 25);
-    doc.text(`Communication & Clarity: ${commScore}%`, scoreStartX + 160, y + 25);
-    doc.text(`Answer Relevance & Structure: ${relevanceScore}%`, scoreStartX, y + 48);
-
-    // Verdict Badge
-    const verdictColor = overallScore >= 80 ? [16, 185, 129] : overallScore >= 70 ? [245, 158, 11] : [239, 68, 68];
-    doc.setFillColor(...verdictColor);
-    doc.roundedRect(pageWidth - margin - 120, y + 16, 105, 24, 4, 4, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text(verdict, pageWidth - margin - 67.5, y + 31, { align: 'center' });
-
-    y += 85;
-
-    // 3. MAIN SECTION: Questions Asked by HR & Candidate Answers
-    ensureSpace(40);
-    doc.setFillColor(241, 245, 249);
-    doc.roundedRect(margin, y, contentWidth, 26, 4, 4, 'F');
-    doc.setTextColor(15, 23, 42);
+    // 2. Scorecard Grid
+    ensureSpace(80);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.text('QUESTIONS ASKED BY HR & CANDIDATE ANSWERS', margin + 12, y + 17);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`${qaList.length} Interview Q&A Exchanges`, pageWidth - margin - 12, y + 17, { align: 'right' });
+    doc.setTextColor(15, 23, 42);
+    doc.text('EVALUATION SCORECARD BREAKDOWN', margin, y + 12);
+    y += 20;
 
-    y += 36;
+    const scoreCardWidth = (contentWidth - 30) / 4;
+    const scores = [
+      { label: 'Overall Rating', score: overallScore, color: [26, 115, 232] },
+      { label: 'Technical Depth', score: technicalScore, color: [16, 185, 129] },
+      { label: 'Communication', score: commScore, color: [139, 92, 246] },
+      { label: 'Problem Solving', score: relevanceScore, color: [245, 158, 11] }
+    ];
 
-    // Render Each Q&A
-    qaList.forEach((item, index) => {
-      const qText = item.question || `Interview Question ${index + 1}`;
-      const aText = item.candidateAnswer || 'Candidate provided detailed verbal explanation during the interview.';
-      const feedbackText = item.feedback || 'Evaluated for conceptual accuracy and problem breakdown.';
-      const score = item.score || 80;
-
-      // Calculate heights
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      const splitQ = doc.splitTextToSize(`Q${index + 1} (Asked by HR): ${qText}`, contentWidth - 30);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      const splitA = doc.splitTextToSize(`Candidate Answer: "${aText}"`, contentWidth - 30);
-
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(8.5);
-      const splitCritique = doc.splitTextToSize(`HR Evaluation & Notes: ${feedbackText} (Score: ${score}/100)`, contentWidth - 30);
-
-      const blockHeight = splitQ.length * 13 + splitA.length * 12 + splitCritique.length * 12 + 28;
-
-      ensureSpace(blockHeight + 10);
-
-      // Card Background Box
-      doc.setFillColor(252, 253, 255);
-      doc.roundedRect(margin, y, contentWidth, blockHeight, 4, 4, 'F');
+    scores.forEach((s, i) => {
+      const cardX = margin + i * (scoreCardWidth + 10);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(cardX, y, scoreCardWidth, 52, 6, 6, 'F');
       doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(margin, y, contentWidth, blockHeight, 4, 4, 'D');
+      doc.roundedRect(cardX, y, scoreCardWidth, 52, 6, 6, 'D');
 
-      // Left Accent Border Pill
-      doc.setFillColor(26, 115, 232);
-      doc.roundedRect(margin, y, 4, blockHeight, 2, 2, 'F');
-
-      let currentCardY = y + 16;
-
-      // Question line
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(...s.color);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9.5);
-      doc.text(splitQ, margin + 16, currentCardY);
-      currentCardY += splitQ.length * 13 + 4;
+      doc.setFontSize(18);
+      doc.text(`${s.score}%`, cardX + 12, y + 26);
 
-      // Candidate Answer
-      doc.setTextColor(51, 65, 85);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.text(splitA, margin + 16, currentCardY);
-      currentCardY += splitA.length * 12 + 4;
-
-      // HR Critique & Score
       doc.setTextColor(100, 116, 139);
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(8.5);
-      doc.text(splitCritique, margin + 16, currentCardY);
-
-      y += blockHeight + 12;
-    });
-
-    // 4. Strengths & Areas for Improvement (Side by Side or stacked)
-    ensureSpace(120);
-
-    const halfWidth = (contentWidth - 14) / 2;
-
-    // Strengths Box
-    doc.setFillColor(240, 253, 244); // Light green
-    doc.roundedRect(margin, y, halfWidth, 100, 4, 4, 'F');
-    doc.setDrawColor(187, 247, 208);
-    doc.roundedRect(margin, y, halfWidth, 100, 4, 4, 'D');
-
-    doc.setTextColor(22, 101, 52);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Key Strengths Observed', margin + 12, y + 18);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(30, 41, 59);
-    let strY = y + 34;
-    strengths.slice(0, 3).forEach(str => {
-      const splitStr = doc.splitTextToSize(`+  ${str}`, halfWidth - 24);
-      doc.text(splitStr, margin + 12, strY);
-      strY += splitStr.length * 12 + 3;
-    });
-
-    // Improvements Box
-    const impX = margin + halfWidth + 14;
-    doc.setFillColor(254, 252, 232); // Light amber
-    doc.roundedRect(impX, y, halfWidth, 100, 4, 4, 'F');
-    doc.setDrawColor(254, 240, 138);
-    doc.roundedRect(impX, y, halfWidth, 100, 4, 4, 'D');
-
-    doc.setTextColor(161, 98, 7);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Areas for Targeted Improvement', impX + 12, y + 18);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(30, 41, 59);
-    let impY = y + 34;
-    improvements.slice(0, 3).forEach(imp => {
-      const splitImp = doc.splitTextToSize(`*  ${imp}`, halfWidth - 24);
-      doc.text(splitImp, impX + 12, impY);
-      impY += splitImp.length * 12 + 3;
-    });
-
-    y += 112;
-
-    // 5. Recommended Next Topics to Practice
-    ensureSpace(50);
-    doc.setFillColor(248, 250, 252);
-    doc.roundedRect(margin, y, contentWidth, 38, 4, 4, 'F');
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(margin, y, contentWidth, 38, 4, 4, 'D');
-
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text('Recommended Focus Topics:', margin + 12, y + 22);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text(topics.join('  |  '), margin + 160, y + 22);
-
-    y += 50;
-
-    // 6. Detailed Notes & Evaluator Sign-off
-    ensureSpace(70);
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text('Evaluator Summary & Feedback Notes:', margin, y);
-    y += 15;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(71, 85, 105);
-    const splitNotes = doc.splitTextToSize(detailedNotes, contentWidth);
-    doc.text(splitNotes, margin, y);
-    y += splitNotes.length * 13 + 15;
-
-    // Digital Verification Seal
-    ensureSpace(45);
-    doc.setDrawColor(26, 115, 232);
-    doc.roundedRect(margin, y, contentWidth, 36, 4, 4, 'D');
-    doc.setTextColor(26, 115, 232);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.text('INTERVIEWPRO VERIFIED EVALUATION DOSSIER', margin + 12, y + 16);
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Assessed by ${hrName} (${hrCompany})  |  Cryptographic Record: ${reportId}  |  Generated on ${new Date().toLocaleString()}`, margin + 12, y + 28);
-
-    // Apply Page Numbers on all pages
-    const totalPages = doc.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
-      doc.setTextColor(148, 163, 184);
-      doc.text(
-        `Page ${i} of ${totalPages}  |  InterviewPro Assessment Confidential  |  https://interviewpro.dev`,
-        pageWidth / 2,
-        pageHeight - 20,
-        { align: 'center' }
-      );
+      doc.text(s.label, cardX + 12, y + 42);
+    });
+
+    y += 68;
+
+    // 3. Strengths and Improvements
+    ensureSpace(120);
+    const halfWidth = (contentWidth - 15) / 2;
+
+    // Strengths
+    doc.setFillColor(240, 253, 244);
+    doc.roundedRect(margin, y, halfWidth, 100, 6, 6, 'F');
+    doc.setDrawColor(187, 247, 208);
+    doc.roundedRect(margin, y, halfWidth, 100, 6, 6, 'D');
+
+    doc.setTextColor(21, 128, 61);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('KEY STRENGTHS DEMONSTRATED', margin + 12, y + 18);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    let strY = y + 34;
+    if (strengths.length === 0) {
+      doc.text('• Evaluator provided no specific strength bullets.', margin + 12, strY);
+    } else {
+      strengths.slice(0, 4).forEach((s) => {
+        const lines = doc.splitTextToSize(`• ${s}`, halfWidth - 24);
+        doc.text(lines, margin + 12, strY);
+        strY += lines.length * 12 + 2;
+      });
     }
 
-    // Save and download
-    const cleanCandidateName = candidateName.replace(/[^a-zA-Z0-9]/g, '_');
-    const filename = `Interview_Report_${cleanCandidateName}_${Date.now()}.pdf`;
+    // Improvements
+    const impX = margin + halfWidth + 15;
+    doc.setFillColor(254, 242, 242);
+    doc.roundedRect(impX, y, halfWidth, 100, 6, 6, 'F');
+    doc.setDrawColor(254, 202, 202);
+    doc.roundedRect(impX, y, halfWidth, 100, 6, 6, 'D');
+
+    doc.setTextColor(185, 28, 28);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('AREAS FOR IMPROVEMENT', impX + 12, y + 18);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    let impY = y + 34;
+    if (improvements.length === 0) {
+      doc.text('• Evaluator provided no specific improvement bullets.', impX + 12, impY);
+    } else {
+      improvements.slice(0, 4).forEach((imp) => {
+        const lines = doc.splitTextToSize(`• ${imp}`, halfWidth - 24);
+        doc.text(lines, impX + 12, impY);
+        impY += lines.length * 12 + 2;
+      });
+    }
+
+    y += 115;
+
+    // 4. Evaluator's Detailed Notes
+    ensureSpace(65);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text('EVALUATOR SYNTHESIS & EXECUTIVE FEEDBACK', margin, y + 10);
+    y += 18;
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, y, contentWidth, 45, 4, 4, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(margin, y, contentWidth, 45, 4, 4, 'D');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    const noteLines = doc.splitTextToSize(detailedNotes, contentWidth - 24);
+    doc.text(noteLines, margin + 12, y + 18);
+    y += 58;
+
+    // 5. Questions & Candidate Answers Section
+    if (qaList.length > 0) {
+      ensureSpace(40);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text('DETAILED QUESTION & ANSWER EVALUATION TRANSCRIPT', margin, y + 10);
+      y += 24;
+
+      qaList.forEach((item, idx) => {
+        ensureSpace(95);
+
+        // Card Box
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(margin, y, contentWidth, 85, 6, 6, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(margin, y, contentWidth, 85, 6, 6, 'D');
+
+        // Question header
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(margin, y, contentWidth, 22, 6, 6, 'F');
+        doc.setTextColor(30, 41, 59);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.text(`Q${idx + 1}: ${item.question}`, margin + 10, y + 15);
+
+        // Score Pill
+        if (item.score !== undefined) {
+          doc.setTextColor(26, 115, 232);
+          doc.text(`Score: ${item.score}%`, pageWidth - margin - 60, y + 15);
+        }
+
+        // Candidate Answer
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('Answer:', margin + 10, y + 36);
+
+        doc.setTextColor(51, 65, 85);
+        doc.setFont('helvetica', 'normal');
+        const ansLines = doc.splitTextToSize(item.candidateAnswer || 'Answer recorded during live evaluation.', contentWidth - 65);
+        doc.text(ansLines.slice(0, 2), margin + 55, y + 36);
+
+        // Evaluator Critique
+        doc.setTextColor(16, 185, 129);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Feedback:', margin + 10, y + 62);
+
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('helvetica', 'normal');
+        const fbkLines = doc.splitTextToSize(item.feedback || 'Evaluated and scored by interviewer.', contentWidth - 65);
+        doc.text(fbkLines.slice(0, 2), margin + 55, y + 62);
+
+        y += 95;
+      });
+    }
+
+    // Footer on final page
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      'InterviewPro Official Assessment Report • Confidential Evaluation for Professional Development',
+      pageWidth / 2,
+      pageHeight - 20,
+      { align: 'center' }
+    );
+
+    const filename = `Report_${reportId}_${candidateName.replace(/\s+/g, '_')}.pdf`;
     doc.save(filename);
     return true;
   } catch (err) {
-    console.error('Error generating Interview Report PDF:', err);
-    alert('Failed to generate interview report PDF: ' + err.message);
+    console.error('Error generating report PDF:', err);
+    alert('Failed to generate report PDF: ' + err.message);
     return false;
   }
 };

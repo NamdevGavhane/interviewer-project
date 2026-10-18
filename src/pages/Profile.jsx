@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, BadgeCheck, Briefcase, MapPin, Clock, Edit2, Save } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { API_BASE_URL } from '../config/api';
+import apiClient from '../utils/apiClient';
+import { useAuth } from '../context/AuthContext';
+import Avatar from '../components/Avatar';
 
 const Profile = () => {
   const [searchParams] = useSearchParams();
   const profileUserId = searchParams.get('userId');
 
-  const currentUserId = localStorage.getItem('userId');
-  const currentUserRole = localStorage.getItem('userRole') || 'candidate';
-  const isCandidate = currentUserRole === 'candidate';
-  const targetId = profileUserId || currentUserId;
+  const { user: currentUser, role: authRole } = useAuth();
+  const isCandidate = authRole === 'candidate';
+  const targetId = profileUserId || currentUser?._id;
 
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -36,16 +37,15 @@ const Profile = () => {
 
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE_URL}/api/users/${targetId}`);
-      if (res.ok) {
-        const data = await res.json();
+      const data = await apiClient.get(`/api/users/${targetId}`);
+      if (data) {
         setProfileData(data);
         setEditForm({
           name: data.name || '',
           title: data.title || '',
           company: data.company || '',
           bio: data.bio || '',
-          hourlyRate: data.hourlyRate || 100,
+          hourlyRate: data.hourlyRate || 0,
           skills: data.skills ? data.skills.join(', ') : ''
         });
       }
@@ -64,21 +64,16 @@ const Profile = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      const res = await fetch(`${API_BASE_URL}/api/users/${targetId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: editForm.name,
-          title: editForm.title,
-          company: editForm.company,
-          bio: editForm.bio,
-          hourlyRate: Number(editForm.hourlyRate),
-          skills: editForm.skills.split(',').map(s => s.trim()).filter(Boolean)
-        })
+      const updated = await apiClient.put(`/api/users/${targetId}`, {
+        name: editForm.name,
+        title: editForm.title,
+        company: editForm.company,
+        bio: editForm.bio,
+        hourlyRate: Number(editForm.hourlyRate),
+        skills: editForm.skills.split(',').map(s => s.trim()).filter(Boolean)
       });
 
-      if (res.ok) {
-        const updated = await res.json();
+      if (updated) {
         setProfileData(updated);
         setIsEditing(false);
         setSaveToast(true);
@@ -209,11 +204,10 @@ const Profile = () => {
           <div className="card mb-6">
             <div className="flex justify-between items-start mb-6">
               <div className="flex gap-4">
-                <img 
-                  src={profileData.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
-                  alt={profileData.name} 
-                  className="profile-avatar"
-                  style={{ width: '80px', height: '80px' }}
+                <Avatar 
+                  name={profileData.name} 
+                  avatar={profileData.avatar} 
+                  size={80} 
                 />
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -224,7 +218,7 @@ const Profile = () => {
                   </div>
                   <p className="text-sm text-muted">{profileData.title || 'Tech Professional'}</p>
                   <div className="flex items-center gap-1 mt-1 text-sm font-medium" style={{ color: '#f59e0b' }}>
-                    ⭐ {profileData.rating || 4.9} <span className="text-muted text-sm font-normal">({profileData.reviewsCount || 10} reviews)</span>
+                    ⭐ {profileData.rating ? profileData.rating.toFixed(1) : 'New'} <span className="text-muted text-sm font-normal">({profileData.reviewsCount || 0} reviews)</span>
                   </div>
                 </div>
               </div>

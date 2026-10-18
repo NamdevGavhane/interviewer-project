@@ -43,6 +43,26 @@ const paymentSchema = new mongoose.Schema({
     type: Number,
     default: 10,
   },
+  gstAmount: {
+    type: Number,
+    default: 0,
+  },
+  refundId: {
+    type: String,
+    default: '',
+  },
+  refundAmount: {
+    type: Number,
+    default: 0,
+  },
+  refundStatus: {
+    type: String,
+    enum: ['none', 'pending', 'processed', 'failed'],
+    default: 'none',
+  },
+  refundedAt: {
+    type: Date,
+  },
   currency: {
     type: String,
     default: 'INR',
@@ -54,8 +74,8 @@ const paymentSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['upi', 'card', 'netbanking', 'wallet', 'razorpay'],
-    default: 'upi',
+    enum: ['upi', 'card', 'netbanking', 'wallet', 'razorpay', 'free'],
+    default: 'razorpay',
   },
   paymentDetails: {
     upiId: { type: String, default: '' },

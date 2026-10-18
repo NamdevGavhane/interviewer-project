@@ -5,6 +5,7 @@ const feedbackSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Interview',
     required: true,
+    unique: true
   },
   candidateId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -20,26 +21,22 @@ const feedbackSchema = new mongoose.Schema({
     type: Number,
     required: true,
     min: 0,
-    max: 100,
-    default: 75,
+    max: 100
   },
   technicalScore: {
     type: Number,
     min: 0,
-    max: 100,
-    default: 75,
+    max: 100
   },
   communicationScore: {
     type: Number,
     min: 0,
-    max: 100,
-    default: 80,
+    max: 100
   },
   relevanceScore: {
     type: Number,
     min: 0,
-    max: 100,
-    default: 70,
+    max: 100
   },
   qaList: [
     {
@@ -57,7 +54,8 @@ const feedbackSchema = new mongoose.Schema({
       },
       score: {
         type: Number,
-        default: 80,
+        min: 0,
+        max: 100
       }
     }
   ],

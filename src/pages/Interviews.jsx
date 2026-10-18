@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Video, FileText, CheckCircle2, AlertCircle, XCircle, ChevronRight, User, Download, ShieldCheck, CreditCard, Receipt } from 'lucide-react';
+import { Calendar, Clock, Video, FileText, CheckCircle2, AlertCircle, XCircle, ChevronRight, User, Download, ShieldCheck, CreditCard, Receipt, Loader2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import apiClient from '../utils/apiClient';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
-import { API_BASE_URL } from '../config/api';
 
 const Interviews = () => {
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [interviews, setInterviews] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,78 +16,54 @@ const Interviews = () => {
   const [actionLoading, setActionLoading] = useState(null);
   const navigate = useNavigate();
 
-  const userId = localStorage.getItem('userId');
-  const userRole = localStorage.getItem('userRole') || 'candidate';
+  const userRole = user?.role || 'candidate';
 
   const fetchInterviews = async () => {
-    if (!userId) {
-      navigate('/login');
-      return;
-    }
+    if (!user) return;
     try {
       setLoading(true);
       const [resInterviews, resPayments] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${userRole}`),
-        fetch(`${API_BASE_URL}/api/payment/history?userId=${userId}&role=${userRole}`)
+        apiClient.get('/api/interviews'),
+        apiClient.get('/api/payment/history').catch(() => ({ data: [] }))
       ]);
 
-      if (!resInterviews.ok) throw new Error('Failed to load interviews');
-      const data = await resInterviews.json();
-      setInterviews(data);
-
-      if (resPayments.ok) {
-        const payData = await resPayments.json();
-        setPayments(payData);
-      }
+      setInterviews(resInterviews.data || []);
+      setPayments(resPayments.data || []);
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
     fetchInterviews();
-  }, [userId, userRole]);
+  }, [user, isAuthenticated, authLoading]);
 
   const handleCancelInterview = async (interviewId) => {
-    if (!window.confirm('Are you sure you want to cancel this mock interview session?')) return;
-    try {
-      setActionLoading(interviewId);
-      const res = await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' })
-      });
-      if (!res.ok) throw new Error('Failed to cancel session');
-      await fetchInterviews();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setActionLoading(null);
-    }
+    navigate(`/booking/cancel/${interviewId}`);
   };
 
   const handleDownloadReportForInterview = async (interviewItem) => {
     try {
       setActionLoading(`report_${interviewItem._id}`);
-      const res = await fetch(`${API_BASE_URL}/api/feedbacks/interview/${interviewItem._id}`);
-      if (res.ok) {
-        const feedbackData = await res.json();
-        downloadInterviewReportPDF(feedbackData);
+      const res = await apiClient.get(`/api/feedbacks/interview/${interviewItem._id}`);
+      if (res.data && (res.data.overallScore !== undefined && res.data.overallScore !== null)) {
+        downloadInterviewReportPDF(res.data);
       } else {
-        downloadInterviewReportPDF({
-          interviewId: interviewItem,
-          candidateId: interviewItem.candidateId,
-          interviewerId: interviewItem.interviewerId,
-          topic: interviewItem.topic,
-          date: interviewItem.date,
-          timeSlot: interviewItem.timeSlot
-        });
+        alert('Feedback report has not been submitted yet by the interviewer for this session.');
       }
     } catch (err) {
-      console.error(err);
-      alert('Error downloading report PDF: ' + err.message);
+      if (err.response?.status === 404) {
+        alert('Evaluation feedback has not been submitted yet for this session. A report can only be generated after the evaluator submits their score and review.');
+      } else {
+        alert(err.response?.data?.message || err.message || 'Error downloading report');
+      }
     } finally {
       setActionLoading(null);
     }
@@ -104,6 +82,15 @@ const Interviews = () => {
   const pastInterviews = interviews.filter(i => i.status === 'completed' || i.status === 'cancelled');
 
   const displayedList = activeTab === 'upcoming' ? upcomingInterviews : pastInterviews;
+
+  if (authLoading) {
+    return (
+      <div className="card text-center p-12 text-muted flex items-center justify-center gap-2">
+        <Loader2 size={20} className="animate-spin text-primary" />
+        <span>Authenticating...</span>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -139,13 +126,14 @@ const Interviews = () => {
           className={`tab-button ${activeTab === 'invoices' ? 'active' : ''}`}
           onClick={() => setActiveTab('invoices')}
         >
-          Billing & Invoices ({payments.length || interviews.length})
+          Billing & Invoices ({payments.length})
         </button>
       </div>
 
       {loading ? (
-        <div className="card text-center p-12 text-muted">
-          Loading your interview sessions & payment receipts from database...
+        <div className="card text-center p-12 text-muted flex items-center justify-center gap-2">
+          <Loader2 size={20} className="animate-spin text-primary" />
+          <span>Loading interview sessions from database...</span>
         </div>
       ) : error ? (
         <div className="card p-6 text-danger">
@@ -154,12 +142,11 @@ const Interviews = () => {
       ) : activeTab === 'invoices' ? (
         /* BILLING & INVOICES TAB */
         <div>
-          {/* Quick Stats Banner */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
             <div className="card">
               <div className="text-xs text-muted uppercase font-semibold">Total Verified Invoices</div>
               <div className="text-2xl font-bold mt-1" style={{ color: 'var(--primary)' }}>
-                {payments.length || interviews.length}
+                {payments.length}
               </div>
             </div>
             <div className="card">
@@ -167,17 +154,14 @@ const Interviews = () => {
                 {userRole === 'professional' ? 'Total Earnings (Gross)' : 'Total Paid by Candidate'}
               </div>
               <div className="text-2xl font-bold mt-1 text-success">
-                ₹{(payments.length > 0 
-                  ? payments.reduce((acc, p) => acc + (p.amount || 110), 0)
-                  : interviews.reduce((acc, i) => acc + (i.price + Math.round(i.price * 0.1)), 0)
-                ).toLocaleString()} INR
+                ₹{payments.reduce((acc, p) => acc + (p.amount || 0), 0).toLocaleString()} INR
               </div>
             </div>
             <div className="card">
               <div className="text-xs text-muted uppercase font-semibold">Payment Gateway Status</div>
               <div className="text-sm font-bold mt-1 flex items-center gap-1.5 text-success">
                 <ShieldCheck size={18} />
-                <span>PCI-DSS & Razorpay Verified 🟢</span>
+                <span>Razorpay 256-Bit SSL 🟢</span>
               </div>
             </div>
           </div>
@@ -189,7 +173,6 @@ const Interviews = () => {
                 <Receipt size={18} className="text-primary" />
                 <span>Tax Invoices & Transaction History</span>
               </div>
-              <span className="text-xs text-muted">Generated with jsPDF & RBI compliance</span>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -199,75 +182,81 @@ const Interviews = () => {
                     <th style={{ padding: '0.75rem 1rem' }}>Invoice #</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Date & Slot</th>
                     <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Candidate' : 'Interviewer'}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>Focus Topic</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Amount</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>Method</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Status</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(payments.length > 0 ? payments : interviews).map((item, idx) => {
-                    const isPay = Boolean(item.invoiceNumber && item.amount);
-                    const partner = userRole === 'professional' ? item.candidateId : item.interviewerId;
-                    const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
-                    const invNo = item.invoiceNumber || `INV-2026-${(item._id || '').slice(-6).toUpperCase()}`;
-                    const feeAmount = item.amount || (item.price + Math.round(item.price * 0.1)) || 110;
-                    const dateStr = item.date || item.interviewId?.date || 'Scheduled Date';
-                    const topicStr = item.topic || item.interviewId?.topic || item.notes || 'Mock Interview Session';
-                    const payMethod = item.paymentMethod || 'UPI / Razorpay';
+                  {payments.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                        No billing or invoice records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    payments.map((item, idx) => {
+                      const partner = userRole === 'professional' ? item.candidateId : item.interviewerId;
+                      const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
+                      const invNo = item.invoiceNumber;
+                      const feeAmount = item.amount || 0;
+                      const dateStr = item.interviewId?.date || new Date(item.createdAt).toLocaleDateString('en-GB');
 
-                    return (
-                      <tr key={item._id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--primary)' }}>
-                          {invNo}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <div>{dateStr}</div>
-                          <div className="text-xs text-muted">{item.timeSlot || item.interviewId?.timeSlot || '45 mins'}</div>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: '500' }}>
-                          {partnerName}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', maxWidth: '240px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {topicStr}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>
-                          ₹{feeAmount}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span className="badge badge-success text-xs font-semibold py-0.5 px-2">
-                            PAID ●
-                          </span>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline text-xs py-1 px-3 inline-flex items-center gap-1.5"
-                            style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
-                            onClick={() => downloadInvoicePDF({
-                              ...item,
-                              candidateName: item.candidateId?.name,
-                              candidateEmail: item.candidateId?.email,
-                              interviewerName: item.interviewerId?.name,
-                              interviewerTitle: item.interviewerId?.title,
-                              company: item.interviewerId?.company,
-                              topic: topicStr,
-                              timeSlot: dateStr,
-                              sessionFee: item.sessionFee || item.price || 100,
-                              platformFee: 0,
-                              paidAmount: item.paidAmount || item.price || 100,
-                              invoiceNumber: invNo,
-                              paymentId: item.paymentId || `pay_${(item._id || '').slice(-8)}`,
-                              paymentMethod: payMethod
-                            })}
-                          >
-                            <Download size={14} />
-                            <span>Download PDF</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      return (
+                        <tr key={item._id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--primary)' }}>
+                            {invNo}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <div>{dateStr}</div>
+                            <div className="text-xs text-muted">{item.interviewId?.timeSlot || 'Session'}</div>
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', fontWeight: '500' }}>
+                            {partnerName}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>
+                            ₹{feeAmount}
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <span className="badge badge-secondary text-xs uppercase">
+                              {item.paymentMethod || 'Razorpay'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem' }}>
+                            <span className="badge badge-success text-xs font-semibold py-0.5 px-2">
+                              {item.status?.toUpperCase() || 'CAPTURED'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              className="btn btn-outline text-xs py-1 px-3 inline-flex items-center gap-1.5"
+                              style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                              onClick={() => downloadInvoicePDF({
+                                ...item,
+                                candidateName: item.candidateId?.name,
+                                candidateEmail: item.candidateId?.email,
+                                interviewerName: item.interviewerId?.name,
+                                interviewerTitle: item.interviewerId?.title,
+                                company: item.interviewerId?.company,
+                                sessionFee: item.sessionFee || item.amount || 0,
+                                platformFee: item.platformFee || 0,
+                                gstAmount: item.gstAmount || 0,
+                                paidAmount: item.amount,
+                                invoiceNumber: invNo,
+                                paymentId: item.paymentId,
+                                paymentMethod: item.paymentMethod || 'Razorpay'
+                              })}
+                            >
+                              <Download size={14} />
+                              <span>Download PDF</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -293,7 +282,6 @@ const Interviews = () => {
           {displayedList.map(item => {
             const partner = userRole === 'professional' ? item.candidateId : item.interviewerId;
             const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
-            const partnerAvatar = partner?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80';
             const partnerSub = userRole === 'professional' 
               ? 'Candidate' 
               : (partner?.title || 'Technical Interviewer');
@@ -301,12 +289,22 @@ const Interviews = () => {
             return (
               <div key={item._id} className="card flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-4">
-                  <img 
-                    src={partnerAvatar} 
-                    alt={partnerName} 
-                    className="profile-avatar"
-                    style={{ width: '56px', height: '56px' }}
-                  />
+                  <div 
+                    style={{
+                      width: '52px',
+                      height: '52px',
+                      borderRadius: '12px',
+                      backgroundColor: '#e2e8f0',
+                      color: '#334155',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.1rem'
+                    }}
+                  >
+                    {partnerName ? partnerName.slice(0, 2).toUpperCase() : 'IN'}
+                  </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold">{partnerName}</h3>
@@ -340,7 +338,7 @@ const Interviews = () => {
                     <div className="font-bold text-lg">₹{item.price}</div>
                     <div className="text-xs text-success font-semibold flex items-center justify-end gap-1 mt-0.5">
                       <ShieldCheck size={12} />
-                      <span>Paid ₹{item.paidAmount || (item.price + Math.round(item.price * 0.1))}</span>
+                      <span>Paid ₹{item.paidAmount || item.price}</span>
                     </div>
                   </div>
 
@@ -357,12 +355,12 @@ const Interviews = () => {
                         interviewerName: item.interviewerId?.name,
                         interviewerTitle: item.interviewerId?.title,
                         company: item.interviewerId?.company,
-                        sessionFee: item.price || 100,
-                        platformFee: 0,
-                        paidAmount: item.paidAmount || item.price || 100,
-                        invoiceNumber: item.invoiceNumber || `INV-2026-${item._id.slice(-6).toUpperCase()}`,
-                        paymentId: item.paymentId || `pay_${item._id.slice(-8)}`,
-                        paymentMethod: item.paymentMethod || 'UPI / Razorpay'
+                        sessionFee: item.price || 0,
+                        platformFee: item.platformFee || 0,
+                        paidAmount: item.paidAmount || item.price || 0,
+                        invoiceNumber: item.invoiceNumber || 'INV-OFFICIAL',
+                        paymentId: item.paymentId || 'N/A',
+                        paymentMethod: item.paymentMethod || 'Razorpay'
                       })}
                     >
                       <Download size={14} />
@@ -403,7 +401,7 @@ const Interviews = () => {
                           disabled={actionLoading === `report_${item._id}`}
                         >
                           <Download size={14} />
-                          <span>{actionLoading === `report_${item._id}` ? 'Generating...' : 'Report PDF'}</span>
+                          <span>{actionLoading === `report_${item._id}` ? 'Checking...' : 'Report PDF'}</span>
                         </button>
                       </>
                     )}

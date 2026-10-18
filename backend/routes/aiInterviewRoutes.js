@@ -2,19 +2,30 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const { PDFParse } = require('pdf-parse');
+const crypto = require('crypto');
 const Interview = require('../models/Interview');
 const Feedback = require('../models/Feedback');
 const User = require('../models/User');
+const Settings = require('../models/Settings');
+const InterviewConfig = require('../models/InterviewConfig');
+const AIInterviewSession = require('../models/AIInterviewSession');
+const { authenticate } = require('../middleware/auth');
+
+router.use(authenticate);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }
 });
 
-// Helper to call External AI (Google Gemini or OpenAI) if API key is present
-const callExternalAI = async (prompt, systemInstruction = '') => {
+// Helper to call External AI (Google Gemini or OpenAI)
+const callExternalAI = async (prompt, systemInstruction = '', jsonMode = false) => {
   const geminiKey = process.env.GEMINI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+
+  if (!geminiKey && !openaiKey) {
+    throw new Error('AI Service Unconfigured: Neither GEMINI_API_KEY nor OPENAI_API_KEY is defined in environment.');
+  }
 
   // 1. Try Google Gemini API
   if (geminiKey) {
@@ -28,8 +39,9 @@ const callExternalAI = async (prompt, systemInstruction = '') => {
           }
         ],
         generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1200
+          temperature: 0.6,
+          maxOutputTokens: 1500,
+          responseMimeType: jsonMode ? 'application/json' : 'text/plain'
         }
       };
 
@@ -43,120 +55,116 @@ const callExternalAI = async (prompt, systemInstruction = '') => {
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
+      } else {
+        const errText = await res.text();
+        console.warn('Gemini API call returned error status:', res.status, errText);
       }
     } catch (err) {
-      console.warn('Gemini API call failed, falling back to built-in AI engine:', err.message);
+      console.warn('Gemini API call failed:', err.message);
     }
   }
 
   // 2. Try OpenAI API
   if (openaiKey) {
     try {
+      const bodyPayload = {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.6
+      };
+      if (jsonMode) {
+        bodyPayload.response_format = { type: 'json_object' };
+      }
+
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openaiKey}`
         },
-        body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: systemInstruction },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7
-        })
+        body: JSON.stringify(bodyPayload)
       });
 
       if (res.ok) {
         const data = await res.json();
         const text = data?.choices?.[0]?.message?.content;
         if (text) return text;
+      } else {
+        const errText = await res.text();
+        console.warn('OpenAI API call returned error status:', res.status, errText);
       }
     } catch (err) {
-      console.warn('OpenAI API call failed, falling back to built-in AI engine:', err.message);
+      console.warn('OpenAI API call failed:', err.message);
     }
   }
 
-  return null;
+  throw new Error('AI providers failed to generate response. Please verify your GEMINI_API_KEY or OPENAI_API_KEY.');
 };
 
-// Helper: Extract key skills and projects from resume text
-const extractResumeHighlights = (text) => {
-  if (!text) return { skills: ['Full Stack', 'Web Development'], projectHint: 'production project' };
-  
-  const commonTech = [
-    'React', 'Node.js', 'Next.js', 'TypeScript', 'JavaScript', 'Python', 'Django',
-    'Java', 'Spring Boot', 'MongoDB', 'PostgreSQL', 'MySQL', 'Redis', 'Docker',
-    'Kubernetes', 'AWS', 'GraphQL', 'Redux', 'Tailwind', 'Microservices', 'Express'
-  ];
+// @route   GET /api/ai/options
+// @desc    Get dynamic list of topics, levels, and target companies
+// @access  Protected
+router.get('/options', async (req, res) => {
+  try {
+    const config = await InterviewConfig.getConfig();
+    const settings = await Settings.getSettings();
 
-  const matchedTech = commonTech.filter(tech => 
-    new RegExp(`\\b${tech}\\b`, 'i').test(text)
-  );
+    // Check sessions today for this user
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
 
-  return {
-    skills: matchedTech.length > 0 ? matchedTech : ['Full Stack Engineering', 'System Architecture'],
-    hasProjects: /project|built|developed|implemented|designed/i.test(text)
-  };
-};
+    const sessionsToday = await AIInterviewSession.countDocuments({
+      candidateId: req.user._id,
+      createdAt: { $gte: startOfDay }
+    });
 
-// Curated technical questions bank for built-in high-quality AI engine
-const QUESTION_BANK = {
-  'mern': [
-    "Welcome to the Full Stack MERN Technical Interview! To begin, can you walk me through the full data lifecycle in a MERN app when a React client makes an API request to an Express/Node.js endpoint, performs operations on MongoDB, and returns JSON back to update UI state?",
-    "In React 19, how do you handle complex state management and custom hooks effectively? How do you prevent unnecessary re-renders when passing callbacks down to child components?",
-    "In Express and Node.js, how do you architect secure middleware pipelines for JWT token verification, role-based authorization, and centralized error handling?",
-    "When designing database schemas with Mongoose for MongoDB, how do you evaluate embedding subdocuments versus normalized referenced schemas with populate? What are the write and query performance trade-offs?",
-    "Finally, how do you handle CORS, environment variables, security headers (Helmet), and connection pooling when taking a MERN stack application to production?"
-  ],
-  'ml': [
-    "Welcome to the Machine Learning & AI Technical Interview! Can you explain the bias-variance tradeoff and how you diagnose whether an ML model suffers from high bias or high variance?",
-    "When training deep neural networks with PyTorch or TensorFlow, what strategies do you employ to prevent overfitting and combat vanishing/exploding gradients?",
-    "Can you walk me through the architecture and attention mechanism in Transformers? How does multi-head self-attention capture contextual relationships in language models?",
-    "Suppose your machine learning model encounters data drift or concept drift after being deployed to production. How do you monitor, detect, and retrain the model reliably?",
-    "Finally, how do you optimize deep learning models for high-throughput, low-latency production inference (e.g., quantization, pruning, ONNX runtime, and TensorRT)?"
-  ],
-  'frontend': [
-    "Welcome! To start off our Frontend interview, could you explain the differences between the Virtual DOM and the real DOM in React? How does React's reconciliation algorithm optimize rendering performance?",
-    "Great explanation. Now, let's talk about asynchronous JavaScript. How does the JavaScript Event Loop handle microtasks (Promises) versus macrotasks (setTimeout, setInterval)? Can you describe the execution order?",
-    "Suppose your React application experiences noticeable frame drops when rendering a large list of 5,000 items with search filtering. What strategies and profiling techniques would you use to diagnose and fix it?",
-    "Can you explain the difference between state management using React Context API vs Zustand or Redux? In which scenarios does Context API cause unnecessary re-renders?",
-    "Finally, how do you handle security vulnerabilities in client-side applications, specifically Cross-Site Scripting (XSS) and CSRF attacks?"
-  ],
-  'backend': [
-    "Welcome! For our Backend engineering interview, can you explain how Node.js manages concurrency with its single-threaded event loop and Worker threads? When would you offload work to worker threads?",
-    "Let's discuss database design. What is the fundamental difference between relational indexing (B-Trees) and NoSQL indexing (like MongoDB)? When does a composite index fail to be utilized in a query?",
-    "How would you design a scalable rate limiter for a public REST API handling 100,000 requests per minute? Which algorithms and storage mechanisms (e.g. Redis sliding window) would you pick?",
-    "Can you explain the differences between horizontal scaling and vertical scaling for a microservices cluster? How do you ensure eventual consistency across distributed database services?",
-    "Finally, what strategies do you use for authentication and authorization at scale? Compare Stateful Sessions vs Stateless JWT tokens with token refresh rotation."
-  ],
-  'system-design': [
-    "Welcome to the System Design interview! Today, let's design a URL shortening service like TinyURL. What are your initial functional and non-functional requirements and capacity estimates?",
-    "How would you generate short URLs to prevent hash collisions across a distributed cluster? What database schema would you use?",
-    "How would you design the caching layer to handle 80% read requests efficiently? How would you handle cache eviction?",
-    "If the service experiences a sudden 10x traffic spike due to a viral link, how does your architecture prevent the database from crashing?"
-  ],
-  'dsa': [
-    "Welcome! In this technical problem-solving interview, let's start with a foundational question: How would you find if a singly linked list contains a cycle using optimal space complexity?",
-    "Now let's consider the Two Sum problem. What are the time and space complexities of the brute-force approach versus the hash map approach?",
-    "Suppose you are given an array of intervals [start, end]. How would you merge all overlapping intervals in O(N log N) time?",
-    "Can you explain the difference between Breadth-First Search (BFS) and Depth-First Search (DFS) on a graph? When is BFS strictly preferred over DFS?"
-  ],
-  'behavioral': [
-    "Welcome! Let's start with a behavioral question using the STAR method: Tell me about a time you encountered a severe disagreement with a senior engineer or product manager on architecture. How did you resolve it?",
-    "Describe a challenging production outage or critical bug you were responsible for solving. What was your triage process?",
-    "Tell me about a project where you had to learn an unfamiliar technology stack under tight deadlines. How did you prioritize your learning?"
-  ]
-};
+    const isAIConfigured = Boolean(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+
+    res.json({
+      success: true,
+      topics: config.topics,
+      difficulties: config.difficulties,
+      companies: config.companies,
+      dailyLimit: settings.aiDailyLimit || 5,
+      sessionsUsedToday: sessionsToday,
+      remainingSessions: Math.max(0, (settings.aiDailyLimit || 5) - sessionsToday),
+      isAIConfigured
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   GET /api/ai/active-session
+// @desc    Get candidate's in-progress AI interview session to allow seamless resumption
+// @access  Protected
+router.get('/active-session', async (req, res) => {
+  try {
+    const session = await AIInterviewSession.findOne({
+      candidateId: req.user._id,
+      status: 'in_progress'
+    }).sort({ updatedAt: -1 });
+
+    res.json({
+      success: true,
+      hasActiveSession: Boolean(session),
+      session
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // @route   POST /api/ai/parse-resume
 // @desc    Extract clean human-readable text from uploaded PDF or text file
-// @access  Public
+// @access  Protected
 router.post('/parse-resume', upload.single('resume'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No resume file uploaded.' });
+      return res.status(400).json({ success: false, message: 'No resume file uploaded.' });
     }
 
     const { originalname, mimetype, buffer } = req.file;
@@ -169,27 +177,25 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
         const parser = new PDFParse({ data: buffer });
         const result = await parser.getText();
         extractedText = result.text || '';
-        // Remove page separators like "-- 1 of 1 --"
         extractedText = extractedText.replace(/-- \d+ of \d+ --/g, '');
-        // Clean null characters or weird line endings
         extractedText = extractedText.replace(/\0/g, '').replace(/\r\n/g, '\n').trim();
       } catch (pdfErr) {
         console.error('PDF parsing error:', pdfErr);
         return res.status(422).json({
-          error: 'Could not extract text from this PDF. Please ensure it is not scanned/image-only or password-protected, or paste your text directly.'
+          success: false,
+          message: 'Could not extract text from this PDF. Please ensure it is text-searchable (not scanned images) or paste text directly.'
         });
       }
     } else {
-      // Plain text, markdown, json, etc.
       extractedText = buffer.toString('utf-8').replace(/\0/g, '').trim();
     }
 
-    // Clean up excessive empty lines
     extractedText = extractedText.replace(/\n{3,}/g, '\n\n').trim();
 
-    if (!extractedText || extractedText.length < 15) {
+    if (!extractedText || extractedText.length < 20) {
       return res.status(422).json({
-        error: 'The uploaded file appears to be empty or has no readable text. Please paste your resume text directly.'
+        success: false,
+        message: 'The uploaded file appears to be empty or has no readable text. Please paste your resume text directly.'
       });
     }
 
@@ -204,278 +210,301 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
     });
   } catch (err) {
     console.error('Resume upload error:', err);
-    res.status(500).json({ error: 'Failed to process resume file: ' + err.message });
+    res.status(500).json({ success: false, message: 'Failed to process resume: ' + err.message });
   }
 });
 
 // @route   POST /api/ai/start
-// @desc    Start an AI mock interview session with optional resume analysis
-// @access  Public
+// @desc    Start an AI mock interview session with real LLM generation & session limits
+// @access  Protected
 router.post('/start', async (req, res) => {
   try {
-    const { topic = 'frontend', difficulty = 'mid', company = 'Google', resumeText = '' } = req.body;
-    const category = topic.toLowerCase().includes('backend') ? 'backend'
-      : topic.toLowerCase().includes('system') ? 'system-design'
-      : topic.toLowerCase().includes('dsa') || topic.toLowerCase().includes('algo') ? 'dsa'
-      : topic.toLowerCase().includes('hr') || topic.toLowerCase().includes('behavioral') ? 'behavioral'
-      : 'frontend';
+    const candidateId = req.user._id;
+    const { topic = 'Frontend', difficulty = 'Mid-Level', company = 'Google', resumeText = '' } = req.body;
 
-    const highlights = extractResumeHighlights(resumeText);
-    const topSkills = highlights.skills.slice(0, 3).join(', ');
+    // 1. Enforce per-user daily AI session limits from Settings
+    const settings = await Settings.getSettings();
+    const dailyLimit = settings.aiDailyLimit || 5;
 
-    let firstQuestion = '';
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
 
-    // If external AI key present
-    if (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) {
-      const systemInstruction = `You are Alex, an elite Staff Software Engineer and Technical Interviewer at ${company}. You are conducting a ${difficulty}-level mock interview in ${topic}.`;
-      let prompt = `Start the interview with an energetic greeting. `;
+    const sessionsToday = await AIInterviewSession.countDocuments({
+      candidateId,
+      createdAt: { $gte: startOfDay }
+    });
 
-      if (resumeText) {
-        prompt += `Candidate's Resume:\n"${resumeText.substring(0, 1500)}"\n\nTask: Acknowledge the candidate's resume/projects. Ask the first deep technical question specifically probing one of the projects or key technologies mentioned in their resume. Keep response under 4 sentences.`;
-      } else {
-        prompt += `Ask the first technical question on ${topic}. Keep response under 3 sentences.`;
-      }
-
-      const externalResponse = await callExternalAI(prompt, systemInstruction);
-      if (externalResponse) firstQuestion = externalResponse;
+    if (sessionsToday >= dailyLimit) {
+      return res.status(429).json({
+        success: false,
+        message: `Daily AI interview limit reached (${dailyLimit} sessions per day). Please try again tomorrow or contact support.`
+      });
     }
 
-    // Built-in intelligent engine fallback
-    if (!firstQuestion) {
-      if (resumeText && highlights.skills.length > 0) {
-        firstQuestion = `Welcome! I've analyzed your resume and see your strong hands-on experience with ${topSkills}. Let's dive right into your projects: Could you describe the architecture of a major application you built using ${highlights.skills[0]}? Specifically, what was the most complex technical challenge you solved, and how did you design the data flow?`;
-      } else {
-        const questionsList = QUESTION_BANK[category] || QUESTION_BANK['frontend'];
-        firstQuestion = questionsList[0];
-      }
+    // 2. Enforce real LLM API key presence (No fake questions or fabricated simulation)
+    if (!process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        message: 'AI Interview service is unavailable: Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in backend environment. Real LLM connection is required.'
+      });
     }
 
-    const defaultTotal = resumeText ? 4 : (QUESTION_BANK[category]?.length || 5);
+    // 3. Prompt real LLM for the initial question
+    const systemInstruction = `You are Alex, a Staff Software Engineer and hiring bar raiser at ${company}. You are conducting a rigorous, professional 1-on-1 mock technical interview for a ${difficulty} role focusing on ${topic}. Output valid JSON with keys: "greeting" (string), "question" (string), "keyConceptsExpected" (array of strings).`;
 
-    res.json({
-      sessionId: 'ai-session-' + Math.random().toString(36).substring(2, 9),
-      interviewerName: `Alex (AI Staff Engineer @ ${company})`,
-      category,
+    let userPrompt = `Introduce yourself briefly as Alex from ${company}. Ask the first technical question on ${topic} calibrated for ${difficulty} level.`;
+    if (resumeText && resumeText.trim().length > 50) {
+      userPrompt += `\nCandidate Resume excerpt:\n"${resumeText.substring(0, 1500)}"\nAnchor the first question into one of the actual technical projects, technologies, or architectures listed on the candidate's resume.`;
+    }
+
+    const rawResponse = await callExternalAI(userPrompt, systemInstruction, true);
+    let parsed;
+    try {
+      parsed = JSON.parse(rawResponse);
+    } catch (e) {
+      const match = rawResponse.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else throw new Error('Could not parse structured JSON from LLM: ' + rawResponse);
+    }
+
+    const firstQuestion = `${parsed.greeting ? parsed.greeting + '\n\n' : ''}${parsed.question}`;
+
+    // 4. Create and persist AIInterviewSession in MongoDB
+    const session = new AIInterviewSession({
+      candidateId,
+      topic,
       difficulty,
       company,
-      hasResume: Boolean(resumeText),
-      detectedSkills: highlights.skills,
-      totalQuestions: defaultTotal,
+      resumeText: resumeText || '',
+      status: 'in_progress',
+      totalQuestions: 4,
+      currentQuestionIndex: 0,
+      turns: [
+        {
+          turnNumber: 1,
+          question: firstQuestion
+        }
+      ]
+    });
+
+    await session.save();
+
+    res.json({
+      success: true,
+      sessionId: session._id,
+      interviewerName: `Alex (AI Staff Engineer @ ${company})`,
+      topic,
+      difficulty,
+      company,
+      totalQuestions: session.totalQuestions,
       currentQuestionIndex: 0,
       question: firstQuestion
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error starting AI interview:', err);
+    res.status(err.message.includes('GEMINI') || err.message.includes('API') ? 503 : 500).json({
+      success: false,
+      message: err.message
+    });
   }
 });
 
 // @route   POST /api/ai/chat
-// @desc    Candidate submits answer; AI evaluates and provides follow-up or next question
-// @access  Public
+// @desc    Candidate submits answer; AI evaluates answer and asks next question
+// @access  Protected
 router.post('/chat', async (req, res) => {
   try {
-    const { 
-      category = 'frontend', 
-      difficulty = 'mid', 
-      company = 'Google', 
-      currentQuestionIndex = 0, 
-      userAnswer, 
-      resumeText = '',
-      history = [] 
-    } = req.body;
+    const { sessionId, userAnswer } = req.body;
 
-    const questionsList = QUESTION_BANK[category] || QUESTION_BANK['frontend'];
-    const nextIndex = currentQuestionIndex + 1;
-    const isCompleted = nextIndex >= (resumeText ? 4 : questionsList.length);
-
-    let nextQuestion = '';
-    let critique = '';
-    let modelAnswer = '';
-
-    // If external AI key present
-    if (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) {
-      const systemInstruction = `You are Alex, an elite Technical Interviewer at ${company}. Evaluate the candidate's response for technical depth, accuracy, and structure.`;
-      const prompt = `Candidate's answer was:\n"${userAnswer}"\n\nProvide 1 sentence of encouraging feedback, and ask the next technical question probing scalability, edge cases, or performance.`;
-
-      const externalResponse = await callExternalAI(prompt, systemInstruction);
-      if (externalResponse) {
-        nextQuestion = externalResponse;
-      }
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required.' });
     }
 
-    // Built-in intelligent engine fallback
-    if (!nextQuestion) {
-      const feedbackPhrases = [
-        "Excellent explanation! You clearly highlighted the core mechanisms and trade-offs.",
-        "Solid technical breakdown. Your point about execution flow was spot-on.",
-        "Well structured response. You addressed both performance and maintainability.",
-        "Good depth! That demonstrates strong real-world understanding."
-      ];
-      critique = feedbackPhrases[currentQuestionIndex % feedbackPhrases.length];
-
-      if (resumeText) {
-        const resumeFollowUps = [
-          "Moving to scaling and performance: In your resume projects, how did you handle state synchronization, caching, or database query optimization when user load grew?",
-          "Let's discuss reliability and resilience: How did you implement error boundaries, retry policies, or monitoring/telemetry in your applications?",
-          "Finally, consider security and deployment: How did you structure your CI/CD pipeline, and what practices did you follow to protect sensitive APIs or environment credentials?"
-        ];
-        const nextQ = resumeFollowUps[currentQuestionIndex] || "Great work! Any final architectural considerations you would improve if rebuilding that system today?";
-        nextQuestion = isCompleted 
-          ? "Excellent work! That concludes our technical loop. Click 'Complete & Generate PDF Report' to view and download your full transcript and evaluation."
-          : `${critique}\n\n${nextQ}`;
-      } else {
-        const nextQ = questionsList[nextIndex] || "Any final optimizations you would apply?";
-        nextQuestion = isCompleted 
-          ? "Excellent work! That concludes our technical questions. Click 'Complete & Generate PDF Report' to review your detailed assessment."
-          : `${critique}\n\nNext Question: ${nextQ}`;
-      }
+    if (!userAnswer || !userAnswer.trim()) {
+      return res.status(400).json({ success: false, message: 'Candidate answer cannot be empty.' });
     }
+
+    const session = await AIInterviewSession.findOne({
+      _id: sessionId,
+      candidateId: req.user._id,
+      status: 'in_progress'
+    });
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Active in-progress interview session not found.' });
+    }
+
+    const currentTurn = session.turns[session.turns.length - 1];
+    const nextIndex = session.currentQuestionIndex + 1;
+    const isCompleted = nextIndex >= session.totalQuestions;
+
+    // Real LLM evaluation of answer and next question generation
+    const systemInstruction = `You are Alex, Staff Software Engineer at ${session.company}. Evaluate the candidate's answer for technical accuracy, depth, architectural trade-offs, and communication clarity. Output strictly valid JSON with keys: "score" (integer 0-100 reflecting real technical competence), "feedback" (string: 2-3 sentences of constructive critique), "nextQuestion" (string: the next probing question, or if isCompleted is true, a closing sentence), "isCompleted" (boolean: ${isCompleted}).`;
+
+    const userPrompt = `Context: ${session.topic} (${session.difficulty})\nQuestion Asked:\n"${currentTurn.question}"\n\nCandidate's Response:\n"${userAnswer}"\n\nTask: Grade the answer objectively (0-100), give precise constructive feedback, and ${isCompleted ? 'provide a congratulatory closing wrap-up' : 'ask the next deep technical question'}.`;
+
+    const rawResponse = await callExternalAI(userPrompt, systemInstruction, true);
+    let parsed;
+    try {
+      parsed = JSON.parse(rawResponse);
+    } catch (e) {
+      const match = rawResponse.match(/\{[\s\S]*\}/);
+      if (match) parsed = JSON.parse(match[0]);
+      else throw new Error('Could not parse LLM evaluation response.');
+    }
+
+    // Update current turn
+    currentTurn.candidateAnswer = userAnswer.trim();
+    currentTurn.feedback = parsed.feedback;
+    currentTurn.score = Number(parsed.score) || 75;
+
+    session.currentQuestionIndex = nextIndex;
+
+    if (isCompleted) {
+      session.status = 'completed';
+    } else {
+      session.turns.push({
+        turnNumber: nextIndex + 1,
+        question: parsed.nextQuestion
+      });
+    }
+
+    await session.save();
 
     res.json({
-      feedback: critique || "Good technical breakdown.",
-      nextQuestion,
+      success: true,
+      feedback: parsed.feedback,
+      score: parsed.score,
+      nextQuestion: parsed.nextQuestion,
       nextIndex,
       isCompleted
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error processing AI chat turn:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   POST /api/ai/evaluate
-// @desc    Generate full AI evaluation report with detailed Q&A transcript and persist into MongoDB
-// @access  Public
+// @desc    Generate full AI evaluation scorecard from transcript and persist to Interview & Feedback
+// @access  Protected
 router.post('/evaluate', async (req, res) => {
   try {
-    const { candidateId, category = 'frontend', company = 'Google', transcript = [], resumeText = '' } = req.body;
+    const { sessionId } = req.body;
 
-    // Build question-and-answer pairs from transcript
-    const qaPairs = [];
-    for (let i = 0; i < transcript.length; i++) {
-      if (transcript[i].role === 'ai') {
-        const candidateReply = transcript[i + 1]?.role === 'candidate' ? transcript[i + 1].text : 'No response provided';
-        qaPairs.push({
-          questionNumber: qaPairs.length + 1,
-          question: transcript[i].text,
-          candidateAnswer: candidateReply,
-          score: candidateReply.length > 50 ? 85 : 70,
-          critique: candidateReply.length > 50 
-            ? 'Candidate explained the fundamental principles clearly with proper technical terminology.' 
-            : 'Answer was brief; recommend adding concrete real-world implementation examples and trade-offs.',
-          modelAnswer: 'A comprehensive answer highlights the core architectural mechanism, discusses performance trade-offs (time/space complexity), and provides proactive error handling.'
-        });
-      }
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required.' });
     }
 
-    let evaluation = {
-      overallScore: 86,
-      technicalScore: 88,
-      communicationScore: 84,
-      relevanceScore: 86,
-      strengths: [
-        resumeText ? 'Strong project experience aligned well with answers' : 'Clear articulation of core concepts and architecture trade-offs',
-        'Good structured problem decomposition and technical vocabulary',
-        'Demonstrated practical knowledge of real-world edge cases'
-      ],
-      improvements: [
-        'Mention concrete performance metrics and benchmarking data',
-        'Incorporate the STAR framework when discussing project architecture',
-        'Address proactive error boundaries and distributed failure modes'
-      ],
-      suggestedTopics: [
-        'Distributed Caching & Redis Invalidation',
-        'High-Throughput Production Profiling',
-        'State Management Scalability'
-      ],
-      detailedNotes: `Candidate completed the technical loop evaluated against ${company} standards. Solutions demonstrated solid foundational depth and readiness.`,
-      qaPairs
-    };
+    const session = await AIInterviewSession.findOne({
+      _id: sessionId,
+      candidateId: req.user._id
+    });
 
-    // If external AI key is available, enhance evaluation
-    if (process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY) {
-      const systemInstruction = `You are a Principal Engineering Bar Raiser at ${company}. Output valid JSON with fields: overallScore (0-100), technicalScore, communicationScore, relevanceScore, strengths (array), improvements (array), suggestedTopics (array), detailedNotes.`;
-      const prompt = `Evaluate Candidate Transcript:\n${JSON.stringify(qaPairs, null, 2)}\nResume Context:\n${resumeText.substring(0, 500)}`;
-
-      const externalEvaluation = await callExternalAI(prompt, systemInstruction);
-      if (externalEvaluation) {
-        try {
-          const jsonMatch = externalEvaluation.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            evaluation = { ...evaluation, ...parsed, qaPairs };
-          }
-        } catch (e) {
-          console.warn('Could not parse external evaluation, using structured evaluation');
-        }
-      }
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session not found.' });
     }
 
-    // Persist into MongoDB
-    let savedInterview = null;
-    let savedFeedback = null;
+    const evaluatedTurns = session.turns.filter(t => t.candidateAnswer);
+    if (evaluatedTurns.length === 0) {
+      return res.status(400).json({ success: false, message: 'No completed Q&A turns found in this session.' });
+    }
 
-    if (candidateId) {
-      let aiUser = await User.findOne({ email: 'ai.interviewer@interviewpro.ai' });
-      if (!aiUser) {
-        aiUser = new User({
-          name: `Alex (AI Staff Engineer @ ${company})`,
-          email: 'ai.interviewer@interviewpro.ai',
-          password: 'ai_system_generated',
-          role: 'professional',
-          title: `AI Technical Interviewer @ ${company}`,
-          company: company,
-          hourlyRate: 0,
-          bio: 'Autonomous AI Technical Interviewer powered by large language models.',
-          avatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80',
-          rating: 4.95,
-          reviewsCount: 160
-        });
-        await aiUser.save();
-      }
+    // Call LLM for comprehensive bar-raiser scorecard
+    const systemInstruction = `You are a Principal Engineering Bar Raiser evaluating a candidate's mock interview at ${session.company}.
+Output valid JSON with keys:
+"overallScore" (integer 0-100),
+"technicalScore" (integer 0-100),
+"communicationScore" (integer 0-100),
+"relevanceScore" (integer 0-100),
+"strengths" (array of 3 specific bullet points citing what candidate did well),
+"improvements" (array of 3 concrete actionable recommendations),
+"suggestedTopics" (array of 3 technical topics to study),
+"detailedNotes" (string: 3-4 sentence executive summary).`;
 
-      const interview = new Interview({
-        candidateId,
-        interviewerId: aiUser._id,
-        date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        timeSlot: 'AI Resume Mock Session',
-        topic: `AI Interview: ${category.toUpperCase()} (${company})`,
-        price: 0,
-        status: 'completed',
-        meetingRoomId: 'ai-room-' + Math.random().toString(36).substring(2, 8)
+    const userPrompt = `Interview Topic: ${session.topic} (${session.difficulty})\nCandidate Q&A Transcript:\n${JSON.stringify(evaluatedTurns, null, 2)}`;
+
+    const rawResponse = await callExternalAI(userPrompt, systemInstruction, true);
+    let evaluation;
+    try {
+      evaluation = JSON.parse(rawResponse);
+    } catch (e) {
+      const match = rawResponse.match(/\{[\s\S]*\}/);
+      if (match) evaluation = JSON.parse(match[0]);
+      else throw new Error('Failed to parse final evaluation scorecard.');
+    }
+
+    // Find or create AI System User
+    let aiUser = await User.findOne({ email: 'ai.interviewer@interviewpro.ai' });
+    if (!aiUser) {
+      aiUser = new User({
+        name: `Alex (AI Staff Engineer)`,
+        email: 'ai.interviewer@interviewpro.ai',
+        password: crypto.randomBytes(16).toString('hex'),
+        role: 'professional',
+        title: `AI Technical Interviewer`,
+        company: session.company,
+        hourlyRate: 0,
+        bio: 'Autonomous AI Technical Interviewer powered by large language models.',
+        rating: 5.0,
+        reviewsCount: 1
       });
-      savedInterview = await interview.save();
-
-      const formattedQAList = (evaluation.qaPairs || qaPairs || []).map(item => ({
-        question: item.question,
-        candidateAnswer: item.candidateAnswer,
-        feedback: item.critique || item.feedback || 'Evaluated for technical depth and clarity.',
-        score: item.score || 85
-      }));
-
-      const feedback = new Feedback({
-        interviewId: savedInterview._id,
-        candidateId,
-        interviewerId: aiUser._id,
-        overallScore: evaluation.overallScore,
-        technicalScore: evaluation.technicalScore,
-        communicationScore: evaluation.communicationScore,
-        relevanceScore: evaluation.relevanceScore,
-        qaList: formattedQAList,
-        strengths: evaluation.strengths,
-        improvements: evaluation.improvements,
-        suggestedTopics: evaluation.suggestedTopics,
-        detailedNotes: evaluation.detailedNotes
-      });
-      savedFeedback = await feedback.save();
+      await aiUser.save();
     }
+
+    // Persist into permanent Interview and Feedback collections
+    const meetingRoomId = crypto.randomBytes(8).toString('hex');
+    const interview = new Interview({
+      candidateId: req.user._id,
+      interviewerId: aiUser._id,
+      date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      timeSlot: 'AI Mock Session',
+      topic: `AI Interview: ${session.topic} (${session.company})`,
+      price: 0,
+      status: 'completed',
+      paymentStatus: 'paid',
+      meetingRoomId,
+      paidAmount: 0
+    });
+    const savedInterview = await interview.save();
+
+    const formattedQAList = evaluatedTurns.map((turn, idx) => ({
+      question: turn.question,
+      candidateAnswer: turn.candidateAnswer,
+      feedback: turn.feedback || 'Evaluated by AI bar raiser.',
+      score: turn.score || evaluation.overallScore
+    }));
+
+    const feedback = new Feedback({
+      interviewId: savedInterview._id,
+      candidateId: req.user._id,
+      interviewerId: aiUser._id,
+      overallScore: Number(evaluation.overallScore) || 75,
+      technicalScore: Number(evaluation.technicalScore) || Number(evaluation.overallScore) || 75,
+      communicationScore: Number(evaluation.communicationScore) || Number(evaluation.overallScore) || 75,
+      relevanceScore: Number(evaluation.relevanceScore) || Number(evaluation.overallScore) || 75,
+      qaList: formattedQAList,
+      strengths: evaluation.strengths || [],
+      improvements: evaluation.improvements || [],
+      suggestedTopics: evaluation.suggestedTopics || [],
+      detailedNotes: evaluation.detailedNotes || ''
+    });
+    const savedFeedback = await feedback.save();
+
+    session.interviewId = savedInterview._id;
+    session.feedbackId = savedFeedback._id;
+    session.status = 'completed';
+    await session.save();
 
     res.json({
+      success: true,
       evaluation,
-      interviewId: savedInterview?._id,
-      feedbackId: savedFeedback?._id
+      interviewId: savedInterview._id,
+      feedbackId: savedFeedback._id
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error generating AI evaluation:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

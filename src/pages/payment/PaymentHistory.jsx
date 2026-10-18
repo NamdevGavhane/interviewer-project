@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react';
-import { CreditCard, Receipt, Download, ShieldCheck, CheckCircle2, Clock, Search, ArrowUpRight, DollarSign } from 'lucide-react';
+import { CreditCard, Receipt, Download, ShieldCheck, CheckCircle2, Clock, Search, DollarSign, Loader2, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import apiClient from '../../utils/apiClient';
 import { downloadInvoicePDF } from '../../utils/invoiceGenerator';
-import { API_BASE_URL } from '../../config/api';
 
 const PaymentHistory = () => {
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [payments, setPayments] = useState([]);
-  const [interviews, setInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
-  const userId = localStorage.getItem('userId');
-  const userRole = localStorage.getItem('userRole') || 'candidate';
-
   useEffect(() => {
-    if (!userId) {
+    if (authLoading) return;
+    if (!isAuthenticated || !user) {
       navigate('/login');
       return;
     }
@@ -23,40 +23,21 @@ const PaymentHistory = () => {
     const fetchPaymentRecords = async () => {
       try {
         setLoading(true);
-        const [payRes, intRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/payment/history?userId=${userId}&role=${userRole}`),
-          fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${userRole}`)
-        ]);
-
-        if (payRes.ok) setPayments(await payRes.json());
-        if (intRes.ok) setInterviews(await intRes.json());
+        const res = await apiClient.get('/api/payment/history');
+        setPayments(res.data || []);
       } catch (err) {
-        console.error(err);
+        setError(err.response?.data?.message || err.message || 'Failed to fetch payment history');
       } finally {
         setLoading(false);
       }
     };
 
     fetchPaymentRecords();
-  }, [userId, userRole, navigate]);
+  }, [user, isAuthenticated, authLoading, navigate]);
 
-  // Combine payments or fallback to paid interviews
-  const recordList = payments.length > 0 ? payments : interviews.map(i => ({
-    _id: i._id,
-    invoiceNumber: i.invoiceNumber || `INV-2026-${i._id.slice(-6).toUpperCase()}`,
-    amount: i.paidAmount || i.price || 100,
-    sessionFee: i.paidAmount || i.price || 100,
-    platformFee: 0,
-    status: 'captured',
-    paymentMethod: i.paymentMethod || 'UPI / Razorpay',
-    paymentId: i.paymentId || `pay_${i._id.slice(-8)}`,
-    createdAt: i.createdAt,
-    candidateId: i.candidateId,
-    interviewerId: i.interviewerId,
-    interviewId: i
-  }));
+  const userRole = user?.role || 'candidate';
 
-  const filteredRecords = recordList.filter(r => {
+  const filteredRecords = payments.filter(r => {
     const term = search.toLowerCase();
     const inv = r.invoiceNumber?.toLowerCase() || '';
     const payId = r.paymentId?.toLowerCase() || '';
@@ -65,7 +46,16 @@ const PaymentHistory = () => {
     return inv.includes(term) || payId.includes(term) || candidateName.includes(term) || interviewerName.includes(term);
   });
 
-  const totalSpentOrEarned = recordList.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const totalSpentOrEarned = payments.reduce((sum, r) => sum + (r.amount || 0), 0);
+
+  if (authLoading || loading) {
+    return (
+      <div className="card text-center p-12 text-muted flex items-center justify-center gap-2">
+        <Loader2 size={20} className="animate-spin text-primary" />
+        <span>Loading transaction records...</span>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto', paddingBottom: '3rem' }}>
@@ -85,11 +75,18 @@ const PaymentHistory = () => {
           </h2>
           <p className="text-muted text-sm">
             {userRole === 'professional' 
-              ? 'Track your completed interview session earnings, download payout vouchers, and inspect gateway settlement records.' 
-              : 'Download official GST tax invoices, review gateway transactions, and inspect payment receipts.'}
+              ? 'Track your completed interview session earnings, download payout vouchers, and inspect settlement records.' 
+              : 'Download official GST tax invoices, review transactions, and inspect payment receipts.'}
           </p>
         </div>
       </div>
+
+      {error && (
+        <div className="card p-4 text-danger mb-4 flex items-center gap-2">
+          <AlertCircle size={18} />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
@@ -99,7 +96,7 @@ const PaymentHistory = () => {
             <DollarSign size={18} className="text-success" />
           </div>
           <div className="text-2xl font-bold mt-2 text-success">₹{totalSpentOrEarned.toLocaleString()} INR</div>
-          <div className="text-xs text-muted mt-1">{recordList.length} verified transactions</div>
+          <div className="text-xs text-muted mt-1">{payments.length} verified transactions</div>
         </div>
 
         <div className="card">
@@ -110,17 +107,17 @@ const PaymentHistory = () => {
           <div className="text-sm font-bold mt-2 flex items-center gap-1.5 text-success">
             <span>Razorpay 256-Bit SSL 🟢</span>
           </div>
-          <div className="text-xs text-muted mt-1">RBI Compliant & Unified UPI</div>
+          <div className="text-xs text-muted mt-1">RBI Compliant & Verified</div>
         </div>
 
         <div className="card">
           <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
-            <span>{userRole === 'professional' ? 'Payout Voucher' : 'Invoice Generation'}</span>
+            <span>Invoice Generation</span>
             <Receipt size={18} className="text-primary" />
           </div>
           <div className="text-sm font-bold mt-2">Instant PDF Ready</div>
           <div className="text-xs text-muted mt-1">
-            {userRole === 'professional' ? 'Verified earnings statement' : '100% Tax Compliant receipts'}
+            100% Tax Compliant receipts
           </div>
         </div>
       </div>
@@ -146,90 +143,87 @@ const PaymentHistory = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div className="p-12 text-center text-muted">Loading transaction ledger...</div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Voucher #' : 'Invoice #'}</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Transaction ID</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Candidate' : 'Interviewer'}</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Payout Earned' : 'Amount'}</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Method</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>{userRole === 'professional' ? 'Payout Voucher' : 'Invoice Action'}</th>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
+                <th style={{ padding: '0.75rem 1rem' }}>Invoice #</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Transaction ID</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Candidate' : 'Interviewer'}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>{userRole === 'professional' ? 'Payout Earned' : 'Amount'}</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Method</th>
+                <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Invoice Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                    No transaction records found. Once an interview session is conducted or booked, official records will appear here.
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filteredRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                      No transaction records found. Once an interview session is conducted or booked, official records will appear here.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRecords.map((r, idx) => {
-                    const partner = userRole === 'professional' ? r.candidateId : r.interviewerId;
-                    const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
+              ) : (
+                filteredRecords.map((r, idx) => {
+                  const partner = userRole === 'professional' ? r.candidateId : r.interviewerId;
+                  const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
 
-                    return (
-                      <tr key={r._id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--primary)' }}>
-                          {r.invoiceNumber}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.75rem', color: '#64748b' }}>
-                          {r.paymentId || `pay_${(r._id || '').slice(-8)}`}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>
-                          {partnerName}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>
-                          ₹{r.amount}
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span className="badge badge-secondary text-xs uppercase">
-                            {r.paymentMethod || 'UPI'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span className="badge badge-success text-xs font-semibold py-0.5 px-2">
-                            CAPTURED ●
-                          </span>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline text-xs py-1 px-3 inline-flex items-center gap-1.5"
-                            style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
-                            onClick={() => downloadInvoicePDF({
-                              ...r,
-                              candidateName: r.candidateId?.name,
-                              candidateEmail: r.candidateId?.email,
-                              interviewerName: r.interviewerId?.name,
-                              interviewerTitle: r.interviewerId?.title,
-                              company: r.interviewerId?.company,
-                              sessionFee: r.sessionFee || r.amount || 100,
-                              platformFee: 0,
-                              paidAmount: r.amount,
-                              invoiceNumber: r.invoiceNumber,
-                              paymentId: r.paymentId || `pay_${(r._id || '').slice(-8)}`,
-                              paymentMethod: r.paymentMethod || 'Razorpay UPI'
-                            })}
-                          >
-                            <Download size={14} />
-                            <span>{userRole === 'professional' ? 'Download Voucher' : 'Download PDF'}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  return (
+                    <tr key={r._id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--primary)' }}>
+                        {r.invoiceNumber}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', fontSize: '0.75rem', color: '#64748b' }}>
+                        {r.paymentId}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>
+                        {partnerName}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 'bold' }}>
+                        ₹{r.amount}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span className="badge badge-secondary text-xs uppercase">
+                          {r.paymentMethod || 'Razorpay'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span className={`badge ${r.status === 'captured' ? 'badge-success' : 'badge-warning'} text-xs font-semibold py-0.5 px-2`}>
+                          {r.status?.toUpperCase() || 'CAPTURED'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline text-xs py-1 px-3 inline-flex items-center gap-1.5"
+                          style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
+                          onClick={() => downloadInvoicePDF({
+                            ...r,
+                            candidateName: r.candidateId?.name,
+                            candidateEmail: r.candidateId?.email,
+                            interviewerName: r.interviewerId?.name,
+                            interviewerTitle: r.interviewerId?.title,
+                            company: r.interviewerId?.company,
+                            sessionFee: r.sessionFee || r.amount || 0,
+                            platformFee: r.platformFee || 0,
+                            gstAmount: r.gstAmount || 0,
+                            paidAmount: r.amount,
+                            invoiceNumber: r.invoiceNumber,
+                            paymentId: r.paymentId,
+                            paymentMethod: r.paymentMethod || 'Razorpay'
+                          })}
+                        >
+                          <Download size={14} />
+                          <span>Download PDF</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

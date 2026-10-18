@@ -24,7 +24,10 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Peer from 'peerjs';
+import { useAuth } from '../context/AuthContext';
+import apiClient from '../utils/apiClient';
 import { API_BASE_URL } from '../config/api';
+import Avatar from '../components/Avatar';
 
 const VideoRoom = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -32,19 +35,13 @@ const VideoRoom = () => {
   const roleParam = searchParams.get('role');
   const navigate = useNavigate();
 
-  // Determine active room & role accurately
-  const roomId = interviewId || searchParams.get('room') || 'main-session';
-
-  const getEffectiveRole = (param, stored) => {
-    const p = (param || '').toLowerCase();
-    const s = (stored || '').toLowerCase();
-    if (p === 'interviewer' || p === 'professional' || p === 'admin') return 'interviewer';
-    if (p === 'candidate') return 'candidate';
-    if (s === 'professional' || s === 'admin') return 'interviewer';
-    return 'candidate';
-  };
-
-  const [currentRole, setCurrentRole] = useState(() => getEffectiveRole(roleParam, localStorage.getItem('userRole')));
+  const { user: currentUserData, role: authRole } = useAuth();
+  const [meetingRoomId, setMeetingRoomId] = useState(interviewId || searchParams.get('room') || 'main-session');
+  const [currentRole, setCurrentRole] = useState(authRole === 'professional' ? 'interviewer' : 'candidate');
+  const [iceServers, setIceServers] = useState([
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]);
   const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
 
   // State
@@ -104,52 +101,36 @@ const VideoRoom = () => {
   const isCallingRef = useRef(false);
 
   // Clean IDs for PeerJS (alphanumeric only)
-  const cleanRoomId = roomId.replace(/[^a-zA-Z0-9]/g, '');
+  const cleanRoomId = (meetingRoomId || 'session').replace(/[^a-zA-Z0-9]/g, '');
   const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
   const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
-  const loggedUserId = localStorage.getItem('userId');
-  const [currentUserData, setCurrentUserData] = useState(null);
-
-  // Fetch logged-in user profile if available
-  useEffect(() => {
-    if (loggedUserId) {
-      fetch(`${API_BASE_URL}/api/users/${loggedUserId}`)
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
-          if (data) setCurrentUserData(data);
-        })
-        .catch(err => console.warn('User profile notice:', err));
-    }
-  }, [loggedUserId]);
-
-  // 1. Fetch interview details if ID present & auto-confirm role from session participants
+  // 1. Fetch room access and dynamic ICE credentials
   useEffect(() => {
     if (interviewId) {
-      fetch(`${API_BASE_URL}/api/interviews/${interviewId}`)
-        .then(res => res.json())
-        .then(data => {
-          setInterview(data);
-          if (data && data.questions && Array.isArray(data.questions) && data.questions.length > 0) {
-            setLiveQuestions(data.questions);
+      apiClient.get(`/api/interviews/${interviewId}/room-access`)
+        .then(res => {
+          const data = res.data;
+          setInterview(data.interview);
+          setCurrentRole(data.userRole);
+          if (data.iceServers) setIceServers(data.iceServers);
+          if (data.meetingRoomId) setMeetingRoomId(data.meetingRoomId);
+          if (data.interview?.questions?.length) {
+            setLiveQuestions(data.interview.questions);
           }
-          if (loggedUserId && data) {
-            const interviewerUserId = String(data.interviewerId?._id || data.interviewerId || '');
-            const candidateUserId = String(data.candidateId?._id || data.candidateId || '');
-            const myId = String(loggedUserId);
-
-            if (myId === interviewerUserId) {
-              console.log('Confirmed identity as Interviewer from DB session');
-              setCurrentRole('interviewer');
-            } else if (myId === candidateUserId) {
-              console.log('Confirmed identity as Candidate from DB session');
-              setCurrentRole('candidate');
-            }
+          if (data.interview?.transcript?.length) {
+            setMessages(data.interview.transcript.map(m => ({
+              sender: m.role || 'Participant',
+              text: m.text,
+              time: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Saved'
+            })));
           }
         })
-        .catch(err => console.error('Error loading interview:', err));
+        .catch(err => {
+          setMediaError(err.response?.data?.message || err.message || 'Access Denied: You cannot join this interview room.');
+        });
     }
-  }, [interviewId, loggedUserId]);
+  }, [interviewId]);
 
   // 2. Timer effect
   useEffect(() => {
@@ -347,7 +328,7 @@ const VideoRoom = () => {
       setConnectionStatus(`Connecting as ${currentRole}...`);
       peerInstance = new Peer(myPeerId, {
         config: {
-          iceServers: [
+          iceServers: iceServers && iceServers.length > 0 ? iceServers : [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' }
@@ -678,6 +659,14 @@ const VideoRoom = () => {
     setMessages(prev => [...prev, userMsg]);
     setChatInput('');
 
+    // Persist chat message incrementally
+    if (interviewId) {
+      apiClient.post(`/api/interviews/${interviewId}/chat`, {
+        text: userMsg.text,
+        sender: currentUserData?.name || (currentRole === 'interviewer' ? 'Interviewer' : 'Candidate')
+      }).catch(err => console.warn('Chat persistence error:', err.message));
+    }
+
     // Send through P2P WebRTC data connection if connected
     if (dataConnRef.current && dataConnRef.current.open) {
       dataConnRef.current.send({
@@ -752,13 +741,12 @@ const VideoRoom = () => {
     if (interviewId) {
       try {
         setIsSavingQuestion(true);
-        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questions: updated, transcript: messages })
+        await apiClient.post(`/api/interviews/${interviewId}/questions`, {
+          questions: updated,
+          transcript: messages
         });
       } catch (err) {
-        console.warn('Error saving question:', err);
+        console.warn('Error saving question:', err.message);
       } finally {
         setIsSavingQuestion(false);
       }
@@ -780,13 +768,12 @@ const VideoRoom = () => {
 
     if (interviewId) {
       try {
-        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questions: updated, transcript: messages })
+        await apiClient.post(`/api/interviews/${interviewId}/questions`, {
+          questions: updated,
+          transcript: messages
         });
       } catch (err) {
-        console.warn('Error syncing deleted question:', err);
+        console.warn('Error syncing deleted question:', err.message);
       }
     }
 
@@ -864,12 +851,8 @@ const VideoRoom = () => {
   const partnerTitle = rawPartnerTitle?.includes('Batch 3') ? 'Senior Full Stack MERN Developer' : rawPartnerTitle;
 
   const partnerAvatar = interview
-    ? (isInterviewer 
-        ? (interview.candidateId?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80') 
-        : (interview.interviewerId?.avatar || '/shushant-gaikwad.png'))
-    : (isInterviewer 
-        ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80' 
-        : '/shushant-gaikwad.png');
+    ? (isInterviewer ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
+    : '';
 
   return (
     <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#090d16' }}>
@@ -1282,16 +1265,11 @@ const VideoRoom = () => {
                 }}
               >
                 <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                  <img 
-                    src={partnerAvatar} 
-                    alt={partnerName} 
-                    style={{ 
-                      width: '85px', 
-                      height: '85px', 
-                      borderRadius: '50%', 
-                      objectFit: 'cover',
-                      border: '3px solid rgba(255,255,255,0.2)'
-                    }} 
+                  <Avatar 
+                    name={partnerName} 
+                    avatar={partnerAvatar} 
+                    size={85} 
+                    style={{ border: '3px solid rgba(255,255,255,0.2)' }} 
                   />
                   <span 
                     style={{ 

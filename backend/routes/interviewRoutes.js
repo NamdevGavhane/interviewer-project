@@ -2,27 +2,37 @@ const express = require('express');
 const router = express.Router();
 const Interview = require('../models/Interview');
 const User = require('../models/User');
+const Settings = require('../models/Settings');
+const { releaseSlotForInterview, atomicBookSlot } = require('../services/availabilityService');
+const { authenticate, requireRole, requireActiveProfessional } = require('../middleware/auth');
+
+// Apply authentication to ALL interview routes
+router.use(authenticate);
 
 // @route   POST /api/interviews
-// @desc    Book a new interview
-// @access  Public
+// @desc    Book a new interview (Candidate or Admin)
+// @access  Protected
 router.post('/', async (req, res) => {
   try {
-    const { candidateId, interviewerId, date, timeSlot, topic, price, notes } = req.body;
+    const { interviewerId, date, timeSlot, topic, notes } = req.body;
 
-    if (!candidateId || !interviewerId || !date || !timeSlot) {
-      return res.status(400).json({ message: 'Missing required booking fields.' });
+    // Never trust candidateId from body; always enforce req.user._id
+    const candidateId = req.user.role === 'admin' && req.body.candidateId 
+      ? req.body.candidateId 
+      : req.user._id;
+
+    if (!interviewerId || !date || !timeSlot) {
+      return res.status(400).json({ success: false, message: 'Missing required booking fields (interviewerId, date, timeSlot).' });
     }
 
-    // Ensure interviewer is an active, verified professional (Requirement 11)
+    // Ensure interviewer is an active, verified professional
     const interviewer = await User.findById(interviewerId);
     if (!interviewer || interviewer.role !== 'professional' || interviewer.isDeactivated || interviewer.accountStatus !== 'active' || !interviewer.isVerified) {
-      return res.status(400).json({ message: 'Selected interviewer is not an active verified professional.' });
+      return res.status(400).json({ success: false, message: 'Selected interviewer is not an active verified professional.' });
     }
 
-    // Check if duplicate session already exists for this candidate/slot
+    // Check if slot is already booked
     const existing = await Interview.findOne({
-      candidateId,
       interviewerId,
       date,
       timeSlot,
@@ -30,11 +40,13 @@ router.post('/', async (req, res) => {
     });
 
     if (existing) {
-      const populated = await Interview.findById(existing._id)
-        .populate('candidateId', 'name email avatar')
-        .populate('interviewerId', 'name email avatar title company hourlyRate');
-      return res.status(200).json(populated);
+      return res.status(409).json({
+        success: false,
+        message: 'This time slot has already been booked with this interviewer. Please choose another slot.'
+      });
     }
+
+    const price = interviewer.hourlyRate !== undefined && interviewer.hourlyRate !== null ? interviewer.hourlyRate : 0;
 
     const newInterview = new Interview({
       candidateId,
@@ -42,42 +54,48 @@ router.post('/', async (req, res) => {
       date,
       timeSlot,
       topic: topic || 'Mock Technical Interview',
-      price: price || 100,
+      price,
       notes: notes || '',
-      status: 'scheduled'
+      status: 'scheduled',
+      paidAmount: price,
+      platformFee: 0,
+      paymentStatus: price === 0 ? 'paid' : 'unpaid'
     });
 
     const savedInterview = await newInterview.save();
     
-    // Populate user info for response
     const populated = await Interview.findById(savedInterview._id)
       .populate('candidateId', 'name email avatar')
       .populate('interviewerId', 'name email avatar title company hourlyRate');
 
     res.status(201).json(populated);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/interviews
-// @desc    Get interviews for a specific user (as candidate or interviewer)
-// @access  Public
+// @desc    Get interviews for the logged in user (ownership enforced)
+// @access  Protected
 router.get('/', async (req, res) => {
   try {
-    const { userId, role } = req.query;
+    const user = req.user;
     let filter = {};
 
-    if (userId) {
-      if (role === 'professional') {
-        filter = { interviewerId: userId };
-      } else if (role === 'candidate') {
-        filter = { candidateId: userId };
-      } else {
-        filter = {
-          $or: [{ candidateId: userId }, { interviewerId: userId }]
-        };
+    if (user.role === 'admin') {
+      // Admin can filter by query params or view all
+      const { userId, role } = req.query;
+      if (userId) {
+        if (role === 'professional') filter.interviewerId = userId;
+        else if (role === 'candidate') filter.candidateId = userId;
+        else filter.$or = [{ candidateId: userId }, { interviewerId: userId }];
       }
+    } else if (user.role === 'professional') {
+      // Professional only sees their own sessions
+      filter = { interviewerId: user._id };
+    } else {
+      // Candidate only sees their own interviews
+      filter = { candidateId: user._id };
     }
 
     const interviews = await Interview.find(filter)
@@ -87,13 +105,13 @@ router.get('/', async (req, res) => {
 
     res.json(interviews);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/interviews/:id
-// @desc    Get single interview details
-// @access  Public
+// @desc    Get single interview details (Ownership enforced)
+// @access  Protected
 router.get('/:id', async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.id)
@@ -101,52 +119,114 @@ router.get('/:id', async (req, res) => {
       .populate('interviewerId', 'name email avatar role title company hourlyRate');
 
     if (!interview) {
-      return res.status(404).json({ message: 'Interview not found' });
+      return res.status(404).json({ success: false, message: 'Interview not found' });
+    }
+
+    // Ownership check
+    const isCandidate = interview.candidateId?._id?.toString() === req.user._id.toString();
+    const isInterviewer = interview.interviewerId?._id?.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isCandidate && !isInterviewer && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have permission to view this interview.'
+      });
     }
 
     res.json(interview);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   PATCH /api/interviews/:id/status
-// @desc    Update interview status (scheduled -> completed -> cancelled)
-// @access  Public
+// @desc    Update interview status (Ownership enforced)
+// @access  Protected
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
     if (!['scheduled', 'completed', 'cancelled'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status value' });
+      return res.status(400).json({ success: false, message: 'Invalid status value' });
     }
 
-    const updated = await Interview.findByIdAndUpdate(
-      req.params.id,
-      { $set: { status } },
-      { new: true }
-    )
-    .populate('candidateId', 'name email avatar')
-    .populate('interviewerId', 'name email avatar title company');
-
-    if (!updated) {
-      return res.status(404).json({ message: 'Interview not found' });
+    const interview = await Interview.findById(req.params.id);
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview not found' });
     }
 
-    res.json(updated);
+    const isCandidate = interview.candidateId.toString() === req.user._id.toString();
+    const isInterviewer = interview.interviewerId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isCandidate && !isInterviewer && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Unauthorized to update this interview status.' });
+    }
+
+    // Candidates can only cancel
+    if (isCandidate && !isAdmin && !isInterviewer && status !== 'cancelled') {
+      return res.status(403).json({ success: false, message: 'Candidates may only cancel their scheduled interviews.' });
+    }
+
+    interview.status = status;
+
+    if (status === 'cancelled') {
+      const { cancelReason } = req.body;
+      interview.cancelledAt = new Date();
+      interview.cancellationReason = cancelReason || 'Cancelled by user';
+
+      // Automatically release the booked availability slot
+      await releaseSlotForInterview(interview._id);
+
+      // Evaluate refund policy from Settings
+      const settings = await Settings.getSettings();
+      const refundWindowHours = settings.refundWindowHours || 24;
+
+      let refundEligible = false;
+      if (interview.startTime) {
+        const diffHours = (new Date(interview.startTime) - new Date()) / (1000 * 60 * 60);
+        refundEligible = diffHours >= refundWindowHours;
+      } else {
+        refundEligible = true; // If no startTime recorded, default eligible
+      }
+
+      if (refundEligible && interview.paymentStatus === 'paid' && interview.paidAmount > 0) {
+        interview.refundAmount = interview.paidAmount;
+        interview.paymentStatus = 'refunded';
+      }
+    }
+
+    await interview.save();
+
+    const populated = await Interview.findById(interview._id)
+      .populate('candidateId', 'name email avatar')
+      .populate('interviewerId', 'name email avatar title company');
+
+    res.json(populated);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   POST /api/interviews/:id/questions
-// @desc    Save actual questions, answers, and feedback during or after live session
-// @access  Public
+// @desc    Save actual questions and transcript during live session (Interviewer or Admin only)
+// @access  Protected
 router.post('/:id/questions', async (req, res) => {
   try {
     const { questions, transcript } = req.body;
     const interview = await Interview.findById(req.params.id);
     if (!interview) {
-      return res.status(404).json({ message: 'Interview not found' });
+      return res.status(404).json({ success: false, message: 'Interview not found' });
+    }
+
+    const isInterviewer = interview.interviewerId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isInterviewer && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only the interviewer or admin can record session questions.'
+      });
     }
 
     if (questions && Array.isArray(questions)) {
@@ -157,100 +237,109 @@ router.post('/:id/questions', async (req, res) => {
     }
     await interview.save();
 
-    // Auto-sync into Feedback collection so Evaluation Report has the actual questions!
-    const Feedback = require('../models/Feedback');
-    let feedback = await Feedback.findOne({ interviewId: interview._id });
-    if (feedback) {
-      if (questions && questions.length > 0) {
-        feedback.qaList = questions;
-        await feedback.save();
-      }
-    } else if (questions && questions.length > 0) {
-      const newFeedback = new Feedback({
-        interviewId: interview._id,
-        candidateId: interview.candidateId,
-        interviewerId: interview.interviewerId,
-        overallScore: 85,
-        technicalScore: 88,
-        communicationScore: 82,
-        relevanceScore: 85,
-        qaList: questions,
-        strengths: ['Solid answers across live questions', 'Proactive communication'],
-        improvements: ['Practice edge-case performance considerations'],
-        suggestedTopics: [interview.topic || 'Full Stack Architecture'],
-        detailedNotes: 'Live questions recorded during interview session.'
-      });
-      await newFeedback.save();
-    }
-
-    res.json({ message: 'Interview questions and answers saved successfully', interview });
+    res.json({ success: true, message: 'Interview questions and answers saved successfully', interview });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/interviews/:id/questions
-// @desc    Get live questions for an interview
-// @access  Public
+// @desc    Get live questions for an interview (Ownership enforced)
+// @access  Protected
 router.get('/:id/questions', async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.id);
-    if (!interview) return res.status(404).json({ message: 'Interview not found' });
-    res.json({ questions: interview.questions || [], transcript: interview.transcript || [] });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+    if (!interview) return res.status(404).json({ success: false, message: 'Interview not found' });
 
-// @route   POST /api/interviews/clean-duplicates
-// @desc    Remove all duplicate scheduled sessions, keeping only 1 distinct session per slot
-// @access  Public
-router.post('/clean-duplicates', async (req, res) => {
+    const isCandidate = interview.candidateId.toString() === req.user._id.toString();
+    const isInterviewer = interview.interviewerId.toString() === req.user._id.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isCandidate && !isInterviewer && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Access denied to interview questions.' });
+    }
+
+// @route   GET /api/interviews/:id/room-access
+// @desc    Verify room access, timing window, and get ICE/TURN credentials
+// @access  Protected
+router.get('/:id/room-access', async (req, res) => {
   try {
-    const all = await Interview.find().sort({ createdAt: 1 });
-    const seen = new Set();
-    const toDelete = [];
-
-    for (const item of all) {
-      // Key by candidateId + interviewerId + date + timeSlot + status
-      const key = `${item.candidateId}_${item.interviewerId}_${item.date}_${item.timeSlot}_${item.status}`;
-      if (seen.has(key)) {
-        toDelete.push(item._id);
-      } else {
-        seen.add(key);
-      }
-    }
-
-    if (toDelete.length > 0) {
-      await Interview.deleteMany({ _id: { $in: toDelete } });
-    }
-
-    const remaining = await Interview.find()
+    const interview = await Interview.findById(req.params.id)
       .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company')
-      .sort({ createdAt: -1 });
+      .populate('interviewerId', 'name email avatar title company');
+
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview session not found.' });
+    }
+
+    const isCandidate = String(interview.candidateId?._id) === String(req.user._id);
+    const isInterviewer = String(interview.interviewerId?._id) === String(req.user._id);
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isCandidate && !isInterviewer && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You are not a registered participant in this mock interview session.'
+      });
+    }
+
+    if (interview.status === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'This interview was cancelled and the room is no longer accessible.'
+      });
+    }
+
+    // Dynamic ICE / STUN / TURN servers from environment
+    const iceServers = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
+
+    if (process.env.TURN_URL) {
+      iceServers.push({
+        urls: process.env.TURN_URL,
+        username: process.env.TURN_USERNAME || '',
+        credential: process.env.TURN_CREDENTIAL || ''
+      });
+    }
 
     res.json({
-      message: `Cleaned up ${toDelete.length} duplicate interview sessions successfully!`,
-      deletedCount: toDelete.length,
-      remainingCount: remaining.length,
-      interviews: remaining
+      success: true,
+      meetingRoomId: interview.meetingRoomId || `room_${interview._id}`,
+      iceServers,
+      interview,
+      userRole: isInterviewer ? 'interviewer' : 'candidate'
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// @route   DELETE /api/interviews/:id
-// @desc    Delete an interview by ID
-// @access  Public
-router.delete('/:id', async (req, res) => {
+// @route   POST /api/interviews/:id/chat
+// @desc    Append chat message to interview transcript incrementally
+// @access  Protected
+router.post('/:id/chat', async (req, res) => {
   try {
-    const deleted = await Interview.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Interview not found' });
-    res.json({ message: 'Interview deleted successfully' });
+    const { text, sender } = req.body;
+    if (!text) return res.status(400).json({ success: false, message: 'Text is required' });
+
+    const interview = await Interview.findById(req.params.id);
+    if (!interview) return res.status(404).json({ success: false, message: 'Interview not found' });
+
+    const chatItem = {
+      role: sender || req.user.name,
+      text,
+      timestamp: new Date()
+    };
+
+    if (!Array.isArray(interview.transcript)) interview.transcript = [];
+    interview.transcript.push(chatItem);
+    await interview.save();
+
+    res.json({ success: true, chatItem });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

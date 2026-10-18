@@ -6,38 +6,22 @@ const Interview = require('../models/Interview');
 const Payment = require('../models/Payment');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { sendProfessionalInvitationEmail } = require('../utils/mailer');
+const { validate } = require('../middleware/validate');
+const { inviteProfessionalSchema, requestDecisionSchema } = require('../validators/schemas');
+
+// Enforce Admin Authentication on ALL admin routes
+router.use(authenticate, requireRole('admin'));
 
 // @route   POST /api/admin/invite-professional
-// @desc    Admin creates and invites a Professional account (sends email with secure link, NEVER sending password)
-// @access  Admin only (Requirement 1, 2, 3, 12)
-router.post('/invite-professional', authenticate, requireRole('admin'), async (req, res) => {
+// @desc    Admin creates and invites a Professional account
+router.post('/invite-professional', validate(inviteProfessionalSchema), async (req, res) => {
   try {
     const { name, email, company, designation, experience, domain, hourlyRate } = req.body;
-
-    // Requirement 2: Admin enters the professional's name, email, company, designation, and experience
-    if (!name || !name.trim()) {
-      return res.status(400).json({ message: "Professional's full name is required." });
-    }
-    if (!email || !email.trim() || !email.includes('@')) {
-      return res.status(400).json({ message: "A valid professional email address is required." });
-    }
-    if (!company || !company.trim()) {
-      return res.status(400).json({ message: "Company name is required." });
-    }
-    if (!designation || !designation.trim()) {
-      return res.status(400).json({ message: "Designation / Job Title is required." });
-    }
-    if (!experience || !experience.trim()) {
-      return res.status(400).json({ message: "Professional experience is required." });
-    }
-
     const cleanEmail = email.trim().toLowerCase();
 
-    // Check if user already exists
     let existingUser = await User.findOne({ email: cleanEmail });
     if (existingUser) {
       if (existingUser.accountStatus === 'invited' && !existingUser.password) {
-        // Already invited but has not yet accepted / set password -> regenerate token and re-invite
         const token = crypto.randomBytes(32).toString('hex');
         existingUser.name = name.trim();
         existingUser.company = company.trim();
@@ -45,7 +29,7 @@ router.post('/invite-professional', authenticate, requireRole('admin'), async (r
         existingUser.title = designation.trim();
         existingUser.experience = experience.trim();
         existingUser.invitationToken = token;
-        existingUser.invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+        existingUser.invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         existingUser.invitedAt = new Date();
         existingUser.invitedBy = req.user._id;
         await existingUser.save();
@@ -61,32 +45,22 @@ router.post('/invite-professional', authenticate, requireRole('admin'), async (r
         });
 
         return res.status(200).json({
-          message: `Re-sent invitation email to ${cleanEmail}. The professional must open the link to set their own password.`,
-          invitationLink: mailResult.invitationLink,
-          user: {
-            id: existingUser._id,
-            name: existingUser.name,
-            email: existingUser.email,
-            company: existingUser.company,
-            designation: existingUser.designation,
-            experience: existingUser.experience,
-            accountStatus: existingUser.accountStatus,
-            approvalStatus: existingUser.approvalStatus,
-            isVerified: existingUser.isVerified
+          success: true,
+          message: `Re-sent invitation email to ${cleanEmail}.`,
+          data: {
+            user: existingUser,
+            mailSent: mailResult.sent
           }
         });
       }
 
-      return res.status(400).json({ 
-        message: `An account with email "${cleanEmail}" already exists (Role: ${existingUser.role}, Status: ${existingUser.accountStatus || existingUser.approvalStatus}).` 
+      return res.status(400).json({
+        success: false,
+        message: `An account with email "${cleanEmail}" already exists (Role: ${existingUser.role}).`
       });
     }
 
-    // Generate secure invitation token (crypto random 32 bytes)
     const token = crypto.randomBytes(32).toString('hex');
-
-    // Create new Professional account in 'invited' state
-    // Requirement 12: Never send passwords through email. Password is NOT generated or sent!
     const newProfessional = new User({
       name: name.trim(),
       email: cleanEmail,
@@ -95,23 +69,21 @@ router.post('/invite-professional', authenticate, requireRole('admin'), async (r
       title: designation.trim(),
       experience: experience.trim(),
       domain: domain ? domain.trim() : 'Software Engineering',
-      hourlyRate: Number(hourlyRate) || 100,
+      hourlyRate: Number(hourlyRate) || 0,
       role: 'professional',
-      accountStatus: 'invited', // Must accept invite and set password to activate
-      approvalStatus: 'approved', // Pre-approved because invited directly by Admin
-      isVerified: true, // Verification pre-granted by Admin
+      accountStatus: 'invited',
+      approvalStatus: 'approved',
+      isVerified: true,
       isDeactivated: false,
       invitationToken: token,
-      invitationExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      invitationExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       invitedBy: req.user._id,
       invitedAt: new Date(),
-      availabilitySlots: ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM', '05:00 PM - 05:45 PM', '07:00 PM - 07:45 PM'],
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
+      availabilitySlots: []
     });
 
     await newProfessional.save();
 
-    // Requirement 3: Send an invitation email to the professional
     const mailResult = await sendProfessionalInvitationEmail({
       name: newProfessional.name,
       email: newProfessional.email,
@@ -123,30 +95,21 @@ router.post('/invite-professional', authenticate, requireRole('admin'), async (r
     });
 
     res.status(201).json({
-      message: `Invitation successfully sent to ${cleanEmail}! The professional will set their own password via the email link.`,
-      invitationLink: mailResult.invitationLink,
-      user: {
-        id: newProfessional._id,
-        name: newProfessional.name,
-        email: newProfessional.email,
-        company: newProfessional.company,
-        designation: newProfessional.designation,
-        experience: newProfessional.experience,
-        accountStatus: newProfessional.accountStatus,
-        approvalStatus: newProfessional.approvalStatus,
-        isVerified: newProfessional.isVerified,
-        invitedAt: newProfessional.invitedAt
+      success: true,
+      message: `Invitation successfully created for ${cleanEmail}.`,
+      data: {
+        user: newProfessional,
+        mailSent: mailResult.sent
       }
     });
   } catch (err) {
-    res.status(500).json({ message: 'Error inviting professional: ' + err.message });
+    res.status(500).json({ success: false, message: 'Error inviting professional: ' + err.message });
   }
 });
 
 // @route   GET /api/admin/invitations
 // @desc    Get all invited professionals with their invitation status
-// @access  Admin only
-router.get('/invitations', authenticate, requireRole('admin'), async (req, res) => {
+router.get('/invitations', async (req, res) => {
   try {
     const invitations = await User.find({
       role: 'professional',
@@ -161,20 +124,19 @@ router.get('/invitations', authenticate, requireRole('admin'), async (req, res) 
 
     res.json(invitations);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   POST /api/admin/invitations/:id/resend
 // @desc    Resend invitation email with a fresh token
-// @access  Admin only
-router.post('/invitations/:id/resend', authenticate, requireRole('admin'), async (req, res) => {
+router.post('/invitations/:id/resend', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     if (user.role !== 'professional') {
-      return res.status(400).json({ message: 'User is not a professional' });
+      return res.status(400).json({ success: false, message: 'User is not a professional' });
     }
 
     const token = crypto.randomBytes(32).toString('hex');
@@ -196,25 +158,24 @@ router.post('/invitations/:id/resend', authenticate, requireRole('admin'), async
     });
 
     res.json({
+      success: true,
       message: `Fresh invitation email dispatched to ${user.email}`,
-      invitationLink: mailResult.invitationLink,
-      user
+      data: { user, mailSent: mailResult.sent }
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   PATCH /api/admin/users/:id/toggle-status
-// @desc    Admin deactivates or reactivates an account (Requirement 11)
-// @access  Admin only
-router.patch('/users/:id/toggle-status', authenticate, requireRole('admin'), async (req, res) => {
+// @desc    Admin deactivates or reactivates an account
+router.patch('/users/:id/toggle-status', async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     if (user.role === 'admin') {
-      return res.status(400).json({ message: 'Cannot deactivate an admin account' });
+      return res.status(400).json({ success: false, message: 'Cannot deactivate an admin account' });
     }
 
     const isCurrentlyDeactivated = user.isDeactivated || user.accountStatus === 'deactivated';
@@ -224,59 +185,67 @@ router.patch('/users/:id/toggle-status', authenticate, requireRole('admin'), asy
     if (newDeactivatedState) {
       user.accountStatus = 'deactivated';
     } else {
-      // Revert to active if password is set, else invited
       user.accountStatus = user.password ? 'active' : 'invited';
     }
 
     await user.save();
 
     res.json({
-      message: `Account for ${user.name} is now ${newDeactivatedState ? 'Deactivated 🔴' : 'Active 🟢'}`,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        isDeactivated: user.isDeactivated,
-        accountStatus: user.accountStatus
-      }
+      success: true,
+      message: `Account for ${user.name} is now ${newDeactivatedState ? 'Deactivated' : 'Active'}`,
+      data: user
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/admin/stats
-// @desc    Get overall admin dashboard statistics
+// @desc    Get aggregated dashboard stats
 router.get('/stats', async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const candidatesCount = await User.countDocuments({ role: 'candidate' });
-    const professionalsCount = await User.countDocuments({ role: 'professional' });
-    const verifiedProfessionalsCount = await User.countDocuments({ role: 'professional', isVerified: true });
-    const invitedProfessionalsCount = await User.countDocuments({ role: 'professional', accountStatus: 'invited' });
-    const deactivatedCount = await User.countDocuments({ 
-      $or: [{ isDeactivated: true }, { accountStatus: 'deactivated' }] 
-    });
-    
-    // Professional approval request metrics
-    const pendingRequestsCount = await User.countDocuments({ 
-      $or: [
-        { role: 'professional', approvalStatus: 'pending' },
-        { approvalStatus: 'pending' }
-      ]
-    });
-    const approvedProfessionalsCount = await User.countDocuments({ role: 'professional', approvalStatus: 'approved' });
-    const rejectedRequestsCount = await User.countDocuments({ approvalStatus: 'rejected' });
+    const [
+      totalUsers,
+      candidatesCount,
+      professionalsCount,
+      verifiedProfessionalsCount,
+      invitedProfessionalsCount,
+      deactivatedCount,
+      pendingRequestsCount,
+      approvedProfessionalsCount,
+      rejectedRequestsCount,
+      totalBookings,
+      completedBookings,
+      scheduledBookings,
+      cancelledBookings,
+      paymentStats
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ role: 'candidate' }),
+      User.countDocuments({ role: 'professional' }),
+      User.countDocuments({ role: 'professional', isVerified: true }),
+      User.countDocuments({ role: 'professional', accountStatus: 'invited' }),
+      User.countDocuments({ $or: [{ isDeactivated: true }, { accountStatus: 'deactivated' }] }),
+      User.countDocuments({ $or: [{ role: 'professional', approvalStatus: 'pending' }, { approvalStatus: 'pending' }] }),
+      User.countDocuments({ role: 'professional', approvalStatus: 'approved' }),
+      User.countDocuments({ approvalStatus: 'rejected' }),
+      Interview.countDocuments(),
+      Interview.countDocuments({ status: 'completed' }),
+      Interview.countDocuments({ status: 'scheduled' }),
+      Interview.countDocuments({ status: 'cancelled' }),
+      Payment.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalVolume: { $sum: '$amount' },
+            platformRevenue: { $sum: '$platformFee' }
+          }
+        }
+      ])
+    ]);
 
-    const totalBookings = await Interview.countDocuments();
-    const completedBookings = await Interview.countDocuments({ status: 'completed' });
-    const scheduledBookings = await Interview.countDocuments({ status: 'scheduled' });
-    const cancelledBookings = await Interview.countDocuments({ status: 'cancelled' });
-
-    const payments = await Payment.find();
-    const totalVolume = payments.reduce((acc, p) => acc + (p.amount || 0), 0);
-    const platformRevenue = payments.reduce((acc, p) => acc + (p.platformFee || 0), 0);
+    const totalVolume = paymentStats[0]?.totalVolume || 0;
+    const platformRevenue = paymentStats[0]?.platformRevenue || 0;
 
     res.json({
       totalUsers,
@@ -296,7 +265,7 @@ router.get('/stats', async (req, res) => {
       platformRevenue
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -320,17 +289,17 @@ router.get('/requests', async (req, res) => {
     const requests = await User.find(query).select('-password').sort({ createdAt: -1 });
     res.json(requests);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   PATCH /api/admin/requests/:id/decision
-// @desc    Admin decision: approve as professional, make candidate, or reject
-router.patch('/requests/:id/decision', async (req, res) => {
+// @desc    Admin decision: approve, reject, or make candidate
+router.patch('/requests/:id/decision', validate(requestDecisionSchema), async (req, res) => {
   try {
     const { decision, rejectionReason } = req.body;
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User request not found' });
+    if (!user) return res.status(404).json({ success: false, message: 'User request not found' });
 
     if (decision === 'approve') {
       user.role = 'professional';
@@ -339,9 +308,10 @@ router.patch('/requests/:id/decision', async (req, res) => {
       user.isVerified = true;
       user.rejectionReason = '';
       await user.save();
-      return res.json({ 
-        message: `Approved ${user.name} as a Professional Interviewer! Verification granted.`, 
-        user 
+      return res.json({
+        success: true,
+        message: `Approved ${user.name} as a Professional Interviewer.`,
+        user
       });
     } else if (decision === 'make_candidate') {
       user.role = 'candidate';
@@ -350,160 +320,171 @@ router.patch('/requests/:id/decision', async (req, res) => {
       user.isVerified = false;
       user.rejectionReason = '';
       await user.save();
-      return res.json({ 
-        message: `Decision recorded: ${user.name} has been set to Candidate (Regular User).`, 
-        user 
+      return res.json({
+        success: true,
+        message: `Converted ${user.name} to Candidate account.`,
+        user
       });
     } else if (decision === 'reject') {
       user.approvalStatus = 'rejected';
       user.isVerified = false;
-      user.rejectionReason = rejectionReason || 'Application criteria not met';
+      user.rejectionReason = rejectionReason || 'Application criteria not met at this time.';
       await user.save();
-      return res.json({ 
-        message: `Application for ${user.name} has been rejected.`, 
-        user 
+      return res.json({
+        success: true,
+        message: `Application rejected for ${user.name}.`,
+        user
       });
-    } else {
-      return res.status(400).json({ message: 'Invalid decision. Use "approve", "make_candidate", or "reject".' });
     }
+
+    res.status(400).json({ success: false, message: 'Invalid decision action.' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/admin/users
-// @desc    Get all users with search and role filter
+// @desc    Get all users with server-side filtering
 router.get('/users', async (req, res) => {
   try {
-    const { role, search, approvalStatus, accountStatus } = req.query;
+    const { role, search, status } = req.query;
     let query = {};
 
     if (role && role !== 'all') {
       query.role = role;
     }
 
-    if (approvalStatus && approvalStatus !== 'all') {
-      query.approvalStatus = approvalStatus;
+    if (status && status !== 'all') {
+      if (status === 'deactivated') {
+        query.$or = [{ isDeactivated: true }, { accountStatus: 'deactivated' }];
+      } else if (status === 'active') {
+        query.accountStatus = 'active';
+        query.isDeactivated = { $ne: true };
+      } else if (status === 'invited') {
+        query.accountStatus = 'invited';
+      } else if (status === 'pending') {
+        query.approvalStatus = 'pending';
+      }
     }
 
-    if (accountStatus && accountStatus !== 'all') {
-      query.accountStatus = accountStatus;
-    }
-
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { company: { $regex: search, $options: 'i' } }
-      ];
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      query.$or = [{ name: regex }, { email: regex }, { company: regex }, { title: regex }];
     }
 
     const users = await User.find(query).select('-password').sort({ createdAt: -1 });
     res.json(users);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   PATCH /api/admin/users/:id/role
-// @desc    Update user role (candidate, professional, admin)
+// @desc    Change user role
 router.patch('/users/:id/role', async (req, res) => {
   try {
     const { role } = req.body;
     if (!['candidate', 'professional', 'admin'].includes(role)) {
-      return res.status(400).json({ message: 'Invalid role provided' });
+      return res.status(400).json({ success: false, message: 'Invalid role specified' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { $set: { role } },
-      { new: true }
-    ).select('-password');
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: `Role updated to ${role}`, user });
+    user.role = role;
+    if (role === 'professional') {
+      user.approvalStatus = 'approved';
+      user.isVerified = true;
+    }
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `Role updated to ${role} for ${user.name}`,
+      user
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   PATCH /api/admin/users/:id/verify
-// @desc    Toggle verified status of a professional interviewer
+// @desc    Toggle user verified status
 router.patch('/users/:id/verify', async (req, res) => {
   try {
-    const { isVerified } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { $set: { isVerified: Boolean(isVerified) } },
-      { new: true }
-    ).select('-password');
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json({ 
-      message: `Professional is now ${user.isVerified ? 'Verified' : 'Unverified'}`,
-      user 
+    user.isVerified = !user.isVerified;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `User is now ${user.isVerified ? 'Verified' : 'Unverified'}`,
+      user
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   DELETE /api/admin/users/:id
-// @desc    Delete a user
+// @desc    Delete user account and cascade cleanups
 router.delete('/users/:id', async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: 'User deleted successfully' });
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    if (user.role === 'admin') {
+      return res.status(400).json({ success: false, message: 'Cannot delete an administrator account' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({
+      success: true,
+      message: `Account for ${user.name} has been permanently deleted.`
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/admin/bookings
-// @desc    Get all interview bookings across the platform
+// @desc    Get all bookings
 router.get('/bookings', async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, search } = req.query;
     let query = {};
+
     if (status && status !== 'all') {
       query.status = status;
     }
 
     const bookings = await Interview.find(query)
       .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company isVerified')
+      .populate('interviewerId', 'name email avatar title company hourlyRate')
       .sort({ createdAt: -1 });
 
     res.json(bookings);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// @route   PATCH /api/admin/bookings/:id/status
-// @desc    Admin override booking status (scheduled / completed / cancelled)
-router.patch('/bookings/:id/status', async (req, res) => {
+// @route   DELETE /api/admin/bookings/:id
+// @desc    Delete or cancel booking
+router.delete('/bookings/:id', async (req, res) => {
   try {
-    const { status } = req.body;
-    if (!['scheduled', 'completed', 'cancelled'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
-    }
+    const booking = await Interview.findByIdAndDelete(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-    const booking = await Interview.findByIdAndUpdate(
-      req.params.id,
-      { $set: { status } },
-      { new: true }
-    )
-    .populate('candidateId', 'name email')
-    .populate('interviewerId', 'name email');
-
-    if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    res.json({ message: `Booking status updated to ${status}`, booking });
+    res.json({
+      success: true,
+      message: 'Interview booking record deleted successfully.'
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
 module.exports = router;
-

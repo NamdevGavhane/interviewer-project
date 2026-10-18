@@ -1,28 +1,87 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
+const RefreshToken = require('../models/RefreshToken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'interviewpro_jwt_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (JWT_SECRET ? JWT_SECRET + '_refresh' : null);
+
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is missing. Server must refuse to start.');
+  process.exit(1);
+}
 
 /**
- * Generate a JWT token for a user
+ * Generate short-lived Access Token (15 minutes)
  */
-const generateToken = (user) => {
+const generateAccessToken = (user) => {
   return jwt.sign(
-    { 
-      id: user._id, 
-      email: user.email, 
+    {
+      id: user._id.toString(),
+      email: user.email,
       role: user.role,
       accountStatus: user.accountStatus,
-      isVerified: user.isVerified 
+      isVerified: user.isVerified
     },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '15m' }
   );
 };
 
 /**
+ * Generate long-lived Refresh Token (7 days)
+ */
+const generateRefreshToken = async (user, req = null) => {
+  const token = jwt.sign(
+    { id: user._id.toString() },
+    JWT_REFRESH_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  await RefreshToken.create({
+    userId: user._id,
+    tokenHash,
+    expiresAt,
+    ipAddress: req?.ip || '',
+    userAgent: req?.headers['user-agent'] || ''
+  });
+
+  return token;
+};
+
+/**
+ * Set Refresh Token Cookie on response
+ */
+const setRefreshTokenCookie = (res, token) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/'
+  });
+};
+
+/**
+ * Clear Refresh Token Cookie on response
+ */
+const clearRefreshTokenCookie = (res) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax',
+    path: '/'
+  });
+};
+
+/**
  * Authentication Middleware:
- * Verifies JWT token from Authorization header or fallback x-user-id header.
+ * STRICT JWT Bearer ONLY. Removed all x-user-id and adminUserId body/query fallbacks.
  */
 const authenticate = async (req, res, next) => {
   try {
@@ -32,87 +91,66 @@ const authenticate = async (req, res, next) => {
       token = authHeader.split(' ')[1];
     }
 
-    let user = null;
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        user = await User.findById(decoded.id);
-      } catch (tokenErr) {
-        // Token invalid or expired
-        return res.status(401).json({ message: 'Authentication failed. Invalid or expired token.' });
-      }
-    } else if (req.headers['x-user-id']) {
-      // Fallback for existing frontend calls using x-user-id header
-      user = await User.findById(req.headers['x-user-id']);
-    } else if (req.body && req.body.adminUserId) {
-      // Check admin body parameter if provided
-      user = await User.findById(req.body.adminUserId);
-    } else if (req.query && req.query.adminUserId) {
-      user = await User.findById(req.query.adminUserId);
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Authorization header with Bearer token missing.'
+      });
     }
 
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (tokenErr) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired access token. Please refresh your token.',
+        isTokenExpired: tokenErr.name === 'TokenExpiredError'
+      });
+    }
+
+    const user = await User.findById(decoded.id);
     if (!user) {
-      return res.status(401).json({ message: 'Authentication required. Please log in.' });
+      return res.status(401).json({
+        success: false,
+        message: 'User account associated with this token does not exist.'
+      });
     }
 
     // Check deactivated status
     if (user.isDeactivated || user.accountStatus === 'deactivated') {
-      return res.status(403).json({ message: 'Account is deactivated. Access is restricted.' });
+      return res.status(403).json({
+        success: false,
+        message: 'Account has been deactivated. Access is restricted.'
+      });
     }
 
     req.user = user;
     next();
   } catch (err) {
-    return res.status(500).json({ message: 'Authentication error: ' + err.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Authentication error: ' + err.message
+    });
   }
 };
 
 /**
- * Optional Authenticate:
- * Attaches req.user if valid credentials are provided, but doesn't block if not provided.
- */
-const optionalAuthenticate = async (req, res, next) => {
-  try {
-    let token = null;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.split(' ')[1];
-    }
-
-    let userId = null;
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        userId = decoded.id;
-      } catch (e) {}
-    } else if (req.headers['x-user-id']) {
-      userId = req.headers['x-user-id'];
-    }
-
-    if (userId) {
-      const user = await User.findById(userId);
-      if (user && !user.isDeactivated && user.accountStatus !== 'deactivated') {
-        req.user = user;
-      }
-    }
-  } catch (err) {}
-  next();
-};
-
-/**
- * Role-based authorization middleware.
- * Example: requireRole('admin') or requireRole('professional', 'admin')
+ * Role-based authorization middleware
  */
 const requireRole = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ message: 'Unauthorized. Please sign in.' });
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized. Authentication required.'
+      });
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        message: `Forbidden: This action requires ${allowedRoles.join(' or ')} privileges. Your role is "${req.user.role}".` 
+      return res.status(403).json({
+        success: false,
+        message: `Forbidden: This action requires [${allowedRoles.join(' or ')}] role. Current role is "${req.user.role}".`
       });
     }
 
@@ -121,61 +159,64 @@ const requireRole = (...allowedRoles) => {
 };
 
 /**
- * Enforce Requirement 11:
- * "Do not allow invited, pending, or deactivated accounts to access protected Professional features."
+ * Enforce active & verified professional requirements
  */
 const requireActiveProfessional = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ message: 'Unauthorized: Authentication required.' });
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized: Authentication required.'
+    });
   }
 
-  // Admin can inspect or bypass
+  // Admin can always inspect or perform actions
   if (req.user.role === 'admin') {
     return next();
   }
 
   if (req.user.role !== 'professional') {
-    return res.status(403).json({ 
-      message: 'Forbidden: Access is restricted to Professional Interviewer accounts.' 
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden: Access is restricted to Professional accounts.'
     });
   }
 
-  // 1. Check if still in invited state (hasn't set password yet)
   if (req.user.accountStatus === 'invited') {
     return res.status(403).json({
-      message: 'Account pending activation: You must open your invitation link and set your password before accessing professional features.',
+      success: false,
+      message: 'Account pending activation: You must open your invitation link and set your password.',
       accountStatus: 'invited'
     });
   }
 
-  // 2. Check if pending approval
   if (req.user.accountStatus === 'pending' || req.user.approvalStatus === 'pending') {
     return res.status(403).json({
+      success: false,
       message: 'Account pending verification: Your professional account is awaiting administrator approval.',
       accountStatus: 'pending'
     });
   }
 
-  // 3. Check if rejected
   if (req.user.approvalStatus === 'rejected') {
     return res.status(403).json({
+      success: false,
       message: 'Application rejected: Your professional application was not approved.',
       accountStatus: 'rejected'
     });
   }
 
-  // 4. Check if deactivated
-  if (req.user.isDeactivated || req.user.accountStatus === 'deactivated') {
+  if (req.user.isDeactivated || user.accountStatus === 'deactivated') {
     return res.status(403).json({
-      message: 'Account deactivated: Your professional account has been suspended by the administrator.',
+      success: false,
+      message: 'Account deactivated: Your professional account has been suspended.',
       accountStatus: 'deactivated'
     });
   }
 
-  // 5. Check verification requirement
   if (!req.user.isVerified) {
     return res.status(403).json({
-      message: 'Verification required: Your professional profile must be verified by an administrator to access these features.',
+      success: false,
+      message: 'Verification required: Your professional profile must be verified by an administrator.',
       isVerified: false
     });
   }
@@ -183,11 +224,49 @@ const requireActiveProfessional = (req, res, next) => {
   next();
 };
 
+/**
+ * Ownership verification middleware:
+ * Ensures candidates only access their own resources, professionals their sessions, admin everything.
+ */
+const enforceOwnership = (resourceCandidateIdField = 'candidateId', resourceInterviewerIdField = 'interviewerId') => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    // Attached document if already fetched
+    const doc = req.resourceDoc;
+    if (doc) {
+      const candidateId = doc[resourceCandidateIdField]?.toString();
+      const interviewerId = doc[resourceInterviewerIdField]?.toString();
+      const myId = req.user._id.toString();
+
+      if (req.user.role === 'candidate' && candidateId && candidateId !== myId) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only access your own records.' });
+      }
+
+      if (req.user.role === 'professional' && interviewerId && interviewerId !== myId) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only access your own sessions.' });
+      }
+    }
+
+    next();
+  };
+};
+
 module.exports = {
   JWT_SECRET,
-  generateToken,
+  JWT_REFRESH_SECRET,
+  generateAccessToken,
+  generateRefreshToken,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie,
   authenticate,
-  optionalAuthenticate,
   requireRole,
-  requireActiveProfessional
+  requireActiveProfessional,
+  enforceOwnership
 };

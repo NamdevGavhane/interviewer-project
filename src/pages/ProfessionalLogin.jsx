@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, ShieldCheck, Lock, AlertCircle, ArrowRight, UserCheck } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/api';
 
 const ProfessionalLogin = () => {
@@ -13,45 +14,24 @@ const ProfessionalLogin = () => {
 
   const navigate = useNavigate();
 
+  const { login } = useAuth();
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password
-        }),
-      });
+      const response = await login(email.trim().toLowerCase(), password);
+      const user = response?.data?.user;
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed. Please check your credentials.');
+      if (user && user.role !== 'professional' && user.role !== 'admin') {
+        throw new Error(`This portal is for Professional accounts. Your account is registered as a ${user.role}. Please use the Candidate Login.`);
       }
 
-      // Ensure user is actually a professional
-      if (data.role !== 'professional' && data.role !== 'admin') {
-        throw new Error(`This portal is for Professional accounts. Your account is registered as a ${data.role}. Please use the Candidate Login.`);
-      }
-
-      // Store auth session
-      localStorage.setItem('userId', data.userId);
-      localStorage.setItem('userRole', data.role);
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-      }
-
-      // Requirement 8: After successful login, redirect the professional to the Professional Dashboard.
       navigate('/');
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }

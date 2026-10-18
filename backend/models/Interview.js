@@ -1,15 +1,18 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const interviewSchema = new mongoose.Schema({
   candidateId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
+    index: true,
   },
   interviewerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true,
+    index: true,
   },
   date: {
     type: String,
@@ -19,23 +22,37 @@ const interviewSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  slotId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Availability',
+    default: null,
+  },
+  startTime: {
+    type: Date,
+    default: null,
+  },
+  endTime: {
+    type: Date,
+    default: null,
+  },
   topic: {
     type: String,
-    default: 'Frontend & Fullstack Mock Interview',
+    required: true,
   },
   price: {
     type: Number,
     required: true,
-    default: 100,
+    min: 0,
   },
   status: {
     type: String,
-    enum: ['scheduled', 'completed', 'cancelled'],
+    enum: ['scheduled', 'completed', 'cancelled', 'rescheduled'],
     default: 'scheduled',
+    index: true,
   },
   meetingRoomId: {
     type: String,
-    default: () => 'room-' + Math.random().toString(36).substring(2, 9),
+    default: () => `room_${crypto.randomBytes(6).toString('hex')}`,
   },
   notes: {
     type: String,
@@ -44,7 +61,7 @@ const interviewSchema = new mongoose.Schema({
   paymentStatus: {
     type: String,
     enum: ['unpaid', 'paid', 'refunded'],
-    default: 'paid',
+    default: 'unpaid',
   },
   paymentId: {
     type: String,
@@ -56,17 +73,37 @@ const interviewSchema = new mongoose.Schema({
   },
   paidAmount: {
     type: Number,
-    default: 110,
+    default: 0,
   },
   platformFee: {
     type: Number,
-    default: 10,
+    default: 0,
+  },
+  gstAmount: {
+    type: Number,
+    default: 0,
   },
   paymentMethod: {
     type: String,
-    default: 'upi',
+    default: '',
   },
   invoiceNumber: {
+    type: String,
+    default: '',
+  },
+  cancellationReason: {
+    type: String,
+    default: '',
+  },
+  cancelledAt: {
+    type: Date,
+    default: null,
+  },
+  refundAmount: {
+    type: Number,
+    default: 0,
+  },
+  refundId: {
     type: String,
     default: '',
   },
@@ -75,7 +112,7 @@ const interviewSchema = new mongoose.Schema({
       question: { type: String, required: true },
       candidateAnswer: { type: String, default: '' },
       feedback: { type: String, default: '' },
-      score: { type: Number, default: 85 }
+      score: { type: Number, default: null }
     }
   ],
   transcript: [
@@ -86,5 +123,9 @@ const interviewSchema = new mongoose.Schema({
     }
   ]
 }, { timestamps: true });
+
+interviewSchema.index({ candidateId: 1, status: 1 });
+interviewSchema.index({ interviewerId: 1, status: 1 });
+interviewSchema.index({ date: 1, timeSlot: 1 });
 
 module.exports = mongoose.model('Interview', interviewSchema);

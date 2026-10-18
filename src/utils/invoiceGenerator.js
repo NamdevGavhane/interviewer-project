@@ -16,9 +16,9 @@ export const downloadInvoicePDF = (paymentData) => {
     const margin = 40;
     const contentWidth = pageWidth - margin * 2;
 
-    const invoiceNo = paymentData.invoiceNumber || `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-    const paymentId = paymentData.paymentId || `pay_${Date.now().toString().slice(-8)}`;
-    const orderId = paymentData.orderId || `order_${Date.now().toString().slice(-8)}`;
+    const invoiceNo = paymentData.invoiceNumber || 'INV-OFFICIAL';
+    const paymentId = paymentData.paymentId || 'N/A';
+    const orderId = paymentData.orderId || 'N/A';
     const paymentDate = paymentData.date || new Date().toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'short',
@@ -28,15 +28,17 @@ export const downloadInvoicePDF = (paymentData) => {
     const candidateName = paymentData.candidateName || paymentData.candidateId?.name || 'Candidate';
     const candidateEmail = paymentData.candidateEmail || paymentData.candidateId?.email || 'N/A';
     
-    const interviewerName = paymentData.interviewerName || paymentData.interviewerId?.name || 'Senior Technical Lead';
+    const interviewerName = paymentData.interviewerName || paymentData.interviewerId?.name || 'Interviewer';
     const interviewerTitle = paymentData.interviewerTitle || paymentData.interviewerId?.title || 'Technical Specialist';
     const company = paymentData.company || paymentData.interviewerId?.company || 'InterviewPro Expert';
+    const timeSlot = paymentData.timeSlot || paymentData.interviewId?.timeSlot || 'Scheduled Slot';
 
-    const topic = paymentData.topic || 'Technical Mock Interview & System Coding';
-    const sessionFee = Number(paymentData.sessionFee || paymentData.amount || paymentData.paidAmount || paymentData.price || 100);
-    const platformFee = 0;
-    const totalAmount = sessionFee;
-    const paymentMethod = (paymentData.paymentMethod || 'Razorpay UPI').toUpperCase();
+    const topic = paymentData.topic || paymentData.interviewId?.topic || 'Technical Mock Interview';
+    const sessionFee = Number(paymentData.sessionFee ?? paymentData.price ?? 0);
+    const platformFee = Number(paymentData.platformFee ?? 0);
+    const gstAmount = Number(paymentData.gstAmount ?? 0);
+    const totalAmount = Number(paymentData.amount ?? paymentData.paidAmount ?? (sessionFee + platformFee + gstAmount));
+    const paymentMethod = (paymentData.paymentMethod || 'Razorpay').toUpperCase();
 
     // 1. Header Banner
     doc.setFillColor(26, 115, 232); // Primary Brand Blue
@@ -143,7 +145,6 @@ export const downloadInvoicePDF = (paymentData) => {
     y += 55;
 
     // 5. Line Items Table
-    // Table Header
     doc.setFillColor(241, 245, 249);
     doc.rect(margin, y, contentWidth, 24, 'F');
     doc.setTextColor(71, 85, 105);
@@ -179,49 +180,50 @@ export const downloadInvoicePDF = (paymentData) => {
     // 6. Subtotal & Total Summary Box
     const summaryBoxX = pageWidth - margin - 220;
     doc.setFillColor(248, 250, 252);
-    doc.roundedRect(summaryBoxX, y, 220, 65, 6, 6, 'F');
+    doc.roundedRect(summaryBoxX, y, 220, 80, 6, 6, 'F');
     doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(summaryBoxX, y, 220, 65, 6, 6, 'D');
+    doc.roundedRect(summaryBoxX, y, 220, 80, 6, 6, 'D');
 
-    let sumY = y + 20;
+    let sumY = y + 16;
     doc.setTextColor(100, 116, 139);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
     doc.text('Professional Fee:', summaryBoxX + 14, sumY);
     doc.setTextColor(15, 23, 42);
     doc.text(`INR ${sessionFee.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
 
-    sumY += 16;
+    sumY += 14;
     doc.setTextColor(100, 116, 139);
-    doc.text('Platform / Extra Fee:', summaryBoxX + 14, sumY);
-    doc.setTextColor(16, 185, 129);
-    doc.text('INR 0.00 (Zero Fee)', summaryBoxX + 206, sumY, { align: 'right' });
+    doc.text('Platform Service Fee:', summaryBoxX + 14, sumY);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`INR ${platformFee.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
 
-    sumY += 12;
+    sumY += 14;
+    doc.setTextColor(100, 116, 139);
+    doc.text('GST:', summaryBoxX + 14, sumY);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`INR ${gstAmount.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
+
+    sumY += 10;
     doc.setDrawColor(203, 213, 225);
     doc.line(summaryBoxX + 10, sumY, summaryBoxX + 210, sumY);
 
     sumY += 16;
-    sumY += 12;
-    doc.setDrawColor(203, 213, 225);
-    doc.line(summaryBoxX + 10, sumY, summaryBoxX + 210, sumY);
-
-    sumY += 18;
     doc.setTextColor(26, 115, 232);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.text('Total Paid:', summaryBoxX + 14, sumY);
-    doc.text(`INR ${sessionFee.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
+    doc.text(`INR ${totalAmount.toFixed(2)}`, summaryBoxX + 206, sumY, { align: 'right' });
 
     // Left side: Security & Terms
     doc.setTextColor(100, 116, 139);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    doc.text('Payment Gateway: Razorpay Verified / UPI Direct Secure Pay', margin, y + 20);
-    doc.text('PCI-DSS Level 1 Compliant Transaction Processing', margin, y + 32);
-    doc.text('Session Guarantee: If the session is interrupted or cancelled,', margin, y + 44);
-    doc.text('a full 100% refund is issued to your original payment method.', margin, y + 56);
-    doc.text('Questions? Contact us 24x7 at billing@interviewpro.dev', margin, y + 68);
+    doc.text('Payment Gateway: Razorpay Verified Secure Processing', margin, y + 18);
+    doc.text('PCI-DSS Level 1 Compliant Transaction Processing', margin, y + 30);
+    doc.text('Session Guarantee: If the session is interrupted or cancelled', margin, y + 42);
+    doc.text('within refund policy window, full refund is issued automatically.', margin, y + 54);
+    doc.text('Questions? Contact us 24x7 at support@interviewpro.com', margin, y + 66);
 
     y += 120;
 

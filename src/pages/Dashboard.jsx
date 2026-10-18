@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, CheckCircle2, DollarSign, Clock, Video, Plus, Trash2, ArrowRight, Bot, Receipt, ShieldCheck, Download, Building2, Briefcase } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { downloadInterviewReportPDF } from '../utils/interviewReportGenerator';
-import { API_BASE_URL } from '../config/api';
+import apiClient from '../utils/apiClient';
+import { useAuth } from '../context/AuthContext';
+import Avatar from '../components/Avatar';
 
 const Dashboard = () => {
   const [userData, setUserData] = useState(null);
@@ -23,42 +25,38 @@ const Dashboard = () => {
   const [slotsSavedToast, setSlotsSavedToast] = useState(false);
 
   const navigate = useNavigate();
-  const userId = localStorage.getItem('userId');
+  const { user: authUser } = useAuth();
+  const userId = authUser?._id || localStorage.getItem('userId');
 
   const loadData = async () => {
     if (!userId) {
-      navigate('/login');
+      setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
       // Fetch user profile
-      const userRes = await fetch(`${API_BASE_URL}/api/users/${userId}`);
-      if (!userRes.ok) throw new Error('Failed to fetch user data');
-      const user = await userRes.json();
+      const user = await apiClient.get(`/api/users/${userId}`);
       setUserData(user);
-      setPriceInput(user.hourlyRate || 100);
-      setSlotsList(user.availabilitySlots || ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM']);
+      setPriceInput(user.hourlyRate || 0);
+      setSlotsList(user.availabilitySlots || []);
 
       // Fetch user's interviews
-      const interviewsRes = await fetch(`${API_BASE_URL}/api/interviews?userId=${userId}&role=${user.role}`);
-      if (interviewsRes.ok) {
-        const interviewData = await interviewsRes.json();
+      const interviewData = await apiClient.get(`/api/interviews?userId=${userId}&role=${user.role}`);
+      if (Array.isArray(interviewData)) {
         setInterviews(interviewData);
       }
 
       // If candidate, fetch interviewers & feedback
       if (user.role === 'candidate') {
-        const profRes = await fetch(`${API_BASE_URL}/api/users?role=professional`);
-        if (profRes.ok) {
-          const profData = await profRes.json();
+        const profData = await apiClient.get('/api/users?role=professional');
+        if (Array.isArray(profData)) {
           setInterviewers(profData);
         }
 
-        const feedRes = await fetch(`${API_BASE_URL}/api/feedbacks/candidate/${userId}`);
-        if (feedRes.ok) {
-          const feedData = await feedRes.json();
+        const feedData = await apiClient.get(`/api/feedbacks/candidate/${userId}`);
+        if (Array.isArray(feedData)) {
           setFeedbacks(feedData);
         }
       }
@@ -78,13 +76,8 @@ const Dashboard = () => {
     if (!priceInput || isNaN(priceInput)) return;
     try {
       setSavingPrice(true);
-      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hourlyRate: Number(priceInput) })
-      });
-      if (res.ok) {
-        const updated = await res.json();
+      const updated = await apiClient.put(`/api/users/${userId}`, { hourlyRate: Number(priceInput) });
+      if (updated) {
         setUserData(updated);
         setPriceSavedToast(true);
         setTimeout(() => setPriceSavedToast(false), 3000);
@@ -110,13 +103,8 @@ const Dashboard = () => {
   const handleSaveSlots = async () => {
     try {
       setSavingSlots(true);
-      const res = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ availabilitySlots: slotsList })
-      });
-      if (res.ok) {
-        const updated = await res.json();
+      const updated = await apiClient.put(`/api/users/${userId}`, { availabilitySlots: slotsList });
+      if (updated) {
         setUserData(updated);
         setSlotsSavedToast(true);
         setTimeout(() => setSlotsSavedToast(false), 3000);
@@ -153,8 +141,8 @@ const Dashboard = () => {
   const dynamicEarnings = completedInterviews.reduce((acc, curr) => acc + (curr.price || userData.hourlyRate || 0), 0);
 
   const avgFeedbackScore = feedbacks.length > 0 
-    ? Math.round(feedbacks.reduce((acc, f) => acc + f.overallScore, 0) / feedbacks.length)
-    : 82;
+    ? `${Math.round(feedbacks.reduce((acc, f) => acc + (f.overallScore || 0), 0) / feedbacks.length)}/100`
+    : 'No evaluations yet';
 
   const isProfessional = userData.role === 'professional';
   const isCandidate = userData.role === 'candidate';
@@ -225,7 +213,7 @@ const Dashboard = () => {
               {isProfessional ? 'Total Earnings' : 'Average Score'}
             </p>
             <h3 className="text-2xl font-bold">
-              {isProfessional ? `₹${dynamicEarnings.toLocaleString()}` : `${avgFeedbackScore}/100`}
+              {isProfessional ? `₹${dynamicEarnings.toLocaleString()}` : avgFeedbackScore}
             </h3>
           </div>
         </div>
@@ -273,16 +261,14 @@ const Dashboard = () => {
                 {upcomingInterviews.map(session => {
                   const partner = isProfessional ? session.candidateId : session.interviewerId;
                   const partnerName = partner?.name || (isProfessional ? 'Candidate' : 'Interviewer');
-                  const partnerAvatar = partner?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&q=80';
 
                   return (
                     <div key={session._id} className="p-4 border rounded-xl flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
                       <div className="flex items-center gap-3">
-                        <img 
-                          src={partnerAvatar} 
-                          alt={partnerName} 
-                          className="profile-avatar"
-                          style={{ width: '48px', height: '48px' }}
+                        <Avatar 
+                          name={partnerName} 
+                          avatar={partner?.avatar} 
+                          size={48} 
                         />
                         <div>
                           <div className="font-bold text-sm">{partnerName}</div>
@@ -455,11 +441,11 @@ const Dashboard = () => {
                     <div className="flex items-start gap-3.5 min-w-0">
                       {/* Avatar with status dot */}
                       <div className="relative flex-shrink-0 mt-0.5">
-                        <img 
-                          src={prof.avatar || 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80'} 
-                          alt={prof.name} 
-                          className="profile-avatar shadow-sm"
-                          style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--border)' }}
+                        <Avatar 
+                          name={prof.name} 
+                          avatar={prof.avatar} 
+                          size={48} 
+                          style={{ border: '2px solid var(--border)' }} 
                         />
                         <span 
                           className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2" 

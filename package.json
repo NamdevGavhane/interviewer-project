@@ -14,6 +14,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-oauth/google": "^0.13.5",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.55.0",
     "peerjs": "^1.5.5",

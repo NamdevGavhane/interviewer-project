@@ -28,14 +28,21 @@ import {
   KeyRound,
   Power,
   Ban,
-  X
+  X,
+  Sliders,
+  Settings as SettingsIcon,
+  Save,
+  Plus
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { API_BASE_URL } from '../../config/api';
+import apiClient from '../../utils/apiClient';
+import Avatar from '../../components/Avatar';
+import { useAuth } from '../../context/AuthContext';
 
 const AdminDashboard = () => {
+  const { logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = searchParams.get('tab') || 'requests'; // 'requests' | 'invitations' | 'users' | 'verify' | 'bookings'
+  const currentTab = searchParams.get('tab') || 'requests'; // 'requests' | 'invitations' | 'users' | 'verify' | 'bookings' | 'settings'
 
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -44,6 +51,29 @@ const AdminDashboard = () => {
   const [invitations, setInvitations] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Platform Settings State
+  const [platformSettings, setPlatformSettings] = useState({
+    platformCommissionPercent: 10,
+    gstPercent: 18,
+    currency: 'INR',
+    refundWindowHours: 24,
+    bookingWindowDays: 14,
+    slotDurationMinutes: 45,
+    slotPresets: [],
+    aiDailyLimit: 5,
+    supportEmail: 'support@interviewpro.com',
+    siteName: 'InterviewPro'
+  });
+  const [interviewConfig, setInterviewConfig] = useState({
+    topics: [],
+    difficulties: [],
+    companies: []
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [newTopicInput, setNewTopicInput] = useState('');
+  const [newCompanyInput, setNewCompanyInput] = useState('');
+  const [newPresetInput, setNewPresetInput] = useState('');
+
   // Filters
   const [requestStatusFilter, setRequestStatusFilter] = useState('pending'); // 'pending' | 'approved' | 'rejected' | 'all'
   const [invitationStatusFilter, setInvitationStatusFilter] = useState('all'); // 'all' | 'invited' | 'active' | 'deactivated'
@@ -74,37 +104,57 @@ const AdminDashboard = () => {
     setTimeout(() => setToastMessage(''), 3500);
   };
 
-  const getAdminHeaders = () => {
-    const adminUserId = localStorage.getItem('userId');
-    const token = localStorage.getItem('token');
-    return {
-      'Content-Type': 'application/json',
-      ...(adminUserId ? { 'x-user-id': adminUserId } : {}),
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-    };
-  };
-
   const fetchData = async () => {
     try {
       setLoading(true);
-      const headers = getAdminHeaders();
-      const [statsRes, usersRes, requestsRes, bookingsRes, invitesRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/admin/stats`),
-        fetch(`${API_BASE_URL}/api/admin/users`),
-        fetch(`${API_BASE_URL}/api/admin/requests`),
-        fetch(`${API_BASE_URL}/api/admin/bookings`),
-        fetch(`${API_BASE_URL}/api/admin/invitations`, { headers })
+      const [statsData, usersData, requestsData, bookingsData, invitesData, settingsRes, configRes] = await Promise.all([
+        apiClient.get('/api/admin/stats'),
+        apiClient.get('/api/admin/users'),
+        apiClient.get('/api/admin/requests'),
+        apiClient.get('/api/admin/bookings'),
+        apiClient.get('/api/admin/invitations'),
+        apiClient.get('/api/settings').catch(() => null),
+        apiClient.get('/api/settings/interview-config').catch(() => null)
       ]);
 
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (usersRes.ok) setUsers(await usersRes.json());
-      if (requestsRes.ok) setRequests(await requestsRes.json());
-      if (bookingsRes.ok) setBookings(await bookingsRes.json());
-      if (invitesRes && invitesRes.ok) setInvitations(await invitesRes.json());
+      if (statsData) setStats(statsData);
+      if (usersData) setUsers(usersData);
+      if (requestsData) setRequests(requestsData);
+      if (bookingsData) setBookings(bookingsData);
+      if (invitesData) setInvitations(invitesData);
+      if (settingsRes?.data) setPlatformSettings(settingsRes.data);
+      if (configRes?.data) setInterviewConfig(configRes.data);
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePlatformSettings = async (e) => {
+    e.preventDefault();
+    try {
+      setSavingSettings(true);
+      const res = await apiClient.put('/api/settings', platformSettings);
+      showToast(res.message || 'Platform settings updated successfully!');
+      if (res.data) setPlatformSettings(res.data);
+    } catch (err) {
+      alert('Failed to save settings: ' + err.message);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleSaveInterviewConfig = async () => {
+    try {
+      setSavingSettings(true);
+      const res = await apiClient.put('/api/settings/interview-config', interviewConfig);
+      showToast(res.message || 'Interview configuration updated successfully!');
+      if (res.data) setInterviewConfig(res.data);
+    } catch (err) {
+      alert('Failed to update interview config: ' + err.message);
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -117,20 +167,9 @@ const AdminDashboard = () => {
     e.preventDefault();
     try {
       setInviting(true);
-      const headers = getAdminHeaders();
-      const res = await fetch(`${API_BASE_URL}/api/admin/invite-professional`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(inviteForm)
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to dispatch professional invitation');
-      }
-
-      setInviteSuccessData(data);
-      showToast(data.message || 'Invitation email dispatched successfully!');
+      const res = await apiClient.post('/api/admin/invite-professional', inviteForm);
+      setInviteSuccessData(res?.data || res);
+      showToast(res.message || 'Invitation email dispatched successfully!');
       await fetchData();
     } catch (err) {
       alert('Error sending invitation: ' + err.message);
@@ -143,14 +182,8 @@ const AdminDashboard = () => {
   const handleResendInvite = async (userId) => {
     try {
       setActionLoading(`resend_${userId}`);
-      const headers = getAdminHeaders();
-      const res = await fetch(`${API_BASE_URL}/api/admin/invitations/${userId}/resend`, {
-        method: 'POST',
-        headers
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-      showToast(data.message || 'Fresh invitation link dispatched');
+      const res = await apiClient.post(`/api/admin/invitations/${userId}/resend`, {});
+      showToast(res.message || 'Fresh invitation link dispatched');
       await fetchData();
     } catch (err) {
       alert('Failed to resend invite: ' + err.message);
@@ -163,14 +196,8 @@ const AdminDashboard = () => {
   const handleToggleAccountStatus = async (userId, userName) => {
     try {
       setActionLoading(`status_${userId}`);
-      const headers = getAdminHeaders();
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/toggle-status`, {
-        method: 'PATCH',
-        headers
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-      showToast(data.message);
+      const res = await apiClient.patch(`/api/admin/users/${userId}/toggle-status`, {});
+      showToast(res.message);
       await fetchData();
     } catch (err) {
       alert('Failed to update account status: ' + err.message);
@@ -190,18 +217,9 @@ const AdminDashboard = () => {
   const handleRequestDecision = async (userId, decision, rejectionReason = '') => {
     try {
       setActionLoading(`decision_${userId}_${decision}`);
-      const res = await fetch(`${API_BASE_URL}/api/admin/requests/${userId}/decision`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, rejectionReason })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showToast(data.message || 'Decision applied successfully');
-        await fetchData();
-      } else {
-        alert(data.message || 'Failed to process decision');
-      }
+      const res = await apiClient.patch(`/api/admin/requests/${userId}/decision`, { decision, rejectionReason });
+      showToast(res.message || 'Decision applied successfully');
+      await fetchData();
     } catch (err) {
       alert('Error updating application: ' + err.message);
     } finally {
@@ -213,15 +231,9 @@ const AdminDashboard = () => {
   const handleRoleChange = async (userId, newRole) => {
     try {
       setActionLoading(`role_${userId}`);
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/role`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole })
-      });
-      if (res.ok) {
-        showToast(`User role updated to ${newRole}`);
-        await fetchData();
-      }
+      const res = await apiClient.patch(`/api/admin/users/${userId}/role`, { role: newRole });
+      showToast(`User role updated to ${newRole}`);
+      await fetchData();
     } catch (err) {
       alert('Failed to update role: ' + err.message);
     } finally {
@@ -233,15 +245,9 @@ const AdminDashboard = () => {
   const handleToggleVerify = async (userId, currentStatus) => {
     try {
       setActionLoading(`verify_${userId}`);
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/verify`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isVerified: !currentStatus })
-      });
-      if (res.ok) {
-        showToast(`Professional ${!currentStatus ? 'Verified ✅' : 'Unverified ⚠️'}`);
-        await fetchData();
-      }
+      await apiClient.patch(`/api/admin/users/${userId}/verify`, {});
+      showToast(`Professional ${!currentStatus ? 'Verified ✅' : 'Unverified ⚠️'}`);
+      await fetchData();
     } catch (err) {
       alert('Failed to toggle verification: ' + err.message);
     } finally {
@@ -254,13 +260,9 @@ const AdminDashboard = () => {
     if (!window.confirm(`Are you sure you want to delete user "${userName}"? This cannot be undone.`)) return;
     try {
       setActionLoading(`del_${userId}`);
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        showToast(`User "${userName}" deleted successfully`);
-        await fetchData();
-      }
+      await apiClient.delete(`/api/admin/users/${userId}`);
+      showToast(`User "${userName}" deleted successfully`);
+      await fetchData();
     } catch (err) {
       alert('Failed to delete user: ' + err.message);
     } finally {
@@ -268,21 +270,16 @@ const AdminDashboard = () => {
     }
   };
 
-  // Update Booking Status
-  const handleBookingStatus = async (bookingId, newStatus) => {
+  // Delete Booking
+  const handleDeleteBooking = async (bookingId) => {
+    if (!window.confirm('Are you sure you want to delete this booking record?')) return;
     try {
-      setActionLoading(`book_${bookingId}`);
-      const res = await fetch(`${API_BASE_URL}/api/admin/bookings/${bookingId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (res.ok) {
-        showToast(`Booking status changed to ${newStatus}`);
-        await fetchData();
-      }
+      setActionLoading(`del_book_${bookingId}`);
+      await apiClient.delete(`/api/admin/bookings/${bookingId}`);
+      showToast('Booking deleted successfully');
+      await fetchData();
     } catch (err) {
-      alert('Failed to update booking status: ' + err.message);
+      alert('Failed to delete booking: ' + err.message);
     } finally {
       setActionLoading(null);
     }
@@ -378,10 +375,8 @@ const AdminDashboard = () => {
             <span>Refresh</span>
           </button>
           <button
-            onClick={() => {
-              localStorage.removeItem('userId');
-              localStorage.removeItem('userRole');
-              localStorage.removeItem('token');
+            onClick={async () => {
+              await logout();
               window.location.href = '/login';
             }}
             className="btn text-xs flex items-center gap-1.5"
@@ -561,6 +556,14 @@ const AdminDashboard = () => {
           <Calendar size={16} style={{ display: 'inline', marginRight: '6px' }} />
           <span>Interview Bookings ({bookings.length})</span>
         </button>
+
+        <button 
+          className={`tab-button ${currentTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setSearchParams({ tab: 'settings' })}
+        >
+          <Sliders size={16} style={{ display: 'inline', marginRight: '6px' }} />
+          <span>Platform Settings</span>
+        </button>
       </div>
 
       {loading ? (
@@ -694,11 +697,10 @@ const AdminDashboard = () => {
                       <tr key={inv._id} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '0.75rem 1rem' }}>
                           <div className="flex items-center gap-3">
-                            <img
-                              src={inv.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                              alt={inv.name}
-                              className="profile-avatar"
-                              style={{ width: '38px', height: '38px' }}
+                            <Avatar
+                              name={inv.name}
+                              avatar={inv.avatar}
+                              size={38}
                             />
                             <div>
                               <div className="font-bold flex items-center gap-1.5">
@@ -886,11 +888,11 @@ const AdminDashboard = () => {
                       
                       {/* Left: Applicant Profile & Details */}
                       <div className="flex items-start gap-4 flex-1">
-                        <img 
-                          src={req.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
-                          alt={req.name} 
-                          className="profile-avatar"
-                          style={{ width: '52px', height: '52px', marginTop: '2px' }}
+                        <Avatar 
+                          name={req.name} 
+                          avatar={req.avatar} 
+                          size={52} 
+                          style={{ marginTop: '2px' }} 
                         />
                         <div style={{ flex: 1 }}>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1121,11 +1123,10 @@ const AdminDashboard = () => {
                     <tr key={u._id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div className="flex items-center gap-3">
-                          <img 
-                            src={u.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'} 
-                            alt={u.name} 
-                            className="profile-avatar"
-                            style={{ width: '38px', height: '38px' }}
+                          <Avatar 
+                            name={u.name} 
+                            avatar={u.avatar} 
+                            size={38} 
                           />
                           <div>
                             <div className="font-bold flex items-center gap-1.5">
@@ -1228,11 +1229,10 @@ const AdminDashboard = () => {
                     <tr key={p._id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div className="flex items-center gap-3">
-                          <img 
-                            src={p.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} 
-                            alt={p.name} 
-                            className="profile-avatar"
-                            style={{ width: '42px', height: '42px' }}
+                          <Avatar 
+                            name={p.name} 
+                            avatar={p.avatar} 
+                            size={42} 
                           />
                           <div>
                             <div className="font-bold flex items-center gap-1.5">
@@ -1280,6 +1280,312 @@ const AdminDashboard = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : currentTab === 'settings' ? (
+        /* ================= 5. PLATFORM SETTINGS ================= */
+        <div className="flex flex-col gap-6">
+          {/* Platform Financial & Operational Settings */}
+          <div className="card p-6">
+            <div className="flex justify-between items-start mb-4 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <Sliders size={20} className="text-primary" />
+                  <span>Platform Parameters & Economics</span>
+                </h3>
+                <p className="text-xs text-muted mt-1">
+                  Configure platform take-rate, GST, booking and cancellation policies. All calculations are executed securely on the server.
+                </p>
+              </div>
+              <span className="badge badge-primary text-xs font-semibold">Active Database Settings</span>
+            </div>
+
+            <form onSubmit={handleSavePlatformSettings}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Platform Commission (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    className="input-field text-sm"
+                    value={platformSettings.platformCommissionPercent}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, platformCommissionPercent: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Deducted from candidate fee before interviewer payout</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">GST / Tax Rate (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    className="input-field text-sm"
+                    value={platformSettings.gstPercent}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, gstPercent: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Tax applied to platform commission service fee</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Refund Cancellation Window (Hours)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="168"
+                    className="input-field text-sm"
+                    value={platformSettings.refundWindowHours}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, refundWindowHours: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Cancellations before this window are eligible for full refund</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Advance Booking Horizon (Days)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    className="input-field text-sm"
+                    value={platformSettings.bookingWindowDays}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, bookingWindowDays: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Max days into future candidates can view & book slots</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Standard Slot Duration (Minutes)</label>
+                  <input
+                    type="number"
+                    min="15"
+                    max="180"
+                    step="5"
+                    className="input-field text-sm"
+                    value={platformSettings.slotDurationMinutes}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, slotDurationMinutes: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Duration of each mock technical interview session</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Daily AI Mock Limit per User</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    className="input-field text-sm"
+                    value={platformSettings.aiDailyLimit}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, aiDailyLimit: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Enforced daily quota per candidate account</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Platform Brand Name</label>
+                  <input
+                    type="text"
+                    className="input-field text-sm"
+                    value={platformSettings.siteName}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, siteName: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Support Contact Email</label>
+                  <input
+                    type="email"
+                    className="input-field text-sm"
+                    value={platformSettings.supportEmail}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, supportEmail: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Slot Presets Editor */}
+              <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)' }}>
+                <label className="text-xs font-semibold block mb-2">Default Slot Presets for Interviewers</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {(platformSettings.slotPresets || []).map((preset, idx) => (
+                    <span 
+                      key={idx}
+                      className="badge text-xs flex items-center gap-1.5 py-1 px-3"
+                      style={{ backgroundColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px' }}
+                    >
+                      <span>{preset}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPlatformSettings(p => ({ ...p, slotPresets: p.slotPresets.filter((_, i) => i !== idx) }))}
+                        className="text-muted hover:text-danger"
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="text"
+                    placeholder="e.g. 04:00 PM - 04:45 PM"
+                    className="input-field text-xs py-1.5"
+                    value={newPresetInput}
+                    onChange={(e) => setNewPresetInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline text-xs whitespace-nowrap"
+                    onClick={() => {
+                      if (newPresetInput.trim()) {
+                        setPlatformSettings(p => ({ ...p, slotPresets: [...(p.slotPresets || []), newPresetInput.trim()] }));
+                        setNewPresetInput('');
+                      }
+                    }}
+                  >
+                    + Add Preset
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="btn btn-primary text-xs flex items-center gap-1.5 px-6 py-2.5 font-bold"
+                >
+                  <Save size={15} />
+                  <span>{savingSettings ? 'Saving Settings...' : 'Save Platform Settings'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Dynamic Interview Content: Topics, Difficulties, Target Companies */}
+          <div className="card p-6">
+            <div className="flex justify-between items-start mb-4 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <Briefcase size={20} className="text-primary" />
+                  <span>Dynamic Interview Catalog & Target Companies</span>
+                </h3>
+                <p className="text-xs text-muted mt-1">
+                  Manage the dynamic topics, seniority tiers, and companies available in AI Mock Interview and booking filters. No hardcoded lists.
+                </p>
+              </div>
+              <span className="badge badge-success text-xs font-semibold">MongoDB Catalog</span>
+            </div>
+
+            {/* Topics */}
+            <div className="mb-5">
+              <label className="text-xs font-semibold block mb-2">Technical Interview Topics</label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(interviewConfig.topics || []).map((t, idx) => (
+                  <span 
+                    key={idx}
+                    className="badge text-xs flex items-center gap-1.5 py-1 px-3"
+                    style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderRadius: '8px' }}
+                  >
+                    <span>{t}</span>
+                    <button
+                      type="button"
+                      onClick={() => setInterviewConfig(c => ({ ...c, topics: c.topics.filter((_, i) => i !== idx) }))}
+                      className="text-muted hover:text-danger"
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2 max-w-md">
+                <input
+                  type="text"
+                  placeholder="e.g. Distributed Caching & Redis"
+                  className="input-field text-xs py-1.5"
+                  value={newTopicInput}
+                  onChange={(e) => setNewTopicInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline text-xs whitespace-nowrap"
+                  onClick={() => {
+                    if (newTopicInput.trim()) {
+                      setInterviewConfig(c => ({ ...c, topics: [...(c.topics || []), newTopicInput.trim()] }));
+                      setNewTopicInput('');
+                    }
+                  }}
+                >
+                  + Add Topic
+                </button>
+              </div>
+            </div>
+
+            {/* Target Companies */}
+            <div className="mb-5">
+              <label className="text-xs font-semibold block mb-2">Target Companies</label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(interviewConfig.companies || []).map((comp, idx) => (
+                  <span 
+                    key={idx}
+                    className="badge text-xs flex items-center gap-1.5 py-1 px-3"
+                    style={{ backgroundColor: '#fef3c7', color: '#92400e', borderRadius: '8px' }}
+                  >
+                    <span>{comp}</span>
+                    <button
+                      type="button"
+                      onClick={() => setInterviewConfig(c => ({ ...c, companies: c.companies.filter((_, i) => i !== idx) }))}
+                      className="text-muted hover:text-danger"
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2 max-w-md">
+                <input
+                  type="text"
+                  placeholder="e.g. Atlassian / Apple"
+                  className="input-field text-xs py-1.5"
+                  value={newCompanyInput}
+                  onChange={(e) => setNewCompanyInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline text-xs whitespace-nowrap"
+                  onClick={() => {
+                    if (newCompanyInput.trim()) {
+                      setInterviewConfig(c => ({ ...c, companies: [...(c.companies || []), newCompanyInput.trim()] }));
+                      setNewCompanyInput('');
+                    }
+                  }}
+                >
+                  + Add Company
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={handleSaveInterviewConfig}
+                disabled={savingSettings}
+                className="btn btn-primary text-xs flex items-center gap-1.5 px-6 py-2.5 font-bold"
+              >
+                <Save size={15} />
+                <span>{savingSettings ? 'Updating Catalog...' : 'Save Interview Catalog'}</span>
+              </button>
+            </div>
           </div>
         </div>
       ) : (
