@@ -259,6 +259,16 @@ router.get('/:id/questions', async (req, res) => {
       return res.status(403).json({ success: false, message: 'Forbidden: Access denied to interview questions.' });
     }
 
+    res.json({
+      success: true,
+      questions: interview.questions || [],
+      transcript: interview.transcript || []
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // @route   GET /api/interviews/:id/room-access
 // @desc    Verify room access, timing window, and get ICE/TURN credentials
 // @access  Protected
