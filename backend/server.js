@@ -124,22 +124,53 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Database Connection & Server Startup
+// Database Connection & Server Startup with Automatic Reconnection
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/interviewpro';
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`InterviewPro server listening on 0.0.0.0:${PORT}`);
+let isConnecting = false;
+
+const connectDB = async () => {
+  if (mongoose.connection.readyState === 1 || isConnecting) return;
+  isConnecting = true;
+  try {
+    await mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10
+    });
+    console.log('Connected to MongoDB successfully');
+    isConnecting = false;
+    startReminderWorker();
+  } catch (err) {
+    isConnecting = false;
+    console.error('Failed to connect to MongoDB:', err.message);
+    // Auto-retry connection in 3 seconds
+    setTimeout(connectDB, 3000);
+  }
+};
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB connection lost. Reconnecting in 2 seconds...');
+  setTimeout(connectDB, 2000);
 });
 
-mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('Connected to MongoDB successfully');
-    // Start automated reminder worker
-    startReminderWorker();
-  })
-  .catch((err) => {
-    console.error('Failed to connect to MongoDB:', err.message);
-  });
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err.message);
+});
 
-module.exports = { app, server };
+// Middleware to ensure DB connection is ready before processing API requests
+app.use('/api', (req, res, next) => {
+  if (mongoose.connection.readyState !== 1 && !isConnecting) {
+    connectDB();
+  }
+  next();
+});
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`InterviewPro server listening on 0.0.0.0:${PORT}`);
+  connectDB();
+});
+
+module.exports = { app, server, connectDB };
+
