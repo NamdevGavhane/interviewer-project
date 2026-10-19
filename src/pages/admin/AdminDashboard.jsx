@@ -168,8 +168,11 @@ const AdminDashboard = () => {
     try {
       setInviting(true);
       const res = await apiClient.post('/api/admin/invite-professional', inviteForm);
-      setInviteSuccessData(res?.data || res);
-      showToast(res.message || 'Invitation email dispatched successfully!');
+      setInviteSuccessData({
+        ...(res?.data || {}),
+        message: res.message || 'Invitation generated successfully!'
+      });
+      showToast(res.message || 'Invitation generated successfully!');
       await fetchData();
     } catch (err) {
       alert('Error sending invitation: ' + err.message);

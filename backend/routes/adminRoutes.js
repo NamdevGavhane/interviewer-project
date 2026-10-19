@@ -84,6 +84,9 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
 
     await newProfessional.save();
 
+    const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
+
     const mailResult = await sendProfessionalInvitationEmail({
       name: newProfessional.name,
       email: newProfessional.email,
@@ -91,14 +94,18 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
       designation: newProfessional.designation,
       experience: newProfessional.experience,
       token,
-      frontendBaseUrl: req.headers.origin || 'http://localhost:5173'
+      frontendBaseUrl
     });
 
     res.status(201).json({
       success: true,
-      message: `Invitation successfully created for ${cleanEmail}.`,
+      message: mailResult.sent 
+        ? `Official invitation email successfully delivered to ${cleanEmail}.`
+        : `Invitation created for ${cleanEmail}. (SMTP not configured in backend/.env — copy the invitation link below to share with the professional).`,
       data: {
         user: newProfessional,
+        token,
+        invitationLink,
         mailSent: mailResult.sent
       }
     });
@@ -147,6 +154,9 @@ router.post('/invitations/:id/resend', async (req, res) => {
     user.invitedBy = req.user._id;
     await user.save();
 
+    const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
+
     const mailResult = await sendProfessionalInvitationEmail({
       name: user.name,
       email: user.email,
@@ -154,13 +164,15 @@ router.post('/invitations/:id/resend', async (req, res) => {
       designation: user.designation || user.title,
       experience: user.experience,
       token,
-      frontendBaseUrl: req.headers.origin || 'http://localhost:5173'
+      frontendBaseUrl
     });
 
     res.json({
       success: true,
-      message: `Fresh invitation email dispatched to ${user.email}`,
-      data: { user, mailSent: mailResult.sent }
+      message: mailResult.sent 
+        ? `Fresh invitation email dispatched to ${user.email}`
+        : `Fresh invitation link generated for ${user.email} (SMTP not configured).`,
+      data: { user, token, invitationLink, mailSent: mailResult.sent }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
