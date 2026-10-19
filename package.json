@@ -10,6 +10,8 @@
     "backend": "npm --prefix backend run dev",
     "dev:all": "npx concurrently \"npm run dev\" \"npm run server\"",
     "build": "vite build",
+    "build:backend": "npm --prefix backend install",
+    "start:backend": "node backend/server.js",
     "lint": "oxlint",
     "preview": "vite preview"
   },

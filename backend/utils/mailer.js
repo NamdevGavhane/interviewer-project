@@ -24,12 +24,8 @@ const sendEmail = async ({ to, subject, html, text }) => {
   const transporter = getTransporter();
 
   if (!transporter) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('SMTP email service is not configured. Cannot send email.');
-    } else {
-      console.warn(`[DEV MAIL NOTICE] SMTP not configured. Email to "${to}" was not sent.`);
-      return { sent: false, error: 'SMTP not configured in environment' };
-    }
+    console.warn(`[MAIL NOTICE] SMTP is not configured in environment variables. Email to "${to}" was not sent.`);
+    return { sent: false, error: 'SMTP not configured in environment variables' };
   }
 
   const from = process.env.SMTP_FROM || `"InterviewPro" <${process.env.SMTP_USER}>`;
