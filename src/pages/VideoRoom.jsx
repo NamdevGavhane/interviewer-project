@@ -20,7 +20,8 @@ import {
   Plus,
   Trash2,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  User
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Peer from 'peerjs';
@@ -28,6 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import apiClient from '../utils/apiClient';
 import { API_BASE_URL } from '../config/api';
 import Avatar from '../components/Avatar';
+import './VideoRoom.css';
 
 const VideoRoom = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -829,26 +831,26 @@ const VideoRoom = () => {
 
   const isInterviewer = currentRole === 'interviewer';
 
-  // Resolve participant names
-  const interviewerDisplayName = interview?.interviewerId?.name || (currentRole === 'interviewer' && currentUserData?.name) || 'Shushant Gaikwad';
-  const candidateDisplayName = interview?.candidateId?.name || (currentRole === 'candidate' && currentUserData?.name) || 'Software Candidate';
+  // Resolve participant names matching exact screenshot
+  const interviewerDisplayName = interview?.interviewerId?.name || (currentRole === 'interviewer' && currentUserData?.name) || 'Rahul Sharma';
+  const candidateDisplayName = interview?.candidateId?.name || (currentRole === 'candidate' && currentUserData?.name) || 'You';
 
   // Local Screen Details (You)
   const localDisplayName = isInterviewer ? interviewerDisplayName : candidateDisplayName;
-  const localRoleBadge = isInterviewer ? 'Interviewer (You)' : 'Candidate (You)';
+  const localRoleBadge = isInterviewer ? 'Professional' : 'Candidate';
   const localCompanyTag = isInterviewer ? 'Cognizant' : null;
 
   // Remote Screen Details (Partner)
   const partnerName = isInterviewer ? candidateDisplayName : interviewerDisplayName;
-  const remoteRoleBadge = isInterviewer ? 'Candidate' : 'Interviewer';
+  const remoteRoleBadge = isInterviewer ? 'Candidate' : 'Professional';
   const remoteCompanyTag = isInterviewer ? null : 'Cognizant';
 
   const rawPartnerTitle = interview
     ? (isInterviewer 
         ? (interview.candidateId?.email || 'Engineering Candidate') 
-        : (interview.interviewerId?.title || 'Senior Full Stack MERN Developer'))
-    : (isInterviewer ? 'Engineering Candidate' : 'Senior Full Stack MERN Developer');
-  const partnerTitle = rawPartnerTitle?.includes('Batch 3') ? 'Senior Full Stack MERN Developer' : rawPartnerTitle;
+        : (interview.interviewerId?.title || 'Professional'))
+    : (isInterviewer ? 'Engineering Candidate' : 'Professional');
+  const partnerTitle = rawPartnerTitle?.includes('Batch 3') ? 'Professional' : rawPartnerTitle;
 
   const partnerAvatar = interview
     ? (isInterviewer ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
@@ -992,387 +994,77 @@ const VideoRoom = () => {
 
       {/* Main Area: Videos + Sliding Chat */}
       <div style={{ flex: 1, minHeight: 0, height: 'calc(100vh - 138px)', display: 'flex', overflow: 'hidden' }}>
-        {/* Video Grid */}
-        <main 
-          style={{ 
-            flex: 1, 
-            minWidth: 0,
-            minHeight: 0,
-            height: '100%',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            padding: '0.75rem 1.25rem', 
-            position: 'relative', 
-            backgroundColor: '#090d16',
-            boxSizing: 'border-box',
-            overflow: 'hidden'
-          }}
-        >
-          {/* 2-Column Equal Fixed Stage Grid */}
-          <div 
-            style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', 
-              gap: '1.25rem', 
-              width: '100%', 
-              maxWidth: '1360px', 
-              height: '100%', 
-              maxHeight: 'calc(100vh - 165px)',
-              alignItems: 'center',
-              boxSizing: 'border-box'
-            }}
-          >
-            {/* Local Video (You) */}
-            <div 
-              style={{ 
-                position: 'relative',
-                width: '100%', 
-                aspectRatio: '16 / 9', 
-                maxHeight: 'calc(100vh - 175px)',
-                borderRadius: '16px',
-                overflow: 'hidden',
-                border: '2px solid rgba(255, 255, 255, 0.15)',
-                backgroundColor: '#0f172a',
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)',
-                boxSizing: 'border-box',
-                margin: '0 auto'
-              }}
-            >
-            {/* Mirror / Flip Camera View Button */}
-            <button
-              type="button"
-              onClick={() => setIsMirrored(prev => !prev)}
-              title="Flip / Mirror Camera View"
-              style={{
-                position: 'absolute',
-                top: '12px',
-                left: '12px',
-                zIndex: 35,
-                backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                color: '#e2e8f0',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                borderRadius: '8px',
-                padding: '4px 10px',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              <RefreshCw size={12} />
-              <span>{isMirrored ? 'Mirrored' : 'Normal'}</span>
-            </button>
+        {/* Cinema / PiP Stage matching user screenshot */}
+        <main className="vr-cinema-stage">
+          {/* Main Remote Video Container */}
+          <div className="vr-remote-video-container">
+            {/* Live WebRTC Video */}
+            <video 
+              ref={remoteVideoRef} 
+              autoPlay 
+              playsInline 
+              className="vr-remote-video"
+              style={{ display: isCallConnected && remoteStream ? 'block' : 'none' }}
+            />
 
-            {/* Always-mounted local video to guarantee ref attachment */}
+            {/* Standby / Interviewer Image when waiting for peer stream */}
+            {(!isCallConnected || !remoteStream) && (
+              <img 
+                src="/rahul-sharma.jpg" 
+                alt={partnerName} 
+                className="vr-remote-poster"
+              />
+            )}
+
+            {/* Remote Interviewer Floating Card (Bottom-Left) */}
+            <div className="vr-interviewer-card">
+              <div className="vr-card-icon">
+                <User size={16} />
+              </div>
+              <div className="vr-card-text">
+                <span className="vr-card-name">{partnerName}</span>
+                <span className="vr-card-role">{remoteRoleBadge}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Picture-in-Picture Floating Card (Top-Right) */}
+          <div className="vr-pip-card">
             <video 
               ref={localVideoRef} 
               autoPlay 
               playsInline 
               muted 
+              className="vr-pip-video"
               style={{ 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
                 transform: isScreenSharing ? 'none' : (isMirrored ? 'scaleX(-1)' : 'none'),
                 display: cameraActive && isVideoOn ? 'block' : 'none' 
               }}
             />
 
-            {/* Camera Off Overlay */}
-            {!isVideoOn && (
-              <div 
-                style={{ 
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  backgroundColor: '#0f172a',
-                  color: '#94a3b8' 
-                }}
-              >
-                <VideoOff size={44} style={{ marginBottom: '0.5rem', color: '#64748b' }} />
-                <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>Your Camera is Off</span>
+            {(!cameraActive || !isVideoOn) && (
+              <div className="vr-pip-placeholder">
+                <VideoOff size={22} />
+                <span style={{ fontSize: '0.72rem', marginTop: '4px' }}>Camera Off</span>
               </div>
             )}
 
-            {/* Permission blocked overlay */}
-            {!cameraActive && isVideoOn && (
-              <div 
-                style={{ 
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  backgroundColor: '#0f172a',
-                  color: '#e2e8f0',
-                  padding: '1.5rem',
-                  textAlign: 'center'
-                }}
-              >
-                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', padding: '1rem', borderRadius: '50%', marginBottom: '0.75rem' }}>
-                  <VideoOff size={32} style={{ color: '#ef4444' }} />
-                </div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 'bold', marginBottom: '4px' }}>Webcam Permission Needed</div>
-                <p style={{ fontSize: '0.75rem', color: '#94a3b8', maxWidth: '280px', marginBottom: '12px' }}>
-                  Please allow camera access in your browser to broadcast your video.
-                </p>
-                <button type="button" onClick={startCamera} className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>
-                  <RefreshCw size={13} style={{ marginRight: '4px', display: 'inline' }} /> Allow Camera Access
-                </button>
-              </div>
-            )}
-
-            {/* Bottom-Right Name Tag for Local Video */}
-            <div 
-              style={{
-                position: 'absolute',
-                bottom: '14px',
-                right: '14px',
-                zIndex: 35,
-                backgroundColor: 'rgba(15, 23, 42, 0.88)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
-                borderRadius: '10px',
-                padding: '6px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
-                color: 'white',
-                pointerEvents: 'none',
-                maxWidth: 'calc(100% - 28px)'
-              }}
+            <button
+              type="button"
+              onClick={() => setIsMirrored(prev => !prev)}
+              className="vr-pip-flip-btn"
+              title="Mirror / Flip Video"
             >
-              <span style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                backgroundColor: isVideoOn ? '#10b981' : '#f59e0b',
-                display: 'inline-block',
-                boxShadow: isVideoOn ? '0 0 8px #10b981' : 'none',
-                flexShrink: 0
-              }}></span>
-              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
-                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap' }}>
-                  {localDisplayName}
-                </span>
-                <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 500 }}>
-                  {localRoleBadge} {localCompanyTag ? `• ${localCompanyTag}` : ''}
-                </span>
-              </div>
-              {!isMicOn && (
-                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.25)', padding: '3px', borderRadius: '4px', marginLeft: '4px' }}>
-                  <MicOff size={13} style={{ color: '#ef4444' }} />
-                </div>
-              )}
-              {isScreenSharing && (
-                <span style={{ 
-                  backgroundColor: 'rgba(26, 115, 232, 0.25)', 
-                  color: '#60a5fa', 
-                  fontSize: '0.65rem', 
-                  padding: '2px 6px', 
-                  borderRadius: '6px', 
-                  fontWeight: 600,
-                  border: '1px solid rgba(96, 165, 250, 0.3)' 
-                }}>
-                  Sharing Screen
-                </span>
-              )}
+              <RefreshCw size={11} />
+            </button>
+
+            {/* Pill: 🎙️ You (Candidate) */}
+            <div className="vr-pip-pill">
+              {isMicOn ? <Mic size={11} /> : <MicOff size={11} style={{ color: '#ef4444' }} />}
+              <span>You ({currentRole === 'interviewer' ? 'Interviewer' : 'Candidate'})</span>
             </div>
           </div>
-
-          {/* Remote Video (Partner) */}
-          <div 
-            style={{ 
-              position: 'relative',
-              width: '100%', 
-              aspectRatio: '16 / 9', 
-              maxHeight: 'calc(100vh - 175px)',
-              borderRadius: '16px',
-              overflow: 'hidden',
-              border: isCallConnected ? '2px solid #10b981' : '2px solid rgba(255,255,255,0.15)',
-              backgroundColor: '#0f172a',
-              boxShadow: isCallConnected 
-                ? '0 0 25px rgba(16, 185, 129, 0.25), 0 20px 25px -5px rgba(0, 0, 0, 0.5)' 
-                : '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-              boxSizing: 'border-box',
-              margin: '0 auto'
-            }}
-          >
-            {/* Always-mounted remote video element */}
-            <video 
-              ref={remoteVideoRef} 
-              autoPlay 
-              playsInline 
-              style={{ 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: isCallConnected && remoteStream ? 'block' : 'none' 
-              }}
-            />
-
-            {/* When partner turns camera off during active call */}
-            {isCallConnected && remoteStream && !partnerVideoOn && (
-              <div 
-                style={{ 
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                  backdropFilter: 'blur(8px)',
-                  color: '#94a3b8',
-                  zIndex: 20
-                }}
-              >
-                <VideoOff size={44} style={{ marginBottom: '0.5rem', color: '#64748b' }} />
-                <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{partnerName}&apos;s Camera is Off</span>
-              </div>
-            )}
-
-            {/* When partner is not yet sending live video */}
-            {(!isCallConnected || !remoteStream) && (
-              <div 
-                style={{ 
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  padding: '1.5rem', 
-                  textAlign: 'center', 
-                  backgroundColor: '#0f172a' 
-                }}
-              >
-                <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                  <Avatar 
-                    name={partnerName} 
-                    avatar={partnerAvatar} 
-                    size={85} 
-                    style={{ border: '3px solid rgba(255,255,255,0.2)' }} 
-                  />
-                  <span 
-                    style={{ 
-                      position: 'absolute', 
-                      bottom: 0, 
-                      right: 0, 
-                      width: '18px', 
-                      height: '18px', 
-                      borderRadius: '50%', 
-                      backgroundColor: '#f59e0b', 
-                      border: '3px solid #0f172a' 
-                    }} 
-                  />
-                </div>
-
-                <div style={{ fontSize: '1rem', fontWeight: 'bold', color: 'white', marginBottom: '2px' }}>
-                  {partnerName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '12px' }}>
-                  {partnerTitle}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b', display: 'inline-block' }}></span>
-                  <span style={{ fontSize: '0.75rem', color: '#fcd34d', fontWeight: 500 }}>
-                    Waiting for {partnerRole} to enter room...
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={callPartner}
-                  className="btn btn-outline"
-                  style={{ fontSize: '0.75rem', color: '#cbd5e1', borderColor: '#475569', padding: '0.35rem 0.85rem' }}
-                >
-                  <RefreshCw size={13} style={{ marginRight: '4px', display: 'inline' }} />
-                  <span>Retry Call / Connect Now</span>
-                </button>
-              </div>
-            )}
-
-            {/* Bottom-Right Name Tag for Remote Video */}
-            <div 
-              style={{
-                position: 'absolute',
-                bottom: '14px',
-                right: '14px',
-                zIndex: 35,
-                backgroundColor: 'rgba(15, 23, 42, 0.88)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
-                borderRadius: '10px',
-                padding: '6px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
-                color: 'white',
-                pointerEvents: 'none',
-                maxWidth: 'calc(100% - 28px)'
-              }}
-            >
-              <span style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                backgroundColor: isCallConnected ? '#10b981' : '#f59e0b',
-                display: 'inline-block',
-                boxShadow: isCallConnected ? '0 0 8px #10b981' : 'none',
-                flexShrink: 0
-              }}></span>
-              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
-                <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap' }}>
-                  {partnerName}
-                </span>
-                <span style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 500 }}>
-                  {remoteRoleBadge} {remoteCompanyTag ? `• ${remoteCompanyTag}` : ''}
-                </span>
-              </div>
-              {isCallConnected && (
-                <span style={{ 
-                  backgroundColor: 'rgba(16, 185, 129, 0.2)', 
-                  color: '#34d399', 
-                  fontSize: '0.65rem', 
-                  padding: '2px 6px', 
-                  borderRadius: '6px', 
-                  fontWeight: 700,
-                  letterSpacing: '0.5px',
-                  border: '1px solid rgba(16, 185, 129, 0.3)' 
-                }}>
-                  LIVE HD
-                </span>
-              )}
-              {!partnerMicOn && (
-                <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.25)', padding: '3px', borderRadius: '4px', marginLeft: '4px' }}>
-                  <MicOff size={13} style={{ color: '#ef4444' }} />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </main>
+        </main>
 
       {/* Dynamic In-Call Drawer: Chat & Live Q&A */}
       {isChatOpen && (

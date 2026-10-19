@@ -1,276 +1,248 @@
 /* ==========================================================================
-   InterviewPro - Modern SaaS Login Page Styles
-   Clean Two-Column Split-Screen Layout (Branding Left, Form Right)
+   InterviewPro - Candidate Login Page Styling
+   Pixel-accurate match for modern high-converting SaaS authentication screen
    ========================================================================== */
 
-.ip-login-wrapper {
-  display: flex;
+.ip-page-container {
   min-height: 100vh;
   width: 100%;
-  font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
-  background-color: #ffffff;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(145deg, #f3f8fe 0%, #ebf4fd 50%, #f4f8fe 100%);
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #0f172a;
   overflow-x: hidden;
 }
 
+/* Subtle curved soft background blobs from original design */
+.ip-bg-glow-bottom {
+  position: absolute;
+  bottom: -150px;
+  right: 18%;
+  width: 620px;
+  height: 620px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(219, 234, 254, 0.65) 0%, rgba(239, 246, 255, 0.05) 70%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ip-bg-glow-top {
+  position: absolute;
+  top: -120px;
+  left: -80px;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(224, 242, 254, 0.5) 0%, rgba(240, 249, 255, 0) 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 /* ==========================================================================
-   LEFT SECTION — BRANDING AND ILLUSTRATION (~50% width)
+   TOP NAVIGATION BAR
    ========================================================================== */
-.ip-left-section {
-  flex: 1;
-  min-width: 0;
-  background: linear-gradient(150deg, #f0f7ff 0%, #e3effd 55%, #edf5fe 100%);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 3rem 3.5rem;
-  position: relative;
-  overflow: hidden;
-  border-right: 1px solid #e0edfd;
-}
-
-/* Subtle decorative background shapes */
-.ip-bg-shape-1 {
-  position: absolute;
-  top: -80px;
-  right: -80px;
-  width: 320px;
-  height: 320px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(37, 99, 235, 0.09) 0%, rgba(37, 99, 235, 0) 70%);
-  pointer-events: none;
-}
-
-.ip-bg-shape-2 {
-  position: absolute;
-  bottom: 8%;
-  left: -60px;
-  width: 280px;
-  height: 280px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0) 70%);
-  pointer-events: none;
-}
-
-.ip-bg-shape-3 {
-  position: absolute;
-  top: 45%;
-  right: 10%;
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(96, 165, 250, 0.07) 0%, rgba(96, 165, 250, 0) 70%);
-  pointer-events: none;
-}
-
-/* Brand header */
-.ip-brand-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.ip-top-nav {
   position: relative;
   z-index: 2;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 2.25rem 2.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.ip-logo-badge {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  color: #ffffff;
-  font-weight: 800;
-  font-size: 1rem;
-  letter-spacing: -0.5px;
-  padding: 0.45rem 0.75rem;
-  border-radius: 10px;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
-  display: inline-flex;
+.ip-logo-group {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  user-select: none;
+}
+
+.ip-logo-icon {
+  width: 38px;
+  height: 38px;
+  background-color: #0066ff;
+  border-radius: 11px;
+  display: flex;
   align-items: center;
   justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(0, 102, 255, 0.22);
+}
+
+.ip-logo-user-svg {
+  stroke-width: 2.3;
 }
 
 .ip-logo-title {
   font-size: 1.35rem;
   font-weight: 700;
-  color: #0f172a;
   letter-spacing: -0.4px;
-}
-
-.ip-logo-tag {
-  background: rgba(37, 99, 235, 0.1);
-  color: #2563eb;
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.2rem 0.55rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(37, 99, 235, 0.2);
-}
-
-/* Main copy & features */
-.ip-left-content {
-  position: relative;
-  z-index: 2;
-  margin: 1.75rem 0;
-  max-width: 520px;
-}
-
-.ip-main-heading {
-  font-size: 2.25rem;
-  font-weight: 800;
-  line-height: 1.22;
   color: #0f172a;
-  letter-spacing: -0.8px;
-  margin-bottom: 0.85rem;
 }
 
-.ip-main-heading .ip-highlight {
-  background: linear-gradient(135deg, #2563eb 0%, #0284c7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.ip-logo-title-accent {
+  color: #0066ff;
 }
 
-.ip-supporting-text {
-  font-size: 0.98rem;
-  line-height: 1.6;
-  color: #475569;
-  margin-bottom: 1.5rem;
+.ip-candidates-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  transition: all 0.15s ease;
 }
 
-/* Feature grid */
-.ip-features-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.85rem;
-  margin-bottom: 1.75rem;
+.ip-candidates-badge:hover {
+  background-color: rgba(37, 99, 235, 0.07);
 }
 
-.ip-feature-card {
+/* ==========================================================================
+   MAIN CONTENT AREA (TWO COLUMN)
+   ========================================================================== */
+.ip-main-wrapper {
+  position: relative;
+  z-index: 1;
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(8px);
-  border: 1px solid #dbeafe;
-  border-radius: 14px;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.04);
-  transition: all 0.2s ease;
+  justify-content: center;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.5rem 2.5rem 3.5rem;
 }
 
-.ip-feature-card:hover {
-  background: #ffffff;
-  border-color: #bfdbfe;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+.ip-layout-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  align-items: center;
+  gap: 4rem;
 }
 
-.ip-feature-icon-wrapper {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+/* ==========================================================================
+   LEFT COLUMN - HERO & FEATURES
+   ========================================================================== */
+.ip-left-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: 1rem;
+}
+
+.ip-hero-headline {
+  font-size: 2.75rem;
+  font-weight: 800;
+  line-height: 1.16;
+  letter-spacing: -0.9px;
+  color: #0b2246;
+  margin-bottom: 1.15rem;
+}
+
+.ip-hero-description {
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: #64748b;
+  margin-bottom: 2.5rem;
+  font-weight: 400;
+}
+
+/* Features vertical list */
+.ip-features-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.ip-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+.ip-feature-icon-container {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background-color: #e8f2fe;
   color: #2563eb;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
-.ip-feature-title {
-  font-size: 0.875rem;
+.ip-feature-item:hover .ip-feature-icon-container {
+  transform: scale(1.06);
+}
+
+.ip-feature-label {
+  font-size: 0.95rem;
   font-weight: 600;
   color: #1e293b;
+  letter-spacing: -0.2px;
 }
 
-/* Illustration container */
-.ip-illustration-wrapper {
-  position: relative;
-  z-index: 2;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+/* Handwritten cursive tagline at bottom left */
+.ip-handwritten-note {
+  margin-top: 3.5rem;
+  display: inline-block;
+  transform: rotate(-6deg);
+  transform-origin: left bottom;
+  user-select: none;
 }
 
-.ip-illustration-card {
-  position: relative;
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 16px 36px -10px rgba(37, 99, 235, 0.15), 0 0 0 1px rgba(191, 219, 254, 0.6);
-  background: #ffffff;
-  max-width: 440px;
-  width: 100%;
-}
-
-.ip-illustration-img {
-  width: 100%;
-  height: auto;
-  display: block;
-  object-fit: cover;
-  transition: transform 0.3s ease;
-}
-
-.ip-illustration-card:hover .ip-illustration-img {
-  transform: scale(1.015);
-}
-
-/* Motivational tagline */
-.ip-tagline-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin-top: 1rem;
-  padding: 0.4rem 1rem;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #bfdbfe;
-  border-radius: 9999px;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
-  font-size: 0.825rem;
-  font-weight: 600;
+.ip-cursive-text {
+  font-family: 'Caveat', 'Segoe Script', cursive;
+  font-size: 1.75rem;
+  font-weight: 700;
   color: #2563eb;
+  letter-spacing: 0.5px;
+  display: block;
+}
+
+.ip-cursive-underline {
+  width: 140px;
+  height: 16px;
+  margin-top: -8px;
+  display: block;
 }
 
 /* ==========================================================================
-   RIGHT SECTION — LOGIN FORM (~50% width)
+   RIGHT COLUMN - ELEVATED CARD & FORM
    ========================================================================== */
-.ip-right-section {
-  flex: 1;
-  min-width: 0;
-  background-color: #ffffff;
+.ip-right-col {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2.5rem 2rem;
-  position: relative;
-  overflow-y: auto;
+  justify-content: flex-end;
 }
 
-/* Centered Login Card */
-.ip-login-card {
+.ip-card {
   width: 100%;
-  max-width: 450px;
+  max-width: 445px;
   background: #ffffff;
-  border: 1px solid #dbeafe;
   border-radius: 24px;
-  box-shadow: 0 20px 45px -15px rgba(37, 99, 235, 0.08), 0 4px 16px rgba(0, 0, 0, 0.03);
-  padding: 2.75rem 2.25rem;
-  transition: all 0.25s ease;
+  padding: 2.5rem 2.25rem;
+  box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.08), 0 0 1px 1px rgba(226, 232, 240, 0.8);
+  border: 1px solid rgba(241, 245, 249, 0.8);
 }
 
 .ip-card-header {
-  text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.75rem;
 }
 
-.ip-card-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
-}
-
-.ip-card-heading {
-  font-size: 1.75rem;
+.ip-card-title {
+  font-size: 1.7rem;
   font-weight: 800;
   color: #0f172a;
   letter-spacing: -0.5px;
@@ -281,173 +253,231 @@
   font-size: 0.9rem;
   color: #64748b;
   margin: 0;
+  font-weight: 400;
 }
 
-/* Form controls */
-.ip-form-group {
+/* Alerts */
+.ip-alert {
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
   margin-bottom: 1.25rem;
+  line-height: 1.4;
 }
 
-.ip-form-label {
+.ip-alert-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ip-alert-error {
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.ip-alert-success {
+  background-color: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+/* Form fields */
+.ip-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.ip-form-group {
+  margin-bottom: 1.15rem;
+}
+
+.ip-label {
   display: block;
-  font-size: 0.85rem;
+  font-size: 0.825rem;
   font-weight: 600;
-  color: #1e293b;
+  color: #334155;
   margin-bottom: 0.45rem;
 }
 
-.ip-input-container {
+.ip-input-box {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-.ip-input-icon {
+.ip-input-leading-icon {
   position: absolute;
-  left: 1rem;
+  left: 0.95rem;
   color: #94a3b8;
   pointer-events: none;
-  transition: color 0.2s ease;
+  transition: color 0.15s ease;
 }
 
-.ip-input-field {
+.ip-text-input {
   width: 100%;
-  padding: 0.8rem 1rem 0.8rem 2.75rem;
-  font-size: 0.925rem;
-  font-family: inherit;
-  color: #0f172a;
-  background-color: #f8fafc;
+  height: 46px;
+  padding: 0 1rem 0 2.65rem;
+  background-color: #ffffff;
   border: 1.5px solid #e2e8f0;
   border-radius: 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #0f172a;
   outline: none;
   transition: all 0.2s ease;
 }
 
-.ip-input-field:focus {
-  background-color: #ffffff;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+.ip-text-input-password {
+  padding-right: 2.75rem;
 }
 
-.ip-input-container:focus-within .ip-input-icon {
-  color: #2563eb;
+.ip-text-input:focus {
+  border-color: #0066ff;
+  box-shadow: 0 0 0 3px rgba(0, 102, 255, 0.12);
 }
 
-.ip-input-field::placeholder {
+.ip-input-box:focus-within .ip-input-leading-icon {
+  color: #0066ff;
+}
+
+.ip-text-input::placeholder {
   color: #94a3b8;
 }
 
-.ip-password-toggle {
+.ip-eye-toggle {
   position: absolute;
-  right: 0.9rem;
+  right: 0.85rem;
   background: none;
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  padding: 0.25rem;
+  padding: 0.35rem;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  transition: color 0.2s;
-}
-
-.ip-password-toggle:hover {
-  color: #2563eb;
-}
-
-/* Remember me & Forgot Password row */
-.ip-options-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 1.1rem 0 1.5rem;
-  font-size: 0.85rem;
-}
-
-.ip-remember-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: #475569;
-  cursor: pointer;
-  user-select: none;
-  font-weight: 500;
-}
-
-.ip-remember-checkbox {
-  width: 16px;
-  height: 16px;
-  accent-color: #2563eb;
-  cursor: pointer;
-}
-
-.ip-forgot-link {
-  color: #2563eb;
-  font-weight: 600;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  font-size: 0.85rem;
   transition: color 0.15s ease;
 }
 
-.ip-forgot-link:hover {
-  color: #1d4ed8;
+.ip-eye-toggle:hover {
+  color: #0066ff;
+}
+
+/* Remember me & Forgot Password */
+.ip-remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0.25rem 0 1.35rem;
+}
+
+.ip-checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ip-real-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  accent-color: #0066ff;
+  cursor: pointer;
+}
+
+.ip-remember-text {
+  font-size: 0.825rem;
+  color: #475569;
+  font-weight: 500;
+}
+
+.ip-forgot-password-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #0066ff;
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.ip-forgot-password-link:hover {
+  color: #0052cc;
   text-decoration: underline;
 }
 
-/* Full-width blue gradient Sign In button */
-.ip-submit-btn {
+/* Sign In Button */
+.ip-btn-submit {
   width: 100%;
-  padding: 0.85rem 1.25rem;
+  height: 48px;
+  background-color: #0066ff;
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
   font-size: 0.95rem;
   font-weight: 600;
   font-family: inherit;
-  color: #ffffff;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  border: none;
-  border-radius: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 14px rgba(0, 102, 255, 0.28);
   transition: all 0.2s ease;
 }
 
-.ip-submit-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+.ip-btn-submit:hover:not(:disabled) {
+  background-color: #0052cc;
+  box-shadow: 0 6px 18px rgba(0, 102, 255, 0.38);
   transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.38);
 }
 
-.ip-submit-btn:active:not(:disabled) {
+.ip-btn-submit:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.ip-submit-btn:disabled {
+.ip-btn-submit:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }
 
-/* Divider with "or" */
-.ip-divider {
+.ip-loading-content {
   display: flex;
   align-items: center;
-  margin: 1.5rem 0;
+  gap: 0.5rem;
+}
+
+.ip-spin {
+  animation: ipSpin 1s linear infinite;
+}
+
+@keyframes ipSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Divider */
+.ip-or-separator {
+  display: flex;
+  align-items: center;
+  margin: 1.35rem 0;
   width: 100%;
 }
 
-.ip-divider-line {
+.ip-separator-line {
   flex: 1;
   height: 1px;
   background-color: #e2e8f0;
 }
 
-.ip-divider-text {
+.ip-separator-text {
   padding: 0 0.85rem;
   font-size: 0.8rem;
   font-weight: 500;
@@ -455,208 +485,151 @@
   text-transform: lowercase;
 }
 
-/* Continue with Google button */
-.ip-google-btn {
+/* Google Sign In Button */
+.ip-google-container {
   width: 100%;
-  padding: 0.78rem 1.25rem;
-  font-size: 0.925rem;
-  font-weight: 600;
-  font-family: inherit;
-  color: #1e293b;
+  display: flex;
+  justify-content: center;
+}
+
+.ip-google-button {
+  width: 100%;
+  height: 46px;
   background-color: #ffffff;
   border: 1.5px solid #e2e8f0;
   border-radius: 12px;
+  color: #1e293b;
+  font-size: 0.885rem;
+  font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   transition: all 0.2s ease;
 }
 
-.ip-google-btn:hover {
+.ip-google-button:hover {
   background-color: #f8fafc;
   border-color: #cbd5e1;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
-/* Card footer */
-.ip-card-footer {
+/* Switch Auth Mode */
+.ip-switch-auth-row {
   text-align: center;
-  margin-top: 1.5rem;
-  font-size: 0.875rem;
+  margin-top: 1.6rem;
+  font-size: 0.865rem;
   color: #64748b;
 }
 
-.ip-toggle-btn {
-  color: #2563eb;
-  font-weight: 600;
+.ip-switch-action-btn {
   background: none;
   border: none;
+  color: #0066ff;
+  font-weight: 600;
   cursor: pointer;
-  padding: 0;
-  font-size: 0.875rem;
   margin-left: 0.35rem;
-  transition: color 0.15s;
+  font-size: 0.865rem;
+  transition: color 0.15s ease;
 }
 
-.ip-toggle-btn:hover {
-  color: #1d4ed8;
+.ip-switch-action-btn:hover {
+  color: #0052cc;
   text-decoration: underline;
 }
 
-/* Dedicated Professional portal link at bottom */
-.ip-pro-link-wrapper {
+/* Bottom interviewer link */
+.ip-pro-interviewer-sublink {
   margin-top: 1.25rem;
-  padding-top: 1.1rem;
+  padding-top: 1rem;
   border-top: 1px dashed #e2e8f0;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 0.785rem;
   color: #64748b;
 }
 
-.ip-pro-link {
+.ip-pro-sublink-anchor {
   color: #4f46e5;
   font-weight: 600;
   text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  transition: color 0.15s;
 }
 
-.ip-pro-link:hover {
-  color: #4338ca;
+.ip-pro-sublink-anchor:hover {
   text-decoration: underline;
 }
 
-/* Error message banner */
-.ip-error-banner {
-  margin-bottom: 1.25rem;
-  padding: 0.75rem 1rem;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  background-color: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-  line-height: 1.4;
-}
-
-/* Success notification banner */
-.ip-success-banner {
-  margin-bottom: 1.25rem;
-  padding: 0.75rem 1rem;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  background-color: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #bbf7d0;
-  line-height: 1.4;
-}
-
 /* ==========================================================================
-   RESPONSIVE DESIGN (Desktop, Tablet, Mobile)
+   RESPONSIVE MEDIA QUERIES
    ========================================================================== */
-
-/* Tablet (1024px and below) */
 @media (max-width: 1024px) {
-  .ip-left-section {
-    padding: 2.5rem 2rem;
+  .ip-layout-grid {
+    gap: 2.5rem;
+    grid-template-columns: 1fr 1fr;
   }
 
-  .ip-main-heading {
-    font-size: 1.85rem;
+  .ip-hero-headline {
+    font-size: 2.3rem;
   }
 
-  .ip-supporting-text {
-    font-size: 0.9rem;
+  .ip-card {
+    padding: 2.25rem 1.85rem;
+  }
+}
+
+@media (max-width: 860px) {
+  .ip-top-nav {
+    padding: 1.5rem 1.5rem 0.5rem;
   }
 
-  .ip-features-grid {
+  .ip-main-wrapper {
+    padding: 1rem 1.5rem 3rem;
+  }
+
+  .ip-layout-grid {
     grid-template-columns: 1fr;
-    gap: 0.65rem;
+    gap: 2.5rem;
   }
 
-  .ip-illustration-card {
-    max-width: 360px;
+  .ip-left-col {
+    padding-right: 0;
+    text-align: center;
+    align-items: center;
   }
 
-  .ip-login-card {
-    padding: 2.25rem 1.75rem;
-  }
-}
-
-/* Mobile & Small Tablets (768px and below) */
-@media (max-width: 768px) {
-  .ip-login-wrapper {
-    flex-direction: column;
+  .ip-features-stack {
+    align-items: center;
+    width: 100%;
+    max-width: 340px;
   }
 
-  /* Left branding section becomes a clean compact top banner */
-  .ip-left-section {
-    padding: 2rem 1.5rem 2rem;
-    border-right: none;
-    border-bottom: 1px solid #e0edfd;
+  .ip-feature-item {
+    width: 100%;
+    justify-content: flex-start;
   }
 
-  .ip-main-heading {
-    font-size: 1.6rem;
+  .ip-right-col {
+    justify-content: center;
   }
 
-  .ip-supporting-text {
-    font-size: 0.875rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .ip-features-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-
-  .ip-feature-card {
-    padding: 0.5rem 0.75rem;
-  }
-
-  .ip-feature-title {
-    font-size: 0.8rem;
-  }
-
-  /* Hide large illustration on mobile to keep form accessible immediately */
-  .ip-illustration-wrapper {
-    display: none;
-  }
-
-  .ip-right-section {
-    padding: 2rem 1rem 3rem;
-  }
-
-  .ip-login-card {
-    border: none;
-    box-shadow: none;
-    padding: 0.5rem 0.5rem;
-    max-width: 100%;
-  }
-
-  .ip-card-heading {
-    font-size: 1.5rem;
+  .ip-card {
+    max-width: 440px;
   }
 }
 
-/* Extra small screens */
 @media (max-width: 480px) {
-  .ip-features-grid {
-    grid-template-columns: 1fr;
+  .ip-hero-headline {
+    font-size: 2rem;
   }
 
-  .ip-options-row {
+  .ip-card {
+    padding: 1.75rem 1.25rem;
+    border-radius: 20px;
+  }
+
+  .ip-remember-row {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
