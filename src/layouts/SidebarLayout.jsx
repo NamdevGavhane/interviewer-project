@@ -17,7 +17,9 @@ import {
   Check,
   CheckCheck,
   Clock,
-  Sparkles
+  Sparkles,
+  Briefcase,
+  Sliders
 } from 'lucide-react';
 
 const SidebarLayout = () => {
@@ -119,61 +121,98 @@ const SidebarLayout = () => {
         </div>
 
         <nav className="sidebar-nav" style={{ flex: 1 }}>
-          <NavLink to="/" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} end>
-            <LayoutDashboard size={18} />
-            <span>Dashboard</span>
-          </NavLink>
-          {isCandidate && (
-            <NavLink to="/ai-interview" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-              <Bot size={18} className="text-primary" />
-              <span>AI Mock Interview</span>
-              <span className="badge badge-info text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>AI</span>
-            </NavLink>
-          )}
-          <NavLink to="/interviews" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <Calendar size={18} />
-            <span>My Interviews</span>
-          </NavLink>
-          {isCandidate && (
-            <NavLink to="/booking" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-              <Users size={18} />
-              <span>Book Interview</span>
-            </NavLink>
-          )}
-          {isCandidate && (
-            <NavLink to="/feedback" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-              <FileText size={18} />
-              <span>Feedback Reports</span>
-            </NavLink>
-          )}
-          <NavLink to="/payments" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <Receipt size={18} className="text-success" />
-            <span>{currentRole === 'professional' ? 'Earnings & Payouts' : 'Billing & Invoices'}</span>
-            <span className="badge badge-success text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>
-              {currentRole === 'professional' ? '₹ Earned' : '₹ Paid'}
-            </span>
-          </NavLink>
-          <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <User size={18} />
-            <span>My Profile</span>
-          </NavLink>
-          {currentRole === 'admin' && (
-            <NavLink to="/admin" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-              <ShieldCheck size={18} className="text-danger" />
-              <span>Admin Console</span>
-              {pendingRequestsCount > 0 ? (
-                <span className="badge badge-warning text-xs font-bold" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto', backgroundColor: '#f59e0b', color: 'white' }}>
-                  {pendingRequestsCount} Req
-                </span>
-              ) : (
-                <span className="badge badge-danger text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>Admin</span>
+          {currentRole === 'admin' ? (
+            /* ================= ADMIN EXCLUSIVE NAVIGATION ================= */
+            <>
+              <NavLink to="/admin" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} end>
+                <LayoutDashboard size={18} />
+                <span>Admin Console</span>
+              </NavLink>
+
+              <NavLink to="/admin?tab=requests" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Briefcase size={18} />
+                <span>Interviewer Requests</span>
+                {pendingRequestsCount > 0 && (
+                  <span className="badge badge-warning text-xs font-bold" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto', backgroundColor: '#f59e0b', color: 'white' }}>
+                    {pendingRequestsCount} Req
+                  </span>
+                )}
+              </NavLink>
+
+              <NavLink to="/admin?tab=invitations" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Users size={18} />
+                <span>Invited Professionals</span>
+              </NavLink>
+
+              <NavLink to="/admin?tab=users" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <ShieldCheck size={18} />
+                <span>User Management</span>
+              </NavLink>
+
+              <NavLink to="/admin?tab=bookings" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Calendar size={18} />
+                <span>All Bookings</span>
+              </NavLink>
+
+              <NavLink to="/admin?tab=settings" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <FileText size={18} />
+                <span>Platform Settings</span>
+              </NavLink>
+
+              <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <User size={18} />
+                <span>My Profile</span>
+              </NavLink>
+            </>
+          ) : (
+            /* ================= CANDIDATE & PROFESSIONAL NAVIGATION ================= */
+            <>
+              <NavLink to="/" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} end>
+                <LayoutDashboard size={18} />
+                <span>Dashboard</span>
+              </NavLink>
+
+              {isCandidate && (
+                <NavLink to="/ai-interview" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                  <Bot size={18} className="text-primary" />
+                  <span>AI Mock Interview</span>
+                  <span className="badge badge-info text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>AI</span>
+                </NavLink>
               )}
-            </NavLink>
+
+              {isCandidate && (
+                <NavLink to="/booking" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                  <Users size={18} />
+                  <span>Book Interview</span>
+                </NavLink>
+              )}
+
+              <NavLink to="/interviews" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Calendar size={18} />
+                <span>My Interviews</span>
+              </NavLink>
+
+              {isCandidate && (
+                <NavLink to="/feedback" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                  <FileText size={18} />
+                  <span>Feedback Reports</span>
+                </NavLink>
+              )}
+
+              <NavLink to="/payments" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Receipt size={18} className="text-success" />
+                <span>{currentRole === 'professional' ? 'Earnings & Payouts' : 'Billing & Invoices'}</span>
+                <span className="badge badge-success text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>
+                  {currentRole === 'professional' ? '₹ Earned' : '₹ Paid'}
+                </span>
+              </NavLink>
+
+              <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <User size={18} />
+                <span>My Profile</span>
+              </NavLink>
+            </>
           )}
-          <NavLink to="/room" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-            <Video size={18} />
-            <span>Test Video Room</span>
-          </NavLink>
         </nav>
 
         {/* User Card in Sidebar Bottom */}

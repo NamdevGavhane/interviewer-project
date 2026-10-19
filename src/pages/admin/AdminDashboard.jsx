@@ -542,14 +542,6 @@ const AdminDashboard = () => {
         </button>
 
         <button 
-          className={`tab-button ${currentTab === 'verify' ? 'active' : ''}`}
-          onClick={() => setSearchParams({ tab: 'verify' })}
-        >
-          <ShieldCheck size={16} style={{ display: 'inline', marginRight: '6px' }} />
-          <span>Accredited Professionals ({professionals.length})</span>
-        </button>
-
-        <button 
           className={`tab-button ${currentTab === 'bookings' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'bookings' })}
         >
