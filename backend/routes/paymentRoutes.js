@@ -9,8 +9,15 @@ const Settings = require('../models/Settings');
 const Counter = require('../models/Counter');
 const Payout = require('../models/Payout');
 const Availability = require('../models/Availability');
-const { atomicBookSlot, releaseSlotForInterview } = require('../services/availabilityService');
+const PendingBooking = require('../models/PendingBooking');
+const {
+  reserveSlotForCandidate,
+  confirmBookedSlot,
+  releaseSlotForInterview
+} = require('../services/availabilityService');
+const { processInterviewRefund } = require('../services/refundService');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { validateObjectId } = require('../middleware/validateObjectId');
 
 // Helper to initialize Razorpay if configured
 const getRazorpayInstance = () => {
@@ -40,20 +47,36 @@ router.get('/config', (req, res) => {
 });
 
 // @route   POST /api/payment/create-order
-// @desc    Create a payment order strictly computed from DB settings and interviewer rate
-// @access  Protected
+// @desc    Create a payment order strictly computed from DB settings and interviewer rate,
+//          with atomic slot reservation (P2, P7)
+// @access  Protected (Candidate)
 router.post('/create-order', authenticate, async (req, res) => {
   try {
     const candidateId = req.user._id;
-    const { interviewerId } = req.body;
+    const { interviewerId, slotId, topic, notes } = req.body;
 
     if (!interviewerId) {
       return res.status(400).json({ success: false, message: 'Interviewer ID is required.' });
     }
+    if (!slotId) {
+      return res.status(400).json({ success: false, message: 'Availability slotId is required to reserve booking.' });
+    }
 
-    const interviewer = await User.findById(interviewerId).select('name email title company hourlyRate role');
-    if (!interviewer || interviewer.role !== 'professional') {
-      return res.status(404).json({ success: false, message: 'Professional interviewer not found.' });
+    const interviewer = await User.findById(interviewerId).select('name email title company hourlyRate role accountStatus isDeactivated isVerified');
+    if (!interviewer || interviewer.role !== 'professional' || interviewer.isDeactivated || interviewer.accountStatus !== 'active' || !interviewer.isVerified) {
+      return res.status(400).json({ success: false, message: 'Interviewer not found or not currently active and verified.' });
+    }
+
+    // Verify slot exists and belongs to interviewer
+    const slotDoc = await Availability.findById(slotId);
+    if (!slotDoc || String(slotDoc.interviewerId) !== String(interviewerId)) {
+      return res.status(404).json({ success: false, message: 'Selected availability slot does not belong to this interviewer.' });
+    }
+    if (slotDoc.isBooked) {
+      return res.status(409).json({ success: false, message: 'This time slot is already booked.' });
+    }
+    if (new Date(slotDoc.startTime) <= new Date()) {
+      return res.status(400).json({ success: false, message: 'Cannot book slots in the past.' });
     }
 
     const settings = await Settings.getSettings();
@@ -64,7 +87,8 @@ router.post('/create-order', authenticate, async (req, res) => {
       return res.json({
         success: true,
         freeSession: true,
-        orderId: `FREE_${Date.now()}`,
+        orderId: `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+        slotId,
         amount: 0,
         sessionFee: 0,
         platformFee: 0,
@@ -75,6 +99,22 @@ router.post('/create-order', authenticate, async (req, res) => {
       });
     }
 
+    // Atomically reserve the slot for 15 minutes
+    const reservedSlot = await reserveSlotForCandidate({
+      slotId,
+      interviewerId,
+      candidateId,
+      holdMinutes: 15
+    });
+
+    if (!reservedSlot) {
+      return res.status(409).json({
+        success: false,
+        message: 'This time slot is currently reserved by another candidate or is no longer available. Please select another slot.'
+      });
+    }
+
+    // Server-side financial calculations (P7)
     const commissionPercent = Number(settings.platformCommissionPercent) || 0;
     const gstPercent = Number(settings.gstPercent) || 0;
 
@@ -84,26 +124,58 @@ router.post('/create-order', authenticate, async (req, res) => {
 
     const rzp = getRazorpayInstance();
     if (!rzp) {
+      // Release slot reservation if gateway unconfigured
+      await Availability.findByIdAndUpdate(slotId, { reservedBy: null, reservedUntil: null });
       return res.status(503).json({
         success: false,
         message: 'Payment gateway is currently not configured by administrator. RAZORPAY_KEY_ID & RAZORPAY_KEY_SECRET are required.'
       });
     }
 
-    const order = await rzp.orders.create({
-      amount: Math.round(totalAmount * 100), // in paise
-      currency: settings.currency || 'INR',
-      receipt: `rcpt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-      notes: {
-        candidateId: String(candidateId),
-        interviewerId: String(interviewerId)
-      }
-    });
+    let order;
+    try {
+      order = await rzp.orders.create({
+        amount: Math.round(totalAmount * 100), // in paise
+        currency: settings.currency || 'INR',
+        receipt: `rcpt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+        notes: {
+          candidateId: String(candidateId),
+          interviewerId: String(interviewerId),
+          slotId: String(slotId)
+        }
+      });
+    } catch (orderErr) {
+      // Release slot reservation on gateway failure
+      await Availability.findByIdAndUpdate(slotId, { reservedBy: null, reservedUntil: null });
+      throw orderErr;
+    }
+
+    // Freeze financial terms and booking intent in PendingBooking (P2)
+    await PendingBooking.findOneAndUpdate(
+      { orderId: order.id },
+      {
+        orderId: order.id,
+        candidateId,
+        interviewerId,
+        slotId,
+        topic: topic || 'Mock Technical Interview',
+        notes: notes || '',
+        sessionFee,
+        platformFee,
+        gstAmount,
+        amount: totalAmount,
+        currency: settings.currency || 'INR',
+        status: 'pending',
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+      },
+      { upsert: true, new: true }
+    );
 
     res.json({
       success: true,
       freeSession: false,
       orderId: order.id,
+      slotId,
       amount: totalAmount,
       sessionFee,
       platformFee,
@@ -120,15 +192,13 @@ router.post('/create-order', authenticate, async (req, res) => {
 });
 
 // @route   POST /api/payment/verify-and-book
-// @desc    Verify payment signature / details and finalize mock interview booking
+// @desc    Verify payment signature / details and finalize mock interview booking (P3)
 // @access  Protected
 router.post('/verify-and-book', authenticate, async (req, res) => {
   try {
     const candidateId = req.user._id;
     const {
       interviewerId,
-      date,
-      timeSlot,
       slotId,
       topic,
       notes,
@@ -138,13 +208,39 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       paymentMethod = 'razorpay'
     } = req.body;
 
-    if (!interviewerId || !date || !timeSlot) {
-      return res.status(400).json({ success: false, message: 'Missing required booking details (interviewer, date, timeSlot).' });
+    if (!interviewerId) {
+      return res.status(400).json({ success: false, message: 'Interviewer ID is required.' });
     }
 
-    const interviewer = await User.findById(interviewerId).select('name email title company hourlyRate role');
-    if (!interviewer || interviewer.role !== 'professional') {
-      return res.status(404).json({ success: false, message: 'Interviewer not found.' });
+    // 1. Idempotency Check (P3): If already verified, return existing booking
+    if (orderId || paymentId) {
+      const existingPayment = await Payment.findOne({
+        $or: [
+          ...(orderId ? [{ orderId }] : []),
+          ...(paymentId ? [{ paymentId }] : [])
+        ]
+      });
+
+      if (existingPayment) {
+        const existingInterview = await Interview.findById(existingPayment.interviewId)
+          .populate('candidateId', 'name email avatar')
+          .populate('interviewerId', 'name email avatar title company hourlyRate');
+        const populatedPayment = await Payment.findById(existingPayment._id)
+          .populate('candidateId', 'name email')
+          .populate('interviewerId', 'name email title company');
+
+        return res.status(200).json({
+          success: true,
+          message: 'Payment already verified and interview booked (idempotent replay).',
+          interview: existingInterview,
+          payment: populatedPayment
+        });
+      }
+    }
+
+    const interviewer = await User.findById(interviewerId).select('name email title company hourlyRate role accountStatus isDeactivated isVerified');
+    if (!interviewer || interviewer.role !== 'professional' || interviewer.isDeactivated || interviewer.accountStatus !== 'active' || !interviewer.isVerified) {
+      return res.status(400).json({ success: false, message: 'Interviewer not found or not active.' });
     }
 
     const settings = await Settings.getSettings();
@@ -156,18 +252,15 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
     let platformFee = 0;
     let gstAmount = 0;
     let totalAmount = 0;
+    let bookingSlotId = slotId;
+    let bookingTopic = topic || 'Mock Technical Interview';
+    let bookingNotes = notes || '';
 
     if (isFree) {
       finalPaymentId = `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
       finalOrderId = `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     } else {
-      const commissionPercent = Number(settings.platformCommissionPercent) || 0;
-      const gstPercent = Number(settings.gstPercent) || 0;
-      platformFee = Math.round((sessionFee * commissionPercent) / 100);
-      gstAmount = Math.round(((sessionFee + platformFee) * gstPercent) / 100);
-      totalAmount = sessionFee + platformFee + gstAmount;
-
-      // Real signature verification
+      // Real signature verification using crypto.timingSafeEqual (P3)
       const secret = process.env.RAZORPAY_KEY_SECRET;
       if (!secret || !process.env.RAZORPAY_KEY_ID) {
         return res.status(503).json({
@@ -188,44 +281,83 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
         .update(`${orderId}|${paymentId}`)
         .digest('hex');
 
-      if (generatedSignature !== signature) {
+      const sigBuf = Buffer.from(signature, 'utf8');
+      const expBuf = Buffer.from(generatedSignature, 'utf8');
+
+      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
         return res.status(400).json({
           success: false,
           message: 'Payment signature verification failed. Invalid or fraudulent transaction.'
         });
       }
-    }
 
-    // Atomic sequential invoice number
-    const invoiceNumber = await Counter.getNextInvoiceNumber();
+      // Check order status against Razorpay API
+      const rzp = getRazorpayInstance();
+      if (rzp) {
+        try {
+          const rzpPayment = await rzp.payments.fetch(paymentId);
+          if (rzpPayment && rzpPayment.order_id !== orderId) {
+            return res.status(400).json({
+              success: false,
+              message: 'Payment order ID mismatch with gateway record.'
+            });
+          }
+        } catch (fetchErr) {
+          console.warn('Could not fetch payment from Razorpay API for additional check:', fetchErr.message);
+        }
+      }
 
-    // Verify availability slot if slotId provided
-    let slotDoc = null;
-    if (slotId) {
-      slotDoc = await Availability.findById(slotId);
-      if (slotDoc && slotDoc.isBooked) {
-        return res.status(409).json({
-          success: false,
-          message: 'The selected time slot was just booked by another candidate. Please choose a different slot.'
-        });
+      // Load frozen financial fields from PendingBooking (P2, P7)
+      const pendingBooking = await PendingBooking.findOne({ orderId });
+      if (pendingBooking) {
+        bookingSlotId = pendingBooking.slotId;
+        bookingTopic = pendingBooking.topic;
+        bookingNotes = pendingBooking.notes;
+        platformFee = pendingBooking.platformFee;
+        gstAmount = pendingBooking.gstAmount;
+        totalAmount = pendingBooking.amount;
+      } else {
+        const commissionPercent = Number(settings.platformCommissionPercent) || 0;
+        const gstPercent = Number(settings.gstPercent) || 0;
+        platformFee = Math.round((sessionFee * commissionPercent) / 100);
+        gstAmount = Math.round(((sessionFee + platformFee) * gstPercent) / 100);
+        totalAmount = sessionFee + platformFee + gstAmount;
       }
     }
 
-    // 1. Create Interview record
+    if (!bookingSlotId) {
+      return res.status(400).json({ success: false, message: 'Valid slotId is required to finalize booking.' });
+    }
+
+    // Derive date, timeSlot, startTime, endTime STRICTLY from the Availability slot (P3)
+    const slotDoc = await Availability.findById(bookingSlotId);
+    if (!slotDoc) {
+      return res.status(404).json({ success: false, message: 'Availability slot not found.' });
+    }
+    if (slotDoc.isBooked) {
+      return res.status(409).json({
+        success: false,
+        message: 'The selected time slot was just booked by another candidate. Please choose a different slot.'
+      });
+    }
+
     const meetingRoomId = crypto.randomBytes(8).toString('hex');
+    const invoiceNumber = await Counter.getNextInvoiceNumber();
+
+    // 1. Create Interview record
     const newInterview = new Interview({
       candidateId,
       interviewerId,
-      date,
-      timeSlot,
-      slotId: slotId || null,
-      startTime: slotDoc?.startTime || null,
-      endTime: slotDoc?.endTime || null,
-      topic: topic || 'Mock Technical Interview',
+      date: slotDoc.date,
+      timeSlot: slotDoc.slotLabel,
+      slotId: slotDoc._id,
+      startTime: slotDoc.startTime,
+      endTime: slotDoc.endTime,
+      topic: bookingTopic,
       price: sessionFee,
       platformFee,
       paidAmount: totalAmount,
-      notes: notes || '',
+      notes: bookingNotes,
       status: 'scheduled',
       paymentStatus: 'paid',
       paymentId: finalPaymentId,
@@ -237,16 +369,23 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
 
     const savedInterview = await newInterview.save();
 
-    // 2. Atomically book the slot in Availability collection
-    if (slotId) {
-      await atomicBookSlot({
-        interviewerId,
-        slotId,
-        interviewId: savedInterview._id
+    // 2. Atomically confirm slot booking in Availability collection
+    const bookedSlot = await confirmBookedSlot({
+      slotId: bookingSlotId,
+      candidateId,
+      interviewId: savedInterview._id
+    });
+
+    if (!bookedSlot) {
+      // Compensating action: Delete interview and refund if slot booking failed
+      await Interview.findByIdAndDelete(savedInterview._id);
+      return res.status(409).json({
+        success: false,
+        message: 'Failed to lock slot: Slot is no longer available or reservation expired.'
       });
     }
 
-    // 3. Create Payment record in MongoDB
+    // 3. Create Payment record
     const newPayment = new Payment({
       candidateId,
       interviewerId,
@@ -262,10 +401,24 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       status: 'captured',
       paymentMethod: isFree ? 'free' : paymentMethod,
       invoiceNumber,
-      notes: notes || `Mock interview session: ${topic}`
+      notes: bookingNotes || `Mock interview session: ${bookingTopic}`
     });
 
     const savedPayment = await newPayment.save();
+
+    // 4. Update PendingBooking to completed
+    if (!isFree && orderId) {
+      await PendingBooking.findOneAndUpdate(
+        { orderId },
+        {
+          $set: {
+            status: 'completed',
+            paymentId: finalPaymentId,
+            interviewId: savedInterview._id
+          }
+        }
+      );
+    }
 
     const populatedInterview = await Interview.findById(savedInterview._id)
       .populate('candidateId', 'name email avatar')
@@ -288,7 +441,7 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
 });
 
 // @route   POST /api/payment/webhook
-// @desc    Razorpay Webhook receiver with HMAC SHA256 signature verification
+// @desc    Razorpay Webhook receiver with HMAC SHA256 signature verification (P4)
 // @access  Public (Gateway webhook)
 router.post('/webhook', async (req, res) => {
   try {
@@ -304,13 +457,16 @@ router.post('/webhook', async (req, res) => {
     }
 
     // rawBody was preserved by express.raw parser in server.js
-    const bodyPayload = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : JSON.stringify(req.body);
+    const bodyPayload = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
       .update(bodyPayload)
       .digest('hex');
 
-    if (expectedSignature !== signature) {
+    const sigBuf = Buffer.from(signature, 'utf8');
+    const expBuf = Buffer.from(expectedSignature, 'utf8');
+
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       return res.status(400).json({ message: 'Invalid webhook signature.' });
     }
 
@@ -319,29 +475,122 @@ router.post('/webhook', async (req, res) => {
 
     if (eventName === 'payment.captured') {
       const paymentEntity = event.payload.payment.entity;
-      await Payment.findOneAndUpdate(
-        { orderId: paymentEntity.order_id },
-        { $set: { status: 'captured', paymentId: paymentEntity.id } }
-      );
+      const orderId = paymentEntity.order_id;
+      const paymentId = paymentEntity.id;
+
+      // Check if payment already exists
+      const existingPayment = await Payment.findOne({ orderId });
+      if (existingPayment) {
+        existingPayment.status = 'captured';
+        existingPayment.paymentId = paymentId;
+        await existingPayment.save();
+      } else {
+        // Candidate may have dropped off after payment: Auto-finalize from PendingBooking (P4)
+        const pending = await PendingBooking.findOne({ orderId, status: 'pending' });
+        if (pending) {
+          const slotDoc = await Availability.findById(pending.slotId);
+          if (slotDoc && !slotDoc.isBooked) {
+            const meetingRoomId = crypto.randomBytes(8).toString('hex');
+            const invoiceNumber = await Counter.getNextInvoiceNumber();
+
+            const interview = new Interview({
+              candidateId: pending.candidateId,
+              interviewerId: pending.interviewerId,
+              date: slotDoc.date,
+              timeSlot: slotDoc.slotLabel,
+              slotId: slotDoc._id,
+              startTime: slotDoc.startTime,
+              endTime: slotDoc.endTime,
+              topic: pending.topic,
+              price: pending.sessionFee,
+              platformFee: pending.platformFee,
+              paidAmount: pending.amount,
+              notes: pending.notes,
+              status: 'scheduled',
+              paymentStatus: 'paid',
+              paymentId,
+              orderId,
+              paymentMethod: 'razorpay',
+              invoiceNumber,
+              meetingRoomId
+            });
+
+            const savedInterview = await interview.save();
+            await confirmBookedSlot({
+              slotId: pending.slotId,
+              candidateId: pending.candidateId,
+              interviewId: savedInterview._id
+            });
+
+            const payment = new Payment({
+              candidateId: pending.candidateId,
+              interviewerId: pending.interviewerId,
+              interviewId: savedInterview._id,
+              orderId,
+              paymentId,
+              amount: pending.amount,
+              sessionFee: pending.sessionFee,
+              platformFee: pending.platformFee,
+              gstAmount: pending.gstAmount,
+              currency: pending.currency,
+              status: 'captured',
+              paymentMethod: 'razorpay',
+              invoiceNumber,
+              notes: pending.notes || `Webhook finalized: ${pending.topic}`
+            });
+
+            await payment.save();
+
+            pending.status = 'completed';
+            pending.paymentId = paymentId;
+            pending.interviewId = savedInterview._id;
+            await pending.save();
+          }
+        }
+      }
     } else if (eventName === 'payment.failed') {
       const paymentEntity = event.payload.payment.entity;
+      const orderId = paymentEntity.order_id;
       await Payment.findOneAndUpdate(
-        { orderId: paymentEntity.order_id },
+        { orderId },
         { $set: { status: 'failed' } }
       );
+
+      // Release slot reservation
+      const pending = await PendingBooking.findOne({ orderId });
+      if (pending) {
+        pending.status = 'failed';
+        await pending.save();
+        await Availability.findByIdAndUpdate(pending.slotId, {
+          reservedBy: null,
+          reservedUntil: null
+        });
+      }
     } else if (eventName === 'refund.processed') {
       const refundEntity = event.payload.refund.entity;
-      await Payment.findOneAndUpdate(
+      const payment = await Payment.findOneAndUpdate(
         { paymentId: refundEntity.payment_id },
         {
           $set: {
             refundStatus: 'processed',
             refundId: refundEntity.id,
             refundAmount: refundEntity.amount / 100,
-            refundedAt: new Date()
+            refundedAt: new Date(),
+            status: 'refunded'
           }
-        }
+        },
+        { new: true }
       );
+
+      if (payment && payment.interviewId) {
+        await Interview.findByIdAndUpdate(payment.interviewId, {
+          status: 'cancelled',
+          cancelledAt: new Date(),
+          refundAmount: payment.amount,
+          paymentStatus: 'refunded'
+        });
+        await releaseSlotForInterview(payment.interviewId);
+      }
     }
 
     res.json({ status: 'ok' });
@@ -352,78 +601,22 @@ router.post('/webhook', async (req, res) => {
 });
 
 // @route   POST /api/payment/refund/:interviewId
-// @desc    Process refund through Razorpay API for cancelled interview
+// @desc    Process refund through unified refund service (P5)
 // @access  Protected
-router.post('/refund/:interviewId', authenticate, async (req, res) => {
+router.post('/refund/:interviewId', validateObjectId('interviewId'), authenticate, async (req, res) => {
   try {
-    const interview = await Interview.findById(req.params.interviewId);
-    if (!interview) {
-      return res.status(404).json({ success: false, message: 'Interview not found' });
-    }
-
-    const isCandidate = String(interview.candidateId) === String(req.user._id);
-    const isAdmin = req.user.role === 'admin';
-    if (!isCandidate && !isAdmin) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    const payment = await Payment.findOne({ interviewId: interview._id });
-    if (!payment || payment.status !== 'captured') {
-      return res.status(400).json({ success: false, message: 'No captured payment found for this interview' });
-    }
-
-    if (payment.refundStatus === 'processed') {
-      return res.status(400).json({ success: false, message: 'Payment has already been refunded' });
-    }
-
-    if (payment.paymentMethod === 'free' || payment.amount === 0) {
-      payment.refundStatus = 'processed';
-      payment.refundAmount = 0;
-      payment.refundedAt = new Date();
-      await payment.save();
-
-      interview.status = 'cancelled';
-      interview.refundAmount = 0;
-      await interview.save();
-      await releaseSlotForInterview(interview._id);
-
-      return res.json({ success: true, message: 'Free session booking cancelled and slot released.' });
-    }
-
-    const rzp = getRazorpayInstance();
-    if (!rzp) {
-      return res.status(503).json({
-        success: false,
-        message: 'Payment gateway unconfigured. Cannot process refund.'
-      });
-    }
-
-    const refund = await rzp.payments.refund(payment.paymentId, {
-      amount: Math.round(payment.amount * 100),
-      notes: {
-        interviewId: String(interview._id),
-        cancelledBy: String(req.user._id)
-      }
+    const result = await processInterviewRefund({
+      interviewId: req.params.interviewId,
+      requestedByUserId: req.user._id,
+      userRole: req.user.role,
+      reason: req.body.reason
     });
 
-    payment.refundStatus = 'processed';
-    payment.refundId = refund.id;
-    payment.refundAmount = payment.amount;
-    payment.refundedAt = new Date();
-    await payment.save();
+    if (!result.success) {
+      return res.status(result.status || 400).json(result);
+    }
 
-    interview.status = 'cancelled';
-    interview.refundAmount = payment.amount;
-    interview.cancelledAt = new Date();
-    await interview.save();
-
-    await releaseSlotForInterview(interview._id);
-
-    res.json({
-      success: true,
-      message: `Full refund of ₹${payment.amount} processed successfully.`,
-      refundId: refund.id
-    });
+    res.json(result);
   } catch (err) {
     console.error('Error processing refund:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -460,29 +653,58 @@ router.get('/history', authenticate, async (req, res) => {
 });
 
 // @route   GET /api/payment/payouts
-// @desc    Get payout ledger for professional
+// @desc    Get payout ledger with commission deduction and hold period (P6 & X8)
 // @access  Protected (Professional, Admin)
 router.get('/payouts', authenticate, requireRole('professional', 'admin'), async (req, res) => {
   try {
     const interviewerId = req.user.role === 'admin' && req.query.interviewerId ? req.query.interviewerId : req.user._id;
 
+    const settings = await Settings.getSettings();
+    const commissionPercent = Number(settings.platformCommissionPercent) || 0;
+    const payoutHoldDays = Number(settings.payoutHoldDays) || 3;
+    const holdMs = payoutHoldDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
     const [payouts, completedSessions] = await Promise.all([
       Payout.find({ interviewerId }).sort({ createdAt: -1 }),
-      Interview.find({ interviewerId, status: 'completed' }).select('price paidAmount')
+      Interview.find({ interviewerId, status: 'completed' }).select('price paidAmount platformFee endTime updatedAt createdAt')
     ]);
 
-    const totalEarned = completedSessions.reduce((sum, s) => sum + (s.price || 0), 0);
+    // Calculate net earning for each session (P6): price - platform commission
+    let totalEarned = 0;
+    let eligibleEarned = 0;
+    let onHoldEarned = 0;
+
+    for (const s of completedSessions) {
+      const sessionFee = Number(s.price) || 0;
+      const commission = Math.round((sessionFee * commissionPercent) / 100);
+      const netEarning = Math.max(0, sessionFee - commission);
+      totalEarned += netEarning;
+
+      // Session completion timestamp (updatedAt or endTime or createdAt)
+      const completionTime = new Date(s.endTime || s.updatedAt || s.createdAt).getTime();
+      if (now - completionTime >= holdMs) {
+        eligibleEarned += netEarning;
+      } else {
+        onHoldEarned += netEarning;
+      }
+    }
+
     const paidOut = payouts.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
     const pendingPayout = payouts.filter(p => p.status === 'pending' || p.status === 'processing').reduce((sum, p) => sum + p.amount, 0);
-    const availableBalance = Math.max(0, totalEarned - paidOut - pendingPayout);
+    const availableBalance = Math.max(0, eligibleEarned - paidOut - pendingPayout);
 
     res.json({
       success: true,
       stats: {
         totalEarned,
+        eligibleEarned,
+        onHoldEarned,
         paidOut,
         pendingPayout,
-        availableBalance
+        availableBalance,
+        payoutHoldDays,
+        platformCommissionPercent: commissionPercent
       },
       payouts
     });
@@ -492,7 +714,7 @@ router.get('/payouts', authenticate, requireRole('professional', 'admin'), async
 });
 
 // @route   POST /api/payment/payouts/request
-// @desc    Request a payout
+// @desc    Request a payout strictly checked against commission and hold days (P6)
 // @access  Protected (Professional)
 router.post('/payouts/request', authenticate, requireRole('professional'), async (req, res) => {
   try {
@@ -501,28 +723,64 @@ router.post('/payouts/request', authenticate, requireRole('professional'), async
 
     const requestedAmount = Number(amount);
     if (!requestedAmount || requestedAmount <= 0) {
-      return res.status(400).json({ success: false, message: 'Valid payout amount is required' });
+      return res.status(400).json({ success: false, message: 'Valid positive payout amount is required.' });
     }
+
+    // Validate bank details / UPI details
+    if (payoutMethod === 'bank_transfer') {
+      if (!bankDetails || !bankDetails.accountNumber || !bankDetails.ifscCode) {
+        return res.status(400).json({
+          success: false,
+          message: 'Bank transfer requires accountNumber and ifscCode in bankDetails.'
+        });
+      }
+    } else if (payoutMethod === 'upi') {
+      if (!bankDetails || !bankDetails.upiId) {
+        return res.status(400).json({
+          success: false,
+          message: 'UPI payout requires upiId in bankDetails.'
+        });
+      }
+    }
+
+    const settings = await Settings.getSettings();
+    const commissionPercent = Number(settings.platformCommissionPercent) || 0;
+    const payoutHoldDays = Number(settings.payoutHoldDays) || 3;
+    const holdMs = payoutHoldDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
 
     const [payouts, completedSessions] = await Promise.all([
       Payout.find({ interviewerId }),
-      Interview.find({ interviewerId, status: 'completed' }).select('price')
+      Interview.find({ interviewerId, status: 'completed' }).select('price endTime updatedAt createdAt')
     ]);
 
-    const totalEarned = completedSessions.reduce((sum, s) => sum + (s.price || 0), 0);
-    const withdrawnOrPending = payouts.filter(p => p.status !== 'failed').reduce((sum, p) => sum + p.amount, 0);
-    const availableBalance = Math.max(0, totalEarned - withdrawnOrPending);
+    let eligibleEarned = 0;
+    for (const s of completedSessions) {
+      const completionTime = new Date(s.endTime || s.updatedAt || s.createdAt).getTime();
+      if (now - completionTime >= holdMs) {
+        const sessionFee = Number(s.price) || 0;
+        const commission = Math.round((sessionFee * commissionPercent) / 100);
+        eligibleEarned += Math.max(0, sessionFee - commission);
+      }
+    }
+
+    const activeWithdrawals = payouts
+      .filter(p => ['pending', 'processing', 'completed'].includes(p.status))
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    const availableBalance = Math.max(0, eligibleEarned - activeWithdrawals);
 
     if (requestedAmount > availableBalance) {
       return res.status(400).json({
         success: false,
-        message: `Requested amount (₹${requestedAmount}) exceeds available balance (₹${availableBalance}).`
+        message: `Requested amount (₹${requestedAmount}) exceeds available balance (₹${availableBalance}). Sessions completed within the last ${payoutHoldDays} days are on hold.`
       });
     }
 
     const payout = new Payout({
       interviewerId,
       amount: requestedAmount,
+      currency: settings.currency || 'INR',
       payoutMethod,
       bankDetails: bankDetails || {},
       status: 'pending'
@@ -532,7 +790,7 @@ router.post('/payouts/request', authenticate, requireRole('professional'), async
 
     res.status(201).json({
       success: true,
-      message: 'Payout request submitted successfully.',
+      message: 'Payout request submitted successfully and is pending administrator approval.',
       payout
     });
   } catch (err) {
@@ -568,8 +826,8 @@ router.get('/:id', authenticate, async (req, res) => {
     }
 
     // Authorization: only candidate, interviewer, or admin
-    const isOwner = String(payment.candidateId._id) === String(req.user._id) ||
-                    String(payment.interviewerId._id) === String(req.user._id) ||
+    const isOwner = String(payment.candidateId?._id) === String(req.user._id) ||
+                    String(payment.interviewerId?._id) === String(req.user._id) ||
                     req.user.role === 'admin';
     if (!isOwner) {
       return res.status(403).json({ success: false, message: 'Forbidden' });

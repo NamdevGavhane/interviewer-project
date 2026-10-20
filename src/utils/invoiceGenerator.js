@@ -16,14 +16,16 @@ export const downloadInvoicePDF = (paymentData) => {
     const margin = 40;
     const contentWidth = pageWidth - margin * 2;
 
-    const invoiceNo = paymentData.invoiceNumber || 'INV-OFFICIAL';
+    const invoiceNo = paymentData.invoiceNumber || (paymentData._id ? `INV-${paymentData._id.toString().slice(-8).toUpperCase()}` : null);
+    if (!invoiceNo) {
+      throw new Error('Invoice cannot be generated: Missing official sequential invoice number on payment record.');
+    }
+
     const paymentId = paymentData.paymentId || 'N/A';
     const orderId = paymentData.orderId || 'N/A';
-    const paymentDate = paymentData.date || new Date().toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
+    const paymentDate = paymentData.createdAt 
+      ? new Date(paymentData.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      : (paymentData.date || new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
 
     const candidateName = paymentData.candidateName || paymentData.candidateId?.name || 'Candidate';
     const candidateEmail = paymentData.candidateEmail || paymentData.candidateId?.email || 'N/A';
@@ -34,10 +36,11 @@ export const downloadInvoicePDF = (paymentData) => {
     const timeSlot = paymentData.timeSlot || paymentData.interviewId?.timeSlot || 'Scheduled Slot';
 
     const topic = paymentData.topic || paymentData.interviewId?.topic || 'Technical Mock Interview';
+    // Immutable verified financial figures directly from Payment document (P9, X12)
     const sessionFee = Number(paymentData.sessionFee ?? paymentData.price ?? 0);
     const platformFee = Number(paymentData.platformFee ?? 0);
     const gstAmount = Number(paymentData.gstAmount ?? 0);
-    const totalAmount = Number(paymentData.amount ?? paymentData.paidAmount ?? (sessionFee + platformFee + gstAmount));
+    const totalAmount = Number(paymentData.amount ?? paymentData.paidAmount ?? 0);
     const paymentMethod = (paymentData.paymentMethod || 'Razorpay').toUpperCase();
 
     // 1. Header Banner

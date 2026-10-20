@@ -1,9 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const Interview = require('../models/Interview');
 const User = require('../models/User');
-const Settings = require('../models/Settings');
-const { releaseSlotForInterview, atomicBookSlot } = require('../services/availabilityService');
+const Payment = require('../models/Payment');
+const Availability = require('../models/Availability');
+const Counter = require('../models/Counter');
+const { releaseSlotForInterview, confirmBookedSlot } = require('../services/availabilityService');
+const { processInterviewRefund } = require('../services/refundService');
 const { authenticate, requireRole, requireActiveProfessional } = require('../middleware/auth');
 const { chatLimiter } = require('../middleware/rateLimiter');
 const { validateObjectId } = require('../middleware/validateObjectId');
@@ -12,19 +16,18 @@ const { validateObjectId } = require('../middleware/validateObjectId');
 router.use(authenticate);
 
 // @route   POST /api/interviews
-// @desc    Book a new interview (Candidate or Admin)
+// @desc    Book a new interview session (Free community session or Admin override; Paid sessions MUST use /api/payment/create-order)
 // @access  Protected
 router.post('/', async (req, res) => {
   try {
-    const { interviewerId, date, timeSlot, topic, notes } = req.body;
+    const { interviewerId, slotId, topic, notes } = req.body;
 
-    // Never trust candidateId from body; always enforce req.user._id
     const candidateId = req.user.role === 'admin' && req.body.candidateId 
       ? req.body.candidateId 
       : req.user._id;
 
-    if (!interviewerId || !date || !timeSlot) {
-      return res.status(400).json({ success: false, message: 'Missing required booking fields (interviewerId, date, timeSlot).' });
+    if (!interviewerId || !slotId) {
+      return res.status(400).json({ success: false, message: 'Missing required booking fields (interviewerId and slotId).' });
     }
 
     // Ensure interviewer is an active, verified professional
@@ -33,39 +36,78 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Selected interviewer is not an active verified professional.' });
     }
 
-    // Check if slot is already booked
-    const existing = await Interview.findOne({
-      interviewerId,
-      date,
-      timeSlot,
-      status: 'scheduled'
-    });
+    const hourlyRate = Number(interviewer.hourlyRate) || 0;
 
-    if (existing) {
-      return res.status(409).json({
+    // Security Gate (P1): Direct unpaid booking bypass prevention
+    if (hourlyRate > 0 && req.user.role !== 'admin') {
+      return res.status(400).json({
         success: false,
-        message: 'This time slot has already been booked with this interviewer. Please choose another slot.'
+        message: 'This is a paid session. Direct scheduling without payment is prohibited. Please use the checkout flow (/api/payment/create-order).'
       });
     }
 
-    const price = interviewer.hourlyRate !== undefined && interviewer.hourlyRate !== null ? interviewer.hourlyRate : 0;
+    // Validate slot
+    const slotDoc = await Availability.findById(slotId);
+    if (!slotDoc || String(slotDoc.interviewerId) !== String(interviewerId)) {
+      return res.status(404).json({ success: false, message: 'Availability slot not found or does not belong to this interviewer.' });
+    }
+    if (slotDoc.isBooked) {
+      return res.status(409).json({
+        success: false,
+        message: 'This time slot is already booked. Please choose another slot.'
+      });
+    }
+
+    const meetingRoomId = crypto.randomBytes(8).toString('hex');
+    const invoiceNumber = await Counter.getNextInvoiceNumber();
 
     const newInterview = new Interview({
       candidateId,
       interviewerId,
-      date,
-      timeSlot,
+      date: slotDoc.date,
+      timeSlot: slotDoc.slotLabel,
+      slotId: slotDoc._id,
+      startTime: slotDoc.startTime,
+      endTime: slotDoc.endTime,
       topic: topic || 'Mock Technical Interview',
-      price,
+      price: hourlyRate,
+      paidAmount: hourlyRate,
+      platformFee: 0,
       notes: notes || '',
       status: 'scheduled',
-      paidAmount: price,
-      platformFee: 0,
-      paymentStatus: price === 0 ? 'paid' : 'unpaid'
+      paymentStatus: 'paid',
+      paymentMethod: hourlyRate === 0 ? 'free' : 'admin_comp',
+      invoiceNumber,
+      meetingRoomId
     });
 
     const savedInterview = await newInterview.save();
-    
+
+    // Atomically confirm slot booking in Availability
+    await confirmBookedSlot({
+      slotId,
+      candidateId,
+      interviewId: savedInterview._id
+    });
+
+    // Create Payment audit record for free/admin session
+    const payment = new Payment({
+      candidateId,
+      interviewerId,
+      interviewId: savedInterview._id,
+      orderId: `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      paymentId: `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      amount: hourlyRate,
+      sessionFee: hourlyRate,
+      platformFee: 0,
+      gstAmount: 0,
+      status: 'captured',
+      paymentMethod: hourlyRate === 0 ? 'free' : 'razorpay',
+      invoiceNumber,
+      notes: notes || 'Free session booking'
+    });
+    await payment.save();
+
     const populated = await Interview.findById(savedInterview._id)
       .populate('candidateId', 'name email avatar')
       .populate('interviewerId', 'name email avatar title company hourlyRate');
@@ -143,18 +185,18 @@ router.get('/:id', validateObjectId('id'), async (req, res) => {
 });
 
 // @route   PATCH /api/interviews/:id/status
-// @desc    Update interview status (Ownership enforced)
+// @desc    Update interview status (Ownership enforced; unified refunding for cancellations)
 // @access  Protected
 router.patch('/:id/status', validateObjectId('id'), async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, cancelReason } = req.body;
     if (!['scheduled', 'completed', 'cancelled'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid status value' });
+      return res.status(400).json({ success: false, message: 'Invalid status value. Must be scheduled, completed, or cancelled.' });
     }
 
     const interview = await Interview.findById(req.params.id);
     if (!interview) {
-      return res.status(404).json({ success: false, message: 'Interview not found' });
+      return res.status(404).json({ success: false, message: 'Interview not found.' });
     }
 
     const isCandidate = interview.candidateId.toString() === req.user._id.toString();
@@ -170,32 +212,32 @@ router.patch('/:id/status', validateObjectId('id'), async (req, res) => {
       return res.status(403).json({ success: false, message: 'Candidates may only cancel their scheduled interviews.' });
     }
 
-    interview.status = status;
-
+    // Unified cancellation & refund handling (P5)
     if (status === 'cancelled') {
-      const { cancelReason } = req.body;
-      interview.cancelledAt = new Date();
-      interview.cancellationReason = cancelReason || 'Cancelled by user';
+      const refundResult = await processInterviewRefund({
+        interviewId: interview._id,
+        requestedByUserId: req.user._id,
+        userRole: req.user.role,
+        reason: cancelReason || 'Cancelled by user'
+      });
 
-      // Automatically release the booked availability slot
-      await releaseSlotForInterview(interview._id);
-
-      // Evaluate refund policy from Settings
-      const settings = await Settings.getSettings();
-      const refundWindowHours = settings.refundWindowHours || 24;
-
-      let refundEligible = false;
-      if (interview.startTime) {
-        const diffHours = (new Date(interview.startTime) - new Date()) / (1000 * 60 * 60);
-        refundEligible = diffHours >= refundWindowHours;
-      } else {
-        refundEligible = true; // If no startTime recorded, default eligible
+      if (!refundResult.success) {
+        return res.status(refundResult.status || 400).json(refundResult);
       }
 
-      if (refundEligible && interview.paymentStatus === 'paid' && interview.paidAmount > 0) {
-        interview.refundAmount = interview.paidAmount;
-        interview.paymentStatus = 'refunded';
-      }
+      const populated = await Interview.findById(interview._id)
+        .populate('candidateId', 'name email avatar')
+        .populate('interviewerId', 'name email avatar title company');
+
+      return res.json({
+        ...refundResult,
+        interview: populated
+      });
+    }
+
+    interview.status = status;
+    if (status === 'completed') {
+      interview.completedAt = new Date();
     }
 
     await interview.save();
@@ -300,6 +342,41 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
         success: false,
         message: 'This interview was cancelled and the room is no longer accessible.'
       });
+    }
+
+    // Payment Gate (P1): Only paid sessions can access live interview room
+    if (interview.paymentStatus !== 'paid' && interview.paidAmount > 0) {
+      return res.status(402).json({
+        success: false,
+        message: 'Payment required to access interview room. Please complete checkout.'
+      });
+    }
+
+    // Timing window check (allow participants in 15 minutes before startTime until 2 hours after endTime)
+    if (!isAdmin && interview.startTime) {
+      const now = Date.now();
+      const startTimeMs = new Date(interview.startTime).getTime();
+      const endTimeMs = interview.endTime 
+        ? new Date(interview.endTime).getTime() 
+        : startTimeMs + 45 * 60 * 1000;
+
+      const earliestJoinTime = startTimeMs - 15 * 60 * 1000;
+      const latestJoinTime = endTimeMs + 2 * 60 * 60 * 1000;
+
+      if (now < earliestJoinTime) {
+        const minutesUntilOpen = Math.ceil((earliestJoinTime - now) / 60000);
+        return res.status(403).json({
+          success: false,
+          message: `The interview room is not open yet. It will open 15 minutes before the scheduled start time (in approximately ${minutesUntilOpen} minutes).`
+        });
+      }
+
+      if (now > latestJoinTime && interview.status === 'completed') {
+        return res.status(403).json({
+          success: false,
+          message: 'This interview session has concluded and the room is closed.'
+        });
+      }
     }
 
     // Dynamic ICE / STUN / TURN servers from environment

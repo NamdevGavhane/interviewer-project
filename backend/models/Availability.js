@@ -41,6 +41,16 @@ const availabilitySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Interview',
     default: null
+  },
+  reservedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  reservedUntil: {
+    type: Date,
+    default: null,
+    index: true
   }
 }, { timestamps: true });
 

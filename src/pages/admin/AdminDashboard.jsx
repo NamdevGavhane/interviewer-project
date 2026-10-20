@@ -49,6 +49,8 @@ const AdminDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [invitations, setInvitations] = useState([]);
+  const [payouts, setPayouts] = useState([]);
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   
   // Platform Settings State
@@ -58,6 +60,7 @@ const AdminDashboard = () => {
     currency: 'INR',
     refundWindowHours: 24,
     bookingWindowDays: 14,
+    payoutHoldDays: 3,
     slotDurationMinutes: 45,
     slotPresets: [],
     aiDailyLimit: 5,
@@ -107,12 +110,13 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [statsData, usersData, requestsData, bookingsData, invitesData, settingsRes, configRes] = await Promise.all([
+      const [statsData, usersData, requestsData, bookingsData, invitesData, payoutsData, settingsRes, configRes] = await Promise.all([
         apiClient.get('/api/admin/stats'),
         apiClient.get('/api/admin/users'),
         apiClient.get('/api/admin/requests'),
         apiClient.get('/api/admin/bookings'),
         apiClient.get('/api/admin/invitations'),
+        apiClient.get('/api/admin/payouts').catch(() => []),
         apiClient.get('/api/settings').catch(() => null),
         apiClient.get('/api/settings/interview-config').catch(() => null)
       ]);
@@ -122,12 +126,40 @@ const AdminDashboard = () => {
       if (requestsData) setRequests(requestsData);
       if (bookingsData) setBookings(bookingsData);
       if (invitesData) setInvitations(invitesData);
+      if (payoutsData) setPayouts(Array.isArray(payoutsData) ? payoutsData : []);
       if (settingsRes?.data) setPlatformSettings(settingsRes.data);
       if (configRes?.data) setInterviewConfig(configRes.data);
     } catch (err) {
       console.error('Error fetching admin data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdatePayoutStatus = async (payoutId, newStatus) => {
+    let referenceId = '';
+    let notes = '';
+    if (newStatus === 'completed') {
+      referenceId = window.prompt('Enter Bank Transfer Reference ID / UTR Number:') || '';
+      if (!referenceId) return;
+    } else if (newStatus === 'rejected') {
+      notes = window.prompt('Enter rejection reason:') || 'Rejected by administrator';
+    }
+
+    try {
+      setActionLoading(`payout_${payoutId}`);
+      const res = await apiClient.put(`/api/admin/payouts/${payoutId}/status`, {
+        status: newStatus,
+        referenceId,
+        notes
+      });
+      showToast(res.message || `Payout request updated to ${newStatus}`);
+      const updated = await apiClient.get('/api/admin/payouts');
+      setPayouts(Array.isArray(updated) ? updated : []);
+    } catch (err) {
+      alert('Failed to update payout: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -550,6 +582,28 @@ const AdminDashboard = () => {
         >
           <Calendar size={16} style={{ display: 'inline', marginRight: '6px' }} />
           <span>Interview Bookings ({bookings.length})</span>
+        </button>
+
+        <button 
+          className={`tab-button ${currentTab === 'payouts' ? 'active' : ''}`}
+          onClick={() => setSearchParams({ tab: 'payouts' })}
+        >
+          <DollarSign size={16} style={{ display: 'inline', marginRight: '6px' }} />
+          <span>Payout Requests</span>
+          {payouts.filter(p => p.status === 'pending').length > 0 && (
+            <span 
+              className="badge text-xs font-bold ml-2" 
+              style={{ 
+                fontSize: '0.7rem', 
+                padding: '0.15rem 0.5rem', 
+                borderRadius: '12px',
+                backgroundColor: '#b45309',
+                color: 'white'
+              }}
+            >
+              {payouts.filter(p => p.status === 'pending').length} Pending
+            </span>
+          )}
         </button>
 
         <button 
@@ -1342,6 +1396,20 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Payout Clearance Hold (Days)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    className="input-field text-sm"
+                    value={platformSettings.payoutHoldDays ?? 3}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, payoutHoldDays: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Days completed sessions are held for fraud prevention before withdrawal</span>
+                </div>
+
+                <div className="input-group mb-0">
                   <label className="text-xs font-semibold">Advance Booking Horizon (Days)</label>
                   <input
                     type="number"
@@ -1581,6 +1649,149 @@ const AdminDashboard = () => {
                 <span>{savingSettings ? 'Updating Catalog...' : 'Save Interview Catalog'}</span>
               </button>
             </div>
+          </div>
+        </div>
+      ) : currentTab === 'payouts' ? (
+        /* ================= 6. PAYOUT REQUESTS ================= */
+        <div className="card p-0" style={{ overflow: 'hidden' }}>
+          <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
+            <div>
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <DollarSign size={18} className="text-primary" />
+                <span>Interviewer Payout Requests & Ledger</span>
+              </h3>
+              <p className="text-xs text-muted">Review, approve, and finalize withdrawal disbursements requested by professional interviewers.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted">Status:</span>
+              <select 
+                className="input-field" 
+                style={{ width: 'auto', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                value={payoutStatusFilter}
+                onChange={(e) => setPayoutStatusFilter(e.target.value)}
+              >
+                <option value="all">All Payouts</option>
+                <option value="pending">Pending Review</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
+                  <th style={{ padding: '0.75rem 1rem' }}>Professional</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Amount</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Method & Bank Details</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Date</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payouts
+                  .filter(p => payoutStatusFilter === 'all' || p.status === payoutStatusFilter)
+                  .length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                      No payout requests found matching filter.
+                    </td>
+                  </tr>
+                ) : (
+                  payouts
+                    .filter(p => payoutStatusFilter === 'all' || p.status === payoutStatusFilter)
+                    .map((p) => (
+                      <tr key={p._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div className="font-semibold">{p.interviewerId?.name || 'Interviewer'}</div>
+                          <div className="text-xs text-muted">{p.interviewerId?.email || 'N/A'}</div>
+                          <div className="text-xs text-muted">{p.interviewerId?.company}</div>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div className="font-bold text-success text-base">₹{p.amount?.toLocaleString()}</div>
+                          <div className="text-xs text-muted">{p.currency || 'INR'}</div>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div className="font-medium text-xs uppercase">{p.payoutMethod || 'bank_transfer'}</div>
+                          {p.bankDetails?.accountNumber ? (
+                            <div className="text-xs text-slate-700">
+                              A/C: {p.bankDetails.accountNumber} • IFSC: {p.bankDetails.ifscCode}
+                              {p.bankDetails.beneficiaryName && <div>Name: {p.bankDetails.beneficiaryName}</div>}
+                            </div>
+                          ) : p.bankDetails?.upiId ? (
+                            <div className="text-xs text-slate-700">UPI: {p.bankDetails.upiId}</div>
+                          ) : (
+                            <div className="text-xs text-muted">No details provided</div>
+                          )}
+                          {p.referenceId && (
+                            <div className="text-xs text-primary font-mono mt-0.5">Ref: {p.referenceId}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div className="text-xs">{new Date(p.createdAt).toLocaleDateString()}</div>
+                          <div className="text-[11px] text-muted">{new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <span className={`badge ${
+                            p.status === 'completed' ? 'badge-success' : 
+                            p.status === 'rejected' ? 'badge-danger' : 
+                            p.status === 'processing' ? 'badge-info' : 'badge-warning'
+                          } text-xs font-semibold py-1 px-2.5`}>
+                            {p.status?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                          {p.status === 'pending' && (
+                            <div className="flex gap-1.5 justify-end">
+                              <button
+                                className="btn btn-primary text-xs py-1 px-2"
+                                disabled={actionLoading === `payout_${p._id}`}
+                                onClick={() => handleUpdatePayoutStatus(p._id, 'processing')}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                className="btn btn-outline text-danger text-xs py-1 px-2"
+                                disabled={actionLoading === `payout_${p._id}`}
+                                onClick={() => handleUpdatePayoutStatus(p._id, 'rejected')}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                          {p.status === 'processing' && (
+                            <div className="flex gap-1.5 justify-end">
+                              <button
+                                className="btn btn-success text-xs py-1 px-2"
+                                disabled={actionLoading === `payout_${p._id}`}
+                                onClick={() => handleUpdatePayoutStatus(p._id, 'completed')}
+                              >
+                                Mark Completed
+                              </button>
+                              <button
+                                className="btn btn-outline text-danger text-xs py-1 px-2"
+                                disabled={actionLoading === `payout_${p._id}`}
+                                onClick={() => handleUpdatePayoutStatus(p._id, 'rejected')}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                          {p.status === 'completed' && (
+                            <span className="text-xs text-success font-semibold">Disbursed ✓</span>
+                          )}
+                          {p.status === 'rejected' && (
+                            <span className="text-xs text-danger font-semibold">{p.notes || 'Rejected'}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : (

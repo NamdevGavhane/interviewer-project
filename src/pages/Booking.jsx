@@ -159,19 +159,21 @@ const Booking = () => {
       return;
     }
 
-    // Paid Session: Initialize Razorpay Order via Backend
+    // Paid Session: Initialize Razorpay Order via Backend with atomic slot reservation (P2, P7)
     try {
       setSubmitting(true);
       const orderRes = await apiClient.post('/api/payment/create-order', {
         interviewerId: selectedInterviewer._id,
-        sessionFee: fee
+        slotId: selectedSlotObj._id,
+        topic,
+        notes
       });
 
       const orderData = orderRes?.data || orderRes;
 
       setPaymentOrderData({
         orderId: orderData.orderId,
-        sessionFee: fee,
+        sessionFee: orderData.sessionFee || fee,
         platformFee: orderData.platformFee || 0,
         gstAmount: orderData.gstAmount || 0,
         totalAmount: orderData.amount || fee,
@@ -186,7 +188,8 @@ const Booking = () => {
 
       setIsPaymentModalOpen(true);
     } catch (err) {
-      alert('Payment Initialization Error: ' + err.message);
+      const errMsg = err.response?.data?.message || err.message || 'Payment initialization error';
+      alert('Booking Error: ' + errMsg);
     } finally {
       setSubmitting(false);
     }

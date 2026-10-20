@@ -6,6 +6,8 @@ const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 const Interview = require('../models/Interview');
+const Settings = require('../models/Settings');
+const Payout = require('../models/Payout');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -906,14 +908,17 @@ router.get('/:id/earnings', authenticate, requireRole('professional', 'admin'), 
       .populate('candidateId', 'name email avatar')
       .sort({ createdAt: -1 });
 
+    const settings = await Settings.getSettings();
+    const commissionPercent = Number(settings.platformCommissionPercent) || 0;
+
     const completed = interviews.filter(i => i.status === 'completed');
     const scheduled = interviews.filter(i => i.status === 'scheduled');
     const cancelled = interviews.filter(i => i.status === 'cancelled');
 
-    const totalEarned = completed.reduce((sum, item) => sum + (item.price || 0), 0);
+    const grossCompleted = completed.reduce((sum, item) => sum + (item.price || 0), 0);
+    const platformFeeCut = Math.round((grossCompleted * commissionPercent) / 100);
+    const netPayout = Math.max(0, grossCompleted - platformFeeCut);
     const pendingEarnings = scheduled.reduce((sum, item) => sum + (item.price || 0), 0);
-    const platformFeeCut = 0;
-    const netPayout = totalEarned;
 
     res.json({
       professional: {
@@ -923,14 +928,16 @@ router.get('/:id/earnings', authenticate, requireRole('professional', 'admin'), 
         isVerified: user.isVerified || false
       },
       stats: {
-        totalEarned,
+        totalEarned: netPayout,
+        grossEarned: grossCompleted,
         pendingEarnings,
         platformFeeGenerated: platformFeeCut,
         netPayout,
         completedSessions: completed.length,
         scheduledSessions: scheduled.length,
         cancelledSessions: cancelled.length,
-        totalSessions: interviews.length
+        totalSessions: interviews.length,
+        platformCommissionPercent: commissionPercent
       },
       sessions: interviews
     });

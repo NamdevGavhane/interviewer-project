@@ -9,15 +9,15 @@
 | [x] | S5 | Done | backend/middleware/auth.js, backend/tests/s5_middleware.test.js | ReferenceError fixed (req.user.accountStatus), all 10 branches tested and passing (10/10 in Jest). |
 | [x] | S6 | Done | src/context/AuthContext.jsx, src/utils/apiClient.js, src/pages/AcceptInvitation.jsx, src/pages/VideoRoom.jsx, DECISIONS.md | localStorage userRole/userId writes removed, role derived solely from /api/users/me, raw fetch replaced with apiClient, token decision documented. |
 | [x] | S7 | Done | backend/server.js, backend/middleware/validateObjectId.js, backend/utils/asyncHandler.js, backend/routes/*.js | 1MB global express.json limit, Helmet CSP for SPA/Razorpay/Google, base64 avatars rejected, validateObjectId applied on ObjectId routes. |
-| [ ] | P1 | Pending | | |
-| [ ] | P2 | Pending | | |
-| [ ] | P3 | Pending | | |
-| [ ] | P4 | Pending | | |
-| [ ] | P5 | Pending | | |
-| [ ] | P6 | Pending | | |
-| [ ] | P7 | Pending | | |
-| [ ] | P8 | Pending | | |
-| [ ] | P9 | Pending | | |
+| [x] | P1 | Done | backend/routes/interviewRoutes.js | Direct unpaid POST /api/interviews strictly blocked for paid sessions; free sessions require slotId & generate invoice; room-access gated by paymentStatus and timing window. |
+| [x] | P2 | Done | backend/routes/paymentRoutes.js, backend/services/availabilityService.js, backend/models/Availability.js, backend/models/PendingBooking.js | create-order requires slotId, validates interviewer rate, creates PendingBooking with TTL, and atomically reserves slot for 15 min. |
+| [x] | P3 | Done | backend/routes/paymentRoutes.js, backend/tests/p_series_payments.test.js | verify-and-book uses crypto.timingSafeEqual, derives date/slotLabel strictly from slot doc, idempotent on duplicate replay. Tested & passing in Jest (12/12). |
+| [x] | P4 | Done | backend/routes/paymentRoutes.js | Webhook uses timingSafeEqual on raw payload, auto-finalizes PendingBooking on payment.captured if client dropped off, releases slot on payment.failed. |
+| [x] | P5 | Done | backend/services/refundService.js, backend/routes/interviewRoutes.js, backend/routes/paymentRoutes.js | Unified refund processor enforcing Settings.refundWindowHours; distinguishes candidate vs interviewer/admin cancellations; releases slot automatically. |
+| [x] | P6 | Done | backend/routes/paymentRoutes.js, backend/routes/adminRoutes.js, backend/models/Payout.js, backend/models/Settings.js, src/pages/admin/AdminDashboard.jsx, src/pages/professional/Earnings.jsx | Net balance subtracts platform commission, enforces Settings.payoutHoldDays, validates bank details, admin approval console & API endpoints implemented. |
+| [x] | P7 | Done | backend/routes/paymentRoutes.js, backend/models/PendingBooking.js, backend/tests/p_series_payments.test.js | Server-side pricing calculation source of truth; client fee overrides discarded; frozen in PendingBooking. Tested in Jest. |
+| [x] | P8 | Done | backend/services/availabilityService.js, backend/tests/p_series_payments.test.js | Luxon DateTime interprets AvailabilityRule in rule.timezone, generating exact UTC instants without server local drift. Tested for Asia/Kolkata & America/New_York. |
+| [x] | P9 | Done | src/utils/invoiceGenerator.js, backend/models/Payment.js, backend/models/Counter.js | Removed INV-OFFICIAL fallback and client recalculations; requires verified immutable Payment fields (invoiceNumber, sessionFee, platformFee, gstAmount, amount). |
 | [ ] | F1 | Pending | | |
 | [ ] | F2 | Pending | | |
 | [ ] | F3 | Pending | | |

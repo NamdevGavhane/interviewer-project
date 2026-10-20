@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const Interview = require('../models/Interview');
 const Payment = require('../models/Payment');
+const Payout = require('../models/Payout');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { sendProfessionalInvitationEmail } = require('../utils/mailer');
 const { validate } = require('../middleware/validate');
@@ -493,6 +494,62 @@ router.delete('/bookings/:id', async (req, res) => {
     res.json({
       success: true,
       message: 'Interview booking record deleted successfully.'
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   GET /api/admin/payouts
+// @desc    List all payout requests with status filter
+router.get('/payouts', async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = {};
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+
+    const payouts = await Payout.find(query)
+      .populate('interviewerId', 'name email title company hourlyRate')
+      .sort({ createdAt: -1 });
+
+    res.json(payouts);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   PUT /api/admin/payouts/:id/status
+// @desc    Approve, process, complete, or reject a payout request
+router.put('/payouts/:id/status', async (req, res) => {
+  try {
+    const { status, referenceId, notes } = req.body;
+    if (!['pending', 'processing', 'completed', 'rejected', 'failed'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid payout status value.' });
+    }
+
+    const payout = await Payout.findById(req.params.id);
+    if (!payout) {
+      return res.status(404).json({ success: false, message: 'Payout request not found.' });
+    }
+
+    payout.status = status;
+    if (referenceId) payout.referenceId = referenceId;
+    if (notes) payout.notes = notes;
+    if (status === 'completed' || status === 'processing') {
+      payout.processedAt = new Date();
+    }
+
+    await payout.save();
+
+    const populated = await Payout.findById(payout._id)
+      .populate('interviewerId', 'name email title company hourlyRate');
+
+    res.json({
+      success: true,
+      message: `Payout request updated to ${status}.`,
+      payout: populated
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -23,6 +23,9 @@ const Earnings = () => {
   const [error, setError] = useState(null);
   const [requestingPayout, setRequestingPayout] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankIfscCode, setBankIfscCode] = useState('');
+  const [bankBeneficiaryName, setBankBeneficiaryName] = useState(user?.name || '');
   const [payoutMsg, setPayoutMsg] = useState(null);
   const navigate = useNavigate();
 
@@ -59,11 +62,21 @@ const Earnings = () => {
     const amt = Number(payoutAmount);
     if (!amt || amt <= 0) return;
 
+    if (!bankAccountNumber.trim() || !bankIfscCode.trim()) {
+      setPayoutMsg({ type: 'error', text: 'Bank Account Number and IFSC Code are required for payout disbursement.' });
+      return;
+    }
+
     try {
       setRequestingPayout(true);
       const res = await apiClient.post('/api/payment/payouts/request', {
         amount: amt,
-        payoutMethod: 'bank_transfer'
+        payoutMethod: 'bank_transfer',
+        bankDetails: {
+          accountNumber: bankAccountNumber.trim(),
+          ifscCode: bankIfscCode.trim().toUpperCase(),
+          beneficiaryName: bankBeneficiaryName.trim() || user?.name || ''
+        }
       });
       setPayoutMsg({ type: 'success', text: res.data.message || 'Payout requested successfully!' });
       setPayoutAmount('');
@@ -162,20 +175,63 @@ const Earnings = () => {
         </div>
 
         {/* Payout Withdrawal Card */}
+        {payoutsData?.stats?.onHoldEarned > 0 && (
+          <div className="card p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+            <Clock size={16} className="text-amber-600 shrink-0" />
+            <span>
+              <strong>Clearance Hold:</strong> ₹{payoutsData.stats.onHoldEarned.toLocaleString()} from recent sessions is in the standard {payoutsData.stats.payoutHoldDays || 3}-day fraud prevention clearance window and will unlock automatically.
+            </span>
+          </div>
+        )}
+
         {availableBalance > 0 && (
           <div className="card p-4 bg-slate-50 border">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div>
-                <h4 className="font-bold text-sm text-slate-800">Request Payout Disbursement</h4>
-                <p className="text-xs text-muted">Withdraw available earnings to your linked bank account.</p>
+            <div>
+              <h4 className="font-bold text-sm text-slate-800">Request Payout Disbursement</h4>
+              <p className="text-xs text-muted">Withdraw cleared earnings directly to your verified bank account.</p>
+            </div>
+            <form onSubmit={handleRequestPayout} className="mt-3 flex flex-col gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[11px] font-semibold text-muted block mb-1">Account Number *</label>
+                  <input
+                    type="text"
+                    placeholder="Bank Account Number"
+                    className="input-field text-xs py-1.5 px-3 w-full"
+                    value={bankAccountNumber}
+                    onChange={(e) => setBankAccountNumber(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted block mb-1">IFSC Code *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. HDFC0001234"
+                    className="input-field text-xs py-1.5 px-3 w-full uppercase"
+                    value={bankIfscCode}
+                    onChange={(e) => setBankIfscCode(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-muted block mb-1">Beneficiary Name</label>
+                  <input
+                    type="text"
+                    placeholder="Account Holder Name"
+                    className="input-field text-xs py-1.5 px-3 w-full"
+                    value={bankBeneficiaryName}
+                    onChange={(e) => setBankBeneficiaryName(e.target.value)}
+                  />
+                </div>
               </div>
-              <form onSubmit={handleRequestPayout} className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2">
                 <input 
                   type="number"
                   min="1"
                   max={availableBalance}
                   placeholder={`Amount (max ₹${availableBalance})`}
-                  className="input-field text-xs py-1.5 px-3 w-44"
+                  className="input-field text-xs py-1.5 px-3 w-48"
                   value={payoutAmount}
                   onChange={(e) => setPayoutAmount(e.target.value)}
                   required
@@ -186,10 +242,10 @@ const Earnings = () => {
                   className="btn btn-primary text-xs py-1.5 px-4 font-bold flex items-center gap-1.5"
                 >
                   {requestingPayout ? <Loader2 size={13} className="animate-spin" /> : null}
-                  <span>Withdraw</span>
+                  <span>Submit Withdrawal Request</span>
                 </button>
-              </form>
-            </div>
+              </div>
+            </form>
             {payoutMsg && (
               <div className={`mt-2 text-xs font-semibold ${payoutMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
                 {payoutMsg.text}

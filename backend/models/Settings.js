@@ -22,6 +22,12 @@ const settingsSchema = new mongoose.Schema({
     default: 24,
     min: 0
   },
+  payoutHoldDays: {
+    type: Number,
+    default: 3,
+    min: 0,
+    max: 90
+  },
   bookingWindowDays: {
     type: Number,
     default: 14,
