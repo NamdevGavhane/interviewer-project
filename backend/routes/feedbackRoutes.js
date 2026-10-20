@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Feedback = require('../models/Feedback');
 const Interview = require('../models/Interview');
+const Notification = require('../models/Notification');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
 
@@ -45,6 +46,21 @@ router.post('/', async (req, res) => {
       });
     }
 
+    if (interview.status === 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot submit evaluation feedback for a cancelled interview session.'
+      });
+    }
+
+    // Timing gate (F2): Cannot submit feedback before the session start time
+    if (!isAdmin && interview.startTime && new Date() < new Date(interview.startTime)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Feedback cannot be submitted before the mock interview session has commenced.'
+      });
+    }
+
     if (overallScore === undefined || overallScore === null) {
       return res.status(400).json({
         success: false,
@@ -85,23 +101,26 @@ router.post('/', async (req, res) => {
       await feedback.save();
     }
 
-    // Mark interview as completed
+    // Mark interview as completed server-side (F3)
     interview.status = 'completed';
+    interview.completedAt = new Date();
     if (qaList && Array.isArray(qaList) && qaList.length > 0) {
       interview.questions = qaList;
     }
     await interview.save();
 
-    // Recalculate real aggregate rating for the interviewer
-    const allFeedbacks = await Feedback.find({ interviewerId: interview.interviewerId });
-    if (allFeedbacks.length > 0) {
-      const totalScore = allFeedbacks.reduce((acc, f) => acc + (f.overallScore || 0), 0);
-      const avgScore = totalScore / allFeedbacks.length;
-      const starRating = Number((avgScore / 20).toFixed(1)); // Convert 100-pt to 5.0 star scale
-      await require('../models/User').findByIdAndUpdate(interview.interviewerId, {
-        rating: Math.min(5.0, Math.max(1.0, starRating)),
-        reviewsCount: allFeedbacks.length
+    // Send in-app notification to candidate (F4)
+    try {
+      await Notification.create({
+        userId: interview.candidateId,
+        type: 'feedback_submitted',
+        title: 'Interview Feedback Published',
+        message: `Your evaluator has submitted detailed performance feedback for "${interview.topic}".`,
+        link: `/feedback/${interview._id}`,
+        interviewId: interview._id
       });
+    } catch (notifErr) {
+      console.warn('Notification creation notice:', notifErr.message);
     }
 
     const populated = await Feedback.findById(feedback._id)

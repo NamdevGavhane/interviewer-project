@@ -42,6 +42,13 @@ const FeedbackReport = () => {
   const [downloading, setDownloading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Candidate Review State (F1)
+  const [candidateReview, setCandidateReview] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewMsg, setReviewMsg] = useState(null);
+
   // Form states for submitting evaluation
   const [formData, setFormData] = useState({
     overallScore: '',
@@ -77,6 +84,16 @@ const FeedbackReport = () => {
       const interviewRes = await apiClient.get(`/api/interviews/${interviewId}`).catch(() => null);
       if (interviewRes?.data) {
         setInterview(interviewRes.data);
+      }
+
+      // Fetch existing review for this interview
+      try {
+        const reviewRes = await apiClient.get(`/api/reviews/interview/${interviewId}`);
+        if (reviewRes?.data) {
+          setCandidateReview(reviewRes.data);
+        }
+      } catch (rErr) {
+        setCandidateReview(null);
       }
 
       // Fetch evaluation feedback
@@ -131,6 +148,25 @@ const FeedbackReport = () => {
     String(interview.interviewerId?._id || interview.interviewerId) === String(user._id) ||
     user.role === 'admin'
   );
+
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    setReviewMsg(null);
+    try {
+      setSubmittingReview(true);
+      const res = await apiClient.post('/api/reviews', {
+        interviewId,
+        rating: Number(reviewRating),
+        comment: reviewComment.trim()
+      });
+      setCandidateReview(res.data?.review || res.data);
+      setReviewMsg({ type: 'success', text: 'Thank you! Your rating and review have been recorded.' });
+    } catch (err) {
+      setReviewMsg({ type: 'error', text: err.response?.data?.message || err.message || 'Failed to submit review' });
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   const handleAddStrength = () => {
     if (!formData.strengthInput.trim()) return;
@@ -693,6 +729,94 @@ const FeedbackReport = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Candidate Review Section (F1) */}
+          {user && interview && String(interview.candidateId?._id || interview.candidateId) === String(user._id) && (
+            <div className="card border-amber-200 bg-amber-50/30">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                    <span>⭐ Rate Your Interviewer</span>
+                    {candidateReview && (
+                      <span className="badge badge-warning text-xs font-semibold">{candidateReview.rating} / 5 Stars</span>
+                    )}
+                  </h4>
+                  <p className="text-xs text-muted">
+                    {candidateReview 
+                      ? `Your review for ${interview.interviewerId?.name || 'your interviewer'} was submitted on ${new Date(candidateReview.createdAt).toLocaleDateString()}.`
+                      : `How was your session with ${interview.interviewerId?.name || 'your interviewer'}? Your rating helps maintain top-tier evaluation standards.`}
+                  </p>
+                </div>
+              </div>
+
+              {candidateReview ? (
+                <div className="p-3 bg-white rounded-xl border border-amber-200">
+                  <div className="flex items-center gap-1 text-amber-500 mb-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <span key={star} className="text-base">
+                        {star <= candidateReview.rating ? '★' : '☆'}
+                      </span>
+                    ))}
+                    <span className="text-xs font-bold text-slate-800 ml-1.5">{candidateReview.rating} out of 5</span>
+                  </div>
+                  {candidateReview.comment && (
+                    <p className="text-xs text-slate-700 italic mt-1">"{candidateReview.comment}"</p>
+                  )}
+                </div>
+              ) : (
+                <form onSubmit={handleSubmitReview} className="flex flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-700">Star Rating:</span>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          className="text-xl leading-none transition-transform hover:scale-125 focus:outline-none"
+                          style={{
+                            color: star <= reviewRating ? '#f59e0b' : '#cbd5e1',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '0 2px'
+                          }}
+                          onClick={() => setReviewRating(star)}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-xs font-bold text-amber-700">{reviewRating} Stars</span>
+                  </div>
+
+                  <textarea
+                    rows={2}
+                    placeholder="Write a brief review of your interviewer's guidance, depth, and helpfulness (optional)..."
+                    className="input-field text-xs py-2 px-3 w-full"
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    maxLength={1000}
+                  />
+
+                  <div className="flex justify-between items-center">
+                    {reviewMsg ? (
+                      <span className={`text-xs font-semibold ${reviewMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                        {reviewMsg.text}
+                      </span>
+                    ) : <span />}
+                    <button
+                      type="submit"
+                      disabled={submittingReview}
+                      className="btn btn-primary text-xs py-1.5 px-4 font-bold flex items-center gap-1.5"
+                    >
+                      {submittingReview ? <Loader2 size={13} className="animate-spin" /> : null}
+                      <span>Submit Interviewer Review</span>
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
         </div>

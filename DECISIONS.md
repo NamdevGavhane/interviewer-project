@@ -29,4 +29,17 @@ Allowing direct scheduling without prior payment allows candidates to book slots
 5. **Unified Refund & Payout Controls**: Centralized in `services/refundService.js` enforcing `Settings.refundWindowHours` and `Settings.payoutHoldDays` for interviewer withdrawals.
 6. **Timezone Accuracy**: Pure UTC dates generated via `luxon` in `services/availabilityService.js`.
 
+---
+
+## Decision F1/F2/F3: Decoupling Interviewer Rating from Candidate Performance
+
+### Context
+Previously, `feedbackRoutes.js` averaged candidate technical scores (`f.overallScore / 20`) to compute the interviewer's own public rating. An evaluator giving rigorous or low technical scores to an underperforming candidate suffered an unfair penalty to their personal star rating.
+
+### Decision
+1. **Dedicated Review Collection**: Created `Review` model (`interviewId` unique, `candidateId`, `interviewerId`, `rating: 1..5`, `comment`).
+2. **Authentic Interviewer Ratings**: Interviewer `rating` and `reviewsCount` are calculated exclusively from candidate `Review` submissions.
+3. **Session Timing & Completion Gates**: Feedback cannot be submitted before session start time or on cancelled sessions. Submitting evaluation feedback automatically marks the interview session `completed` with a `completedAt` timestamp and triggers an in-app candidate notification.
+
+
 

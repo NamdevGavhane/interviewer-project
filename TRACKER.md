@@ -18,10 +18,10 @@
 | [x] | P7 | Done | backend/routes/paymentRoutes.js, backend/models/PendingBooking.js, backend/tests/p_series_payments.test.js | Server-side pricing calculation source of truth; client fee overrides discarded; frozen in PendingBooking. Tested in Jest. |
 | [x] | P8 | Done | backend/services/availabilityService.js, backend/tests/p_series_payments.test.js | Luxon DateTime interprets AvailabilityRule in rule.timezone, generating exact UTC instants without server local drift. Tested for Asia/Kolkata & America/New_York. |
 | [x] | P9 | Done | src/utils/invoiceGenerator.js, backend/models/Payment.js, backend/models/Counter.js | Removed INV-OFFICIAL fallback and client recalculations; requires verified immutable Payment fields (invoiceNumber, sessionFee, platformFee, gstAmount, amount). |
-| [ ] | F1 | Pending | | |
-| [ ] | F2 | Pending | | |
-| [ ] | F3 | Pending | | |
-| [ ] | F4 | Pending | | |
+| [x] | F1 | Done | backend/models/Review.js, backend/routes/reviewRoutes.js, backend/routes/feedbackRoutes.js, src/pages/FeedbackReport.jsx, backend/tests/f_series_feedback.test.js | Decoupled candidate score from interviewer rating; created Review model, /api/reviews routes, star rating computed strictly from reviews average, added candidate rating card on FeedbackReport. |
+| [x] | F2 | Done | backend/routes/feedbackRoutes.js, backend/tests/f_series_feedback.test.js | Timing and status gates enforced: feedback rejected before session startTime or if cancelled, restricted to assigned interviewer/admin. |
+| [x] | F3 | Done | backend/routes/feedbackRoutes.js, backend/routes/interviewRoutes.js, backend/tests/f_series_feedback.test.js | Server-controlled interview completion: status transitioned to 'completed' with completedAt timestamp on evaluation submission or authorized post-session close. |
+| [x] | F4 | Done | backend/routes/feedbackRoutes.js, backend/models/Feedback.js, backend/tests/f_series_feedback.test.js | Unique compound index on Feedback.interviewId; in-app notification automatically generated and sent to candidate on feedback publication. |
 | [ ] | O1 | Pending | | |
 | [ ] | O2 | Pending | | |
 | [ ] | O3 | Pending | | |
