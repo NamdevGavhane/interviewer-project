@@ -8,6 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Fetch current user from /api/users/me
+  // S6: User identity and role come SOLELY from the authenticated server endpoint
   const fetchCurrentUser = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -20,8 +21,6 @@ export const AuthProvider = ({ children }) => {
       const response = await apiClient.get('/api/users/me');
       if (response?.data) {
         setUser(response.data);
-        localStorage.setItem('userRole', response.data.role);
-        localStorage.setItem('userId', response.data._id);
       } else {
         setUser(null);
       }
@@ -29,8 +28,8 @@ export const AuthProvider = ({ children }) => {
       console.warn('Failed to fetch current user session:', err.message);
       setUser(null);
       localStorage.removeItem('token');
-      localStorage.removeItem('userId');
       localStorage.removeItem('userRole');
+      localStorage.removeItem('userId');
     } finally {
       setLoading(false);
     }
@@ -45,8 +44,6 @@ export const AuthProvider = ({ children }) => {
     const response = await apiClient.post('/api/users/login', { email, password });
     if (response?.data?.token) {
       localStorage.setItem('token', response.data.token);
-      localStorage.setItem('userId', response.data.user?.id || response.data.user?._id);
-      localStorage.setItem('userRole', response.data.user?.role || 'candidate');
       await fetchCurrentUser();
     }
     return response;
@@ -57,8 +54,6 @@ export const AuthProvider = ({ children }) => {
     const response = await apiClient.post('/api/users/google-login', { credential });
     if (response?.data?.token) {
       localStorage.setItem('token', response.data.token);
-      localStorage.setItem('userId', response.data.user?.id || response.data.user?._id);
-      localStorage.setItem('userRole', response.data.user?.role || 'candidate');
       await fetchCurrentUser();
     }
     return response;
@@ -69,8 +64,6 @@ export const AuthProvider = ({ children }) => {
     const response = await apiClient.post('/api/users/register', userData);
     if (response?.data?.token) {
       localStorage.setItem('token', response.data.token);
-      localStorage.setItem('userId', response.data.user?.id || response.data.user?._id);
-      localStorage.setItem('userRole', response.data.user?.role || 'candidate');
       await fetchCurrentUser();
     }
     return response;
@@ -84,13 +77,14 @@ export const AuthProvider = ({ children }) => {
       // Ignore network errors on logout
     } finally {
       localStorage.removeItem('token');
-      localStorage.removeItem('userId');
       localStorage.removeItem('userRole');
+      localStorage.removeItem('userId');
       setUser(null);
       window.location.href = '/login';
     }
   };
 
+  // S6: Role derived strictly from verified user object
   const role = user?.role || 'guest';
   const isAuthenticated = Boolean(user);
 
@@ -116,5 +110,3 @@ export const useAuth = () => {
   }
   return context;
 };
-
-export default AuthContext;

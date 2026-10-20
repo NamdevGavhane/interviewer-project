@@ -36,8 +36,21 @@ const passwordResetLimiter = rateLimit({
   }
 });
 
+// Stricter rate limiter for live chat: 60 messages per minute
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many chat messages sent. Please slow down.'
+  }
+});
+
 module.exports = {
   apiLimiter,
   authLimiter,
-  passwordResetLimiter
+  passwordResetLimiter,
+  chatLimiter
 };

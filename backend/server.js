@@ -9,64 +9,115 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
-// JWT Secret configuration with safe cloud deployment fallback
-if (!process.env.JWT_SECRET) {
-  console.warn('\n============================================================');
-  console.warn('⚠️ WARNING: JWT_SECRET environment variable is missing!');
-  console.warn('Using a fallback secret to allow cloud service to boot successfully.');
-  console.warn('Please add JWT_SECRET in your Render Environment Variables for maximum security.');
-  console.warn('============================================================\n');
-  process.env.JWT_SECRET = 'interviewer_pro_jwt_secure_secret_production_ready_98421';
+const isProd = process.env.NODE_ENV === 'production';
+
+// S2: Secret validation - Server must refuse to boot without required secrets (min 32 chars)
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  console.error('\n============================================================');
+  console.error('FATAL CONFIGURATION ERROR: JWT_SECRET is missing or less than 32 characters!');
+  console.error('Server cannot start securely. Please set a strong JWT_SECRET.');
+  console.error('============================================================\n');
+  process.exit(1);
 }
-if (!process.env.JWT_REFRESH_SECRET) {
-  process.env.JWT_REFRESH_SECRET = 'interviewer_pro_jwt_refresh_secure_secret_prod_61904';
+
+if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
+  console.error('\n============================================================');
+  console.error('FATAL CONFIGURATION ERROR: JWT_REFRESH_SECRET is missing or less than 32 characters!');
+  console.error('Server cannot start securely. Please set a strong JWT_REFRESH_SECRET.');
+  console.error('============================================================\n');
+  process.exit(1);
+}
+
+if (isProd) {
+  if (!process.env.MONGO_URI) {
+    console.error('FATAL CONFIGURATION ERROR: MONGO_URI is missing in production!');
+    process.exit(1);
+  }
+  if (!process.env.FRONTEND_URL) {
+    console.error('FATAL CONFIGURATION ERROR: FRONTEND_URL is missing in production!');
+    process.exit(1);
+  }
 }
 
 const { apiLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
 
-// Security Headers with Helmet
+// Trust reverse proxy (Vercel/Render) for accurate IP resolution and secure cookies
+app.set('trust proxy', 1);
+
+// S7: Security Headers with Helmet CSP tailored for SPA, Razorpay & Google Sign-In
 app.use(helmet({
-  crossOriginResourcePolicy: false,
-  crossOriginEmbedderPolicy: false
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        'https://checkout.razorpay.com',
+        'https://accounts.google.com'
+      ],
+      frameSrc: [
+        "'self'",
+        'https://api.razorpay.com',
+        'https://accounts.google.com'
+      ],
+      connectSrc: [
+        "'self'",
+        'https://api.razorpay.com',
+        'https://lumberjack.razorpay.com',
+        'https://accounts.google.com',
+        'wss:',
+        'ws:'
+      ],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:', 'http:'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: isProd ? [] : null
+    }
+  }
 }));
 
-// CORS Configuration (Allow frontend with credentials for cookies)
-const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173'
-];
+// S3: CORS Configuration - Allow ONLY origins from FRONTEND_URL (comma-separated), reject all others
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(o => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // allow requests with no origin (e.g. mobile apps, curl)
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow non-browser requests (e.g. server-to-server, curl, test suites)
+    if (!origin) {
       return callback(null, true);
     }
-    return callback(null, true); // Permissive in dev, origins validated
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    if (allowedOrigins.includes(cleanOrigin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS policy violation: Origin "${origin}" is not authorized.`));
   },
   credentials: true
 }));
 
 app.use(cookieParser());
 
-// Webhook raw body parser for Razorpay webhook in Phase 3
+// S7: Global body limits - 1MB limit globally; raw parser strictly for webhooks
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/payment/webhook') {
     express.raw({ type: 'application/json' })(req, res, next);
   } else {
-    express.json({ limit: '15mb' })(req, res, next);
+    express.json({ limit: '1mb' })(req, res, next);
   }
 });
 
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Global Rate Limiting
 app.use('/api', apiLimiter);
 
-// Health check route (Public)
+// Health check routes
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -77,10 +128,12 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({
-    success: true,
-    status: 'healthy',
-    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+  const isDbConnected = mongoose.connection.readyState === 1;
+  const statusCode = isDbConnected ? 200 : 503;
+  res.status(statusCode).json({
+    success: isDbConnected,
+    status: isDbConnected ? 'healthy' : 'degraded',
+    database: isDbConnected ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });
 });
@@ -118,7 +171,21 @@ app.use((req, res) => {
 
 // Centralized Error Handling Middleware
 app.use((err, req, res, next) => {
-  console.error('Server error:', err);
+  if (err.message && err.message.includes('CORS policy violation')) {
+    return res.status(403).json({
+      success: false,
+      message: err.message
+    });
+  }
+
+  // Handle payload too large
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      message: 'Request entity too large: Maximum payload allowed is 1MB.'
+    });
+  }
+
   const status = err.status || err.statusCode || 500;
   res.status(status).json({
     success: false,
@@ -127,7 +194,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Database Connection & Server Startup with Automatic Reconnection
+// Database Connection & Server Startup
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/interviewpro';
 
@@ -148,32 +215,36 @@ const connectDB = async () => {
   } catch (err) {
     isConnecting = false;
     console.error('Failed to connect to MongoDB:', err.message);
-    // Auto-retry connection in 3 seconds
-    setTimeout(connectDB, 3000);
+    if (process.env.NODE_ENV !== 'test') {
+      setTimeout(connectDB, 3000);
+    }
   }
 };
 
 mongoose.connection.on('disconnected', () => {
-  console.warn('MongoDB connection lost. Reconnecting in 2 seconds...');
-  setTimeout(connectDB, 2000);
+  if (process.env.NODE_ENV !== 'test') {
+    console.warn('MongoDB connection lost. Reconnecting in 2 seconds...');
+    setTimeout(connectDB, 2000);
+  }
 });
 
 mongoose.connection.on('error', (err) => {
   console.error('MongoDB connection error:', err.message);
 });
 
-// Middleware to ensure DB connection is ready before processing API requests
-app.use('/api', (req, res, next) => {
-  if (mongoose.connection.readyState !== 1 && !isConnecting) {
-    connectDB();
-  }
-  next();
-});
+let server = null;
+if (process.env.NODE_ENV !== 'test') {
+  app.use('/api', (req, res, next) => {
+    if (mongoose.connection.readyState !== 1 && !isConnecting) {
+      connectDB();
+    }
+    next();
+  });
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`InterviewPro server listening on 0.0.0.0:${PORT}`);
-  connectDB();
-});
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`InterviewPro server listening on 0.0.0.0:${PORT}`);
+    connectDB();
+  });
+}
 
 module.exports = { app, server, connectDB };
-

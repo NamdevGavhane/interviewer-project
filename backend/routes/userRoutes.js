@@ -34,6 +34,10 @@ const {
   sendPasswordResetEmail,
   isSmtpConfigured
 } = require('../utils/mailer');
+const mongoose = require('mongoose');
+const { validateObjectId } = require('../middleware/validateObjectId');
+
+const PUBLIC_PROFESSIONAL_FIELDS = '_id name title designation company domain hourlyRate bio skills rating reviewsCount avatar role accountStatus isVerified approvalStatus experience linkedin createdAt';
 
 // Initialize Google OAuth2 Client
 const getGoogleClient = () => {
@@ -50,6 +54,13 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
     const { name, email, password, title, bio, skills, avatar } = req.body;
     const cleanEmail = email.trim().toLowerCase();
 
+    if (avatar && (avatar.startsWith('data:') || avatar.length > 2000)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Base64 avatars are not allowed. Please provide an image URL.'
+      });
+    }
+
     const existingUser = await User.findOne({ email: cleanEmail });
     if (existingUser) {
       return res.status(409).json({
@@ -65,8 +76,9 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
       skillsArray = skills.split(',').map(s => s.trim()).filter(Boolean);
     }
 
-    // Generate email verification token (crypto random)
+    // Generate email verification token (crypto random) and store SHA-256 hash
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedVerificationToken = User.hashToken(verificationToken);
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
 
     const newUser = new User({
@@ -78,7 +90,7 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
       approvalStatus: 'approved',
       isVerified: false,
       isEmailVerified: false,
-      emailVerificationToken: verificationToken,
+      emailVerificationToken: hashedVerificationToken,
       emailVerificationExpires: verificationExpires,
       isDeactivated: false,
       title: title || 'Candidate',
@@ -139,8 +151,9 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
 router.get('/verify-email/:token', async (req, res) => {
   try {
     const { token } = req.params;
+    const hashedToken = User.hashToken(token);
     const user = await User.findOne({
-      emailVerificationToken: token,
+      emailVerificationToken: hashedToken,
       emailVerificationExpires: { $gt: new Date() }
     });
 
@@ -499,7 +512,7 @@ router.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSch
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
-    user.resetPasswordToken = resetToken;
+    user.resetPasswordToken = User.hashToken(resetToken);
     user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
 
@@ -526,9 +539,10 @@ router.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSch
 router.post('/reset-password', passwordResetLimiter, validate(resetPasswordSchema), async (req, res) => {
   try {
     const { token, password } = req.body;
+    const hashedToken = User.hashToken(token);
 
     const user = await User.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: new Date() }
     });
 
@@ -567,8 +581,9 @@ router.get('/invitation/:token', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invitation token is required.' });
     }
 
+    const hashedToken = User.hashToken(token);
     const user = await User.findOne({
-      invitationToken: token,
+      invitationToken: hashedToken,
       invitationExpires: { $gt: new Date() }
     });
 
@@ -609,9 +624,10 @@ router.get('/invitation/:token', async (req, res) => {
 router.post('/accept-invite', validate(acceptInviteSchema), async (req, res) => {
   try {
     const { token, password } = req.body;
+    const hashedToken = User.hashToken(token);
 
     const user = await User.findOne({
-      invitationToken: token,
+      invitationToken: hashedToken,
       invitationExpires: { $gt: new Date() }
     });
 
@@ -672,37 +688,124 @@ router.get('/me', authenticate, async (req, res) => {
 });
 
 // @route   GET /api/users
-// @desc    Get users list (authenticated candidates/professionals/admins)
+// @desc    Get users list (candidates get only verified active professionals with public fields; admins get paginated full list)
 // @access  Protected
 router.get('/', authenticate, async (req, res) => {
   try {
-    const filter = {};
-    if (req.query.role) {
-      filter.role = req.query.role;
-      if (req.query.role === 'professional' && req.query.includePending !== 'true') {
-        filter.approvalStatus = { $nin: ['pending', 'rejected'] };
-        filter.accountStatus = 'active';
-        filter.isDeactivated = { $ne: true };
-        filter.isVerified = true;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const skip = (page - 1) * limit;
+
+    const isAdmin = req.user.role === 'admin';
+
+    if (isAdmin) {
+      const filter = {};
+      if (req.query.role) filter.role = req.query.role;
+      if (req.query.search) {
+        const s = req.query.search.trim();
+        filter.$or = [
+          { name: { $regex: s, $options: 'i' } },
+          { email: { $regex: s, $options: 'i' } },
+          { company: { $regex: s, $options: 'i' } },
+          { title: { $regex: s, $options: 'i' } }
+        ];
       }
+      const total = await User.countDocuments(filter);
+      const users = await User.find(filter)
+        .select('-password')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      return res.json({
+        success: true,
+        data: users,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit) || 1
+        }
+      });
     }
-    const users = await User.find(filter).select('-password');
-    res.json(users);
+
+    // Candidate or professional caller: strictly limited to active, approved, verified professionals
+    const filter = {
+      role: 'professional',
+      accountStatus: 'active',
+      approvalStatus: 'approved',
+      isVerified: true,
+      isDeactivated: { $ne: true }
+    };
+
+    if (req.query.search) {
+      const s = req.query.search.trim();
+      filter.$or = [
+        { name: { $regex: s, $options: 'i' } },
+        { title: { $regex: s, $options: 'i' } },
+        { designation: { $regex: s, $options: 'i' } },
+        { company: { $regex: s, $options: 'i' } },
+        { skills: { $in: [new RegExp(s, 'i')] } }
+      ];
+    }
+
+    const total = await User.countDocuments(filter);
+    const professionals = await User.find(filter)
+      .select(PUBLIC_PROFESSIONAL_FIELDS)
+      .sort({ rating: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      success: true,
+      data: professionals,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
 // @route   GET /api/users/:id
-// @desc    Get user by ID
+// @desc    Get user by ID (Public profile for professionals; full profile only for self or admin)
 // @access  Protected
-router.get('/:id', authenticate, async (req, res) => {
+router.get('/:id', authenticate, validateObjectId('id'), async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    const { id } = req.params;
+    const isSelf = req.user._id.toString() === id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (isSelf || isAdmin) {
+      const user = await User.findById(id).select('-password');
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      return res.json({ success: true, data: user });
     }
-    res.json(user);
+
+    // Non-admin requesting another user's profile: allowed ONLY if target is an active verified professional
+    const professional = await User.findOne({
+      _id: id,
+      role: 'professional',
+      accountStatus: 'active',
+      approvalStatus: 'approved',
+      isVerified: true,
+      isDeactivated: { $ne: true }
+    }).select(PUBLIC_PROFESSIONAL_FIELDS);
+
+    if (!professional) {
+      return res.status(404).json({
+        success: false,
+        message: 'Professional profile not found or is currently not active.'
+      });
+    }
+
+    res.json({ success: true, data: professional });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -711,7 +814,7 @@ router.get('/:id', authenticate, async (req, res) => {
 // @route   PUT /api/users/:id
 // @desc    Update user profile (Enforces ownership: user can only edit self unless admin)
 // @access  Protected
-router.put('/:id', authenticate, validate(updateUserSchema), async (req, res) => {
+router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSchema), async (req, res) => {
   try {
     const isSelf = req.user._id.toString() === req.params.id;
     const isAdmin = req.user.role === 'admin';
@@ -741,6 +844,13 @@ router.put('/:id', authenticate, validate(updateUserSchema), async (req, res) =>
       linkedin,
       avatar
     } = req.body;
+
+    if (avatar && (avatar.startsWith('data:') || avatar.length > 2000)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Base64 avatars are not allowed. Please provide an image URL.'
+      });
+    }
 
     const updateData = {};
     if (name !== undefined) updateData.name = name;

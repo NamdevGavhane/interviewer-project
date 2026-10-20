@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Notification = require('../models/Notification');
 const { authenticate } = require('../middleware/auth');
+const { validateObjectId } = require('../middleware/validateObjectId');
 
 router.use(authenticate);
 
@@ -30,7 +31,7 @@ router.get('/', async (req, res) => {
 // @route   PATCH /api/notifications/:id/read
 // @desc    Mark a single notification as read
 // @access  Protected
-router.patch('/:id/read', async (req, res) => {
+router.patch('/:id/read', validateObjectId('id'), async (req, res) => {
   try {
     const notification = await Notification.findOneAndUpdate(
       { _id: req.params.id, userId: req.user._id },
@@ -67,7 +68,7 @@ router.patch('/read-all', async (req, res) => {
 // @route   DELETE /api/notifications/:id
 // @desc    Delete a notification
 // @access  Protected
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateObjectId('id'), async (req, res) => {
   try {
     await Notification.findOneAndDelete({
       _id: req.params.id,

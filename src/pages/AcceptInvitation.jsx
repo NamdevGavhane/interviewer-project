@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Eye, EyeOff, ShieldCheck, CheckCircle2, AlertCircle, Briefcase, Building, Clock, ArrowRight, Lock, KeyRound } from 'lucide-react';
-import { API_BASE_URL } from '../config/api';
+import apiClient from '../utils/apiClient';
 
 const AcceptInvitation = () => {
   const [searchParams] = useSearchParams();
@@ -31,16 +31,10 @@ const AcceptInvitation = () => {
       try {
         setLoading(true);
         setError('');
-        const res = await fetch(`${API_BASE_URL}/api/users/invitation/${encodeURIComponent(token)}`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.message || 'Invitation is invalid or has expired.');
-        }
-
-        setInvitationData(data);
+        const res = await apiClient.get(`/api/users/invitation/${encodeURIComponent(token)}`);
+        setInvitationData(res.data || res);
       } catch (err) {
-        setError(err.message);
+        setError(err.message || 'Invitation is invalid or has expired.');
       } finally {
         setLoading(false);
       }
@@ -65,19 +59,10 @@ const AcceptInvitation = () => {
 
     try {
       setSubmitting(true);
-      const res = await fetch(`${API_BASE_URL}/api/users/accept-invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          password
-        })
+      await apiClient.post('/api/users/accept-invite', {
+        token,
+        password
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to set password.');
-      }
 
       setSubmitSuccess(true);
     } catch (err) {

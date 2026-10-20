@@ -6,6 +6,7 @@ const Settings = require('../models/Settings');
 const Interview = require('../models/Interview');
 const User = require('../models/User');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { validateObjectId } = require('../middleware/validateObjectId');
 const {
   generateSlotsForInterviewer,
   atomicBookSlot,
@@ -95,7 +96,7 @@ router.post('/rules', authenticate, requireRole('professional', 'admin'), async 
 // @route   GET /api/availability/:interviewerId
 // @desc    Get all bookable (unbooked) slots for an interviewer within a date window
 // @access  Protected
-router.get('/:interviewerId', authenticate, async (req, res) => {
+router.get('/:interviewerId', authenticate, validateObjectId('interviewerId'), async (req, res) => {
   try {
     const { interviewerId } = req.params;
     const { from, to } = req.query;

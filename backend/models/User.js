@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -45,17 +46,21 @@ const userSchema = new mongoose.Schema({
   },
   emailVerificationToken: {
     type: String,
+    select: false,
     index: true,
   },
   emailVerificationExpires: {
     type: Date,
+    select: false,
   },
   resetPasswordToken: {
     type: String,
+    select: false,
     index: true,
   },
   resetPasswordExpires: {
     type: Date,
+    select: false,
   },
   approvalStatus: {
     type: String,
@@ -120,10 +125,12 @@ const userSchema = new mongoose.Schema({
   },
   invitationToken: {
     type: String,
+    select: false,
     index: true,
   },
   invitationExpires: {
     type: Date,
+    select: false,
   },
   invitedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -135,7 +142,41 @@ const userSchema = new mongoose.Schema({
   acceptedAt: {
     type: Date,
   }
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: {
+    transform: function(doc, ret) {
+      delete ret.password;
+      delete ret.resetPasswordToken;
+      delete ret.resetPasswordExpires;
+      delete ret.emailVerificationToken;
+      delete ret.emailVerificationExpires;
+      delete ret.invitationToken;
+      delete ret.invitationExpires;
+      delete ret.__v;
+      return ret;
+    }
+  },
+  toObject: {
+    transform: function(doc, ret) {
+      delete ret.password;
+      delete ret.resetPasswordToken;
+      delete ret.resetPasswordExpires;
+      delete ret.emailVerificationToken;
+      delete ret.emailVerificationExpires;
+      delete ret.invitationToken;
+      delete ret.invitationExpires;
+      delete ret.__v;
+      return ret;
+    }
+  }
+});
+
+// Static helper to create SHA-256 token hash
+userSchema.statics.hashToken = function(rawToken) {
+  if (!rawToken || typeof rawToken !== 'string') return '';
+  return crypto.createHash('sha256').update(rawToken).digest('hex');
+};
 
 // Pre-save hook: Hash password securely using bcrypt
 userSchema.pre('save', async function() {

@@ -27,7 +27,6 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import Peer from 'peerjs';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../utils/apiClient';
-import { API_BASE_URL } from '../config/api';
 import Avatar from '../components/Avatar';
 import './VideoRoom.css';
 

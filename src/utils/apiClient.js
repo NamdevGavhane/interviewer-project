@@ -79,9 +79,6 @@ export const apiClient = async (endpoint, options = {}) => {
       if (refreshRes.ok && refreshData.data?.token) {
         const newToken = refreshData.data.token;
         localStorage.setItem('token', newToken);
-        if (refreshData.data.user) {
-          localStorage.setItem('userId', refreshData.data.user.id || refreshData.data.user._id);
-        }
         processQueue(null, newToken);
         isRefreshing = false;
 

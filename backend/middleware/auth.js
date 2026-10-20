@@ -205,7 +205,7 @@ const requireActiveProfessional = (req, res, next) => {
     });
   }
 
-  if (req.user.isDeactivated || user.accountStatus === 'deactivated') {
+  if (req.user.isDeactivated || req.user.accountStatus === 'deactivated') {
     return res.status(403).json({
       success: false,
       message: 'Account deactivated: Your professional account has been suspended.',

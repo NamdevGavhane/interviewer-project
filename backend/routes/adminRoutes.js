@@ -28,7 +28,7 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
         existingUser.designation = designation.trim();
         existingUser.title = designation.trim();
         existingUser.experience = experience.trim();
-        existingUser.invitationToken = token;
+        existingUser.invitationToken = User.hashToken(token);
         existingUser.invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         existingUser.invitedAt = new Date();
         existingUser.invitedBy = req.user._id;
@@ -75,7 +75,7 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
       approvalStatus: 'approved',
       isVerified: true,
       isDeactivated: false,
-      invitationToken: token,
+      invitationToken: User.hashToken(token),
       invitationExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       invitedBy: req.user._id,
       invitedAt: new Date(),
@@ -147,7 +147,7 @@ router.post('/invitations/:id/resend', async (req, res) => {
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    user.invitationToken = token;
+    user.invitationToken = User.hashToken(token);
     user.invitationExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     user.accountStatus = 'invited';
     user.invitedAt = new Date();

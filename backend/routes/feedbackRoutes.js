@@ -3,6 +3,7 @@ const router = express.Router();
 const Feedback = require('../models/Feedback');
 const Interview = require('../models/Interview');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { validateObjectId } = require('../middleware/validateObjectId');
 
 // All feedback routes require authentication
 router.use(authenticate);
@@ -117,7 +118,7 @@ router.post('/', async (req, res) => {
 // @route   GET /api/feedbacks/interview/:interviewId
 // @desc    Get feedback report for a specific interview (Ownership enforced; returns 404 if not submitted yet)
 // @access  Protected
-router.get('/interview/:interviewId', async (req, res) => {
+router.get('/interview/:interviewId', validateObjectId('interviewId'), async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.interviewId);
     if (!interview) {
@@ -157,7 +158,7 @@ router.get('/interview/:interviewId', async (req, res) => {
 // @route   GET /api/feedbacks/candidate/:candidateId
 // @desc    Get all feedback reports for a candidate (Candidate self or Admin)
 // @access  Protected
-router.get('/candidate/:candidateId', async (req, res) => {
+router.get('/candidate/:candidateId', validateObjectId('candidateId'), async (req, res) => {
   try {
     const isSelf = req.user._id.toString() === req.params.candidateId;
     const isAdmin = req.user.role === 'admin';

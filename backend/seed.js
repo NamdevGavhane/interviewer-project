@@ -25,8 +25,19 @@ const seedDatabase = async () => {
     console.log(`Interview options verified (${config.topics.length} topics, ${config.companies.length} companies).`);
 
     // 3. Ensure Super Admin Account Exists (Idempotent)
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@interviewpro.com';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456';
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (!adminEmail || !adminEmail.includes('@')) {
+      console.error('FATAL: ADMIN_EMAIL environment variable is required to seed the admin account.');
+      process.exit(1);
+    }
+
+    if (!adminPassword || adminPassword.length < 12) {
+      console.error('FATAL: ADMIN_PASSWORD environment variable is required and must be at least 12 characters.');
+      process.exit(1);
+    }
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(adminPassword, salt);
 

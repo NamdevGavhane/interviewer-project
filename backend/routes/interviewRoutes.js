@@ -5,6 +5,8 @@ const User = require('../models/User');
 const Settings = require('../models/Settings');
 const { releaseSlotForInterview, atomicBookSlot } = require('../services/availabilityService');
 const { authenticate, requireRole, requireActiveProfessional } = require('../middleware/auth');
+const { chatLimiter } = require('../middleware/rateLimiter');
+const { validateObjectId } = require('../middleware/validateObjectId');
 
 // Apply authentication to ALL interview routes
 router.use(authenticate);
@@ -112,7 +114,7 @@ router.get('/', async (req, res) => {
 // @route   GET /api/interviews/:id
 // @desc    Get single interview details (Ownership enforced)
 // @access  Protected
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateObjectId('id'), async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.id)
       .populate('candidateId', 'name email avatar role')
@@ -143,7 +145,7 @@ router.get('/:id', async (req, res) => {
 // @route   PATCH /api/interviews/:id/status
 // @desc    Update interview status (Ownership enforced)
 // @access  Protected
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status', validateObjectId('id'), async (req, res) => {
   try {
     const { status } = req.body;
     if (!['scheduled', 'completed', 'cancelled'].includes(status)) {
@@ -211,7 +213,7 @@ router.patch('/:id/status', async (req, res) => {
 // @route   POST /api/interviews/:id/questions
 // @desc    Save actual questions and transcript during live session (Interviewer or Admin only)
 // @access  Protected
-router.post('/:id/questions', async (req, res) => {
+router.post('/:id/questions', validateObjectId('id'), async (req, res) => {
   try {
     const { questions, transcript } = req.body;
     const interview = await Interview.findById(req.params.id);
@@ -246,7 +248,7 @@ router.post('/:id/questions', async (req, res) => {
 // @route   GET /api/interviews/:id/questions
 // @desc    Get live questions for an interview (Ownership enforced)
 // @access  Protected
-router.get('/:id/questions', async (req, res) => {
+router.get('/:id/questions', validateObjectId('id'), async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.id);
     if (!interview) return res.status(404).json({ success: false, message: 'Interview not found' });
@@ -272,7 +274,7 @@ router.get('/:id/questions', async (req, res) => {
 // @route   GET /api/interviews/:id/room-access
 // @desc    Verify room access, timing window, and get ICE/TURN credentials
 // @access  Protected
-router.get('/:id/room-access', async (req, res) => {
+router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.id)
       .populate('candidateId', 'name email avatar')
@@ -327,19 +329,44 @@ router.get('/:id/room-access', async (req, res) => {
 });
 
 // @route   POST /api/interviews/:id/chat
-// @desc    Append chat message to interview transcript incrementally
+// @desc    Append chat message to interview transcript incrementally (Participants or Admin only)
 // @access  Protected
-router.post('/:id/chat', async (req, res) => {
+router.post('/:id/chat', validateObjectId('id'), chatLimiter, async (req, res) => {
   try {
-    const { text, sender } = req.body;
-    if (!text) return res.status(400).json({ success: false, message: 'Text is required' });
+    const { text } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ success: false, message: 'Message text is required.' });
+    }
+
+    const trimmedText = text.trim();
+    if (trimmedText.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message exceeds maximum allowed length of 2000 characters.'
+      });
+    }
 
     const interview = await Interview.findById(req.params.id);
-    if (!interview) return res.status(404).json({ success: false, message: 'Interview not found' });
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview session not found.' });
+    }
 
+    const isCandidate = String(interview.candidateId) === String(req.user._id);
+    const isInterviewer = String(interview.interviewerId) === String(req.user._id);
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isCandidate && !isInterviewer && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only the candidate, assigned interviewer, or platform admin may send chat messages.'
+      });
+    }
+
+    const senderRole = isCandidate ? 'candidate' : (isInterviewer ? 'interviewer' : 'admin');
     const chatItem = {
-      role: sender || req.user.name,
-      text,
+      role: `${req.user.name} (${senderRole})`,
+      text: trimmedText,
+      senderId: req.user._id,
       timestamp: new Date()
     };
 
