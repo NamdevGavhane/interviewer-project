@@ -41,5 +41,20 @@ Previously, `feedbackRoutes.js` averaged candidate technical scores (`f.overallS
 2. **Authentic Interviewer Ratings**: Interviewer `rating` and `reviewsCount` are calculated exclusively from candidate `Review` submissions.
 3. **Session Timing & Completion Gates**: Feedback cannot be submitted before session start time or on cancelled sessions. Submitting evaluation feedback automatically marks the interview session `completed` with a `completedAt` timestamp and triggers an in-app candidate notification.
 
+---
 
+## Decision O1..O7: Distributed Locking, Avatar Cloudinary Storage, Pagination, and AI Safety
 
+### Context
+1. Reminder cron jobs running across multiple server instances can cause duplicate reminder alerts and spam users.
+2. Base64 avatar strings inflate MongoDB documents, degrade query performance, and bypass payload constraints.
+3. Unbounded queries across collections expose the server to memory exhaustion and denial-of-service.
+4. Raw user input interpolated into LLM prompts creates prompt injection vulnerabilities and unreliable arbitrary outputs.
+
+### Decision
+1. **Distributed Mutex (JobLock)**: Created `JobLock` model with MongoDB TTL index and atomic `findAndModify` lease acquisition for multi-instance safe reminder workers.
+2. **Cloudinary Stream with Multer Bounds**: Implemented `multer` memory storage strictly limited to 2MB and image MIME types (`image/jpeg`, `image/png`, `image/webp`), streaming to Cloudinary and storing solely secure HTTPS URLs.
+3. **Fail-Fast Startup Env Validator**: Created Zod environment validator executing before server listen, immediately aborting (`process.exit(1)`) in production if critical security invariants (`JWT_SECRET`, `JWT_REFRESH_SECRET`, `MONGO_URI`, `FRONTEND_URL`) are violated.
+4. **Mandatory Query Pagination**: Introduced `getPagination` helper across all list endpoints (`/api/interviews`, `/api/payment/history`, `/api/payment/payouts`, `/api/notifications`, `/api/admin/users`, `/api/admin/bookings`, `/api/admin/payouts`, `/api/admin/requests`) with supporting MongoDB compound indexes.
+5. **Prompt Injection Defense & Structured LLM Outputs**: Untrusted candidate data is sanitized, length-capped, and isolated within `=== BEGIN UNTRUSTED CANDIDATE DATA ===` delimiters accompanied by system directives. LLM outputs are validated against Zod schemas with exponential backoff retries. Removed all hardcoded fallback scores (`|| 75`).
+6. **Real Transactional Email Delivery**: `backend/utils/mailer.js` provides formatted HTML templates for all transactional actions (confirmations, reminders, cancellations, refunds, feedbacks, payouts), failing explicitly with HTTP 503 in production if SMTP is unconfigured.

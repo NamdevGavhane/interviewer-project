@@ -10,6 +10,8 @@ const Counter = require('../models/Counter');
 const Payout = require('../models/Payout');
 const Availability = require('../models/Availability');
 const PendingBooking = require('../models/PendingBooking');
+const Notification = require('../models/Notification');
+const { sendBookingConfirmationEmail } = require('../utils/mailer');
 const {
   reserveSlotForCandidate,
   confirmBookedSlot,
@@ -18,6 +20,7 @@ const {
 const { processInterviewRefund } = require('../services/refundService');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
+const { getPagination } = require('../utils/pagination');
 
 // Helper to initialize Razorpay if configured
 const getRazorpayInstance = () => {
@@ -428,6 +431,52 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       .populate('candidateId', 'name email')
       .populate('interviewerId', 'name email title company');
 
+    // Send in-app notifications & booking confirmation emails (O1, O6)
+    try {
+      await Notification.create({
+        userId: candidateId,
+        interviewId: savedInterview._id,
+        type: 'booking_confirmed',
+        title: 'Interview Booked Successfully!',
+        message: `Your mock interview on "${bookingTopic}" with ${interviewer.name} is confirmed for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+        link: '/interviews'
+      });
+      await Notification.create({
+        userId: interviewer._id,
+        interviewId: savedInterview._id,
+        type: 'booking_confirmed',
+        title: 'New Mock Interview Booked',
+        message: `Candidate ${req.user.name} booked a session on "${bookingTopic}" for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+        link: '/interviews'
+      });
+
+      const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+      await sendBookingConfirmationEmail({
+        recipientName: req.user.name,
+        recipientEmail: req.user.email,
+        otherPartyName: interviewer.name,
+        isCandidate: true,
+        topic: bookingTopic,
+        date: slotDoc.date,
+        timeSlot: slotDoc.slotLabel,
+        interviewId: savedInterview._id,
+        frontendBaseUrl
+      });
+      await sendBookingConfirmationEmail({
+        recipientName: interviewer.name,
+        recipientEmail: interviewer.email,
+        otherPartyName: req.user.name,
+        isCandidate: false,
+        topic: bookingTopic,
+        date: slotDoc.date,
+        timeSlot: slotDoc.slotLabel,
+        interviewId: savedInterview._id,
+        frontendBaseUrl
+      });
+    } catch (notifErr) {
+      console.warn('Booking confirmation notification notice:', notifErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Payment verified and interview scheduled successfully!',
@@ -545,6 +594,59 @@ router.post('/webhook', async (req, res) => {
             pending.paymentId = paymentId;
             pending.interviewId = savedInterview._id;
             await pending.save();
+
+            // Send in-app notification & confirmation emails on webhook finalization
+            try {
+              const [candidateUser, interviewerUser] = await Promise.all([
+                User.findById(pending.candidateId).select('name email'),
+                User.findById(pending.interviewerId).select('name email')
+              ]);
+
+              if (candidateUser && interviewerUser) {
+                await Notification.create({
+                  userId: candidateUser._id,
+                  interviewId: savedInterview._id,
+                  type: 'booking_confirmed',
+                  title: 'Interview Booked Successfully!',
+                  message: `Your mock interview on "${pending.topic}" with ${interviewerUser.name} is confirmed for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+                  link: '/interviews'
+                });
+                await Notification.create({
+                  userId: interviewerUser._id,
+                  interviewId: savedInterview._id,
+                  type: 'booking_confirmed',
+                  title: 'New Mock Interview Booked',
+                  message: `Candidate ${candidateUser.name} booked a session on "${pending.topic}" for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+                  link: '/interviews'
+                });
+
+                const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+                await sendBookingConfirmationEmail({
+                  recipientName: candidateUser.name,
+                  recipientEmail: candidateUser.email,
+                  otherPartyName: interviewerUser.name,
+                  isCandidate: true,
+                  topic: pending.topic,
+                  date: slotDoc.date,
+                  timeSlot: slotDoc.slotLabel,
+                  interviewId: savedInterview._id,
+                  frontendBaseUrl
+                });
+                await sendBookingConfirmationEmail({
+                  recipientName: interviewerUser.name,
+                  recipientEmail: interviewerUser.email,
+                  otherPartyName: candidateUser.name,
+                  isCandidate: false,
+                  topic: pending.topic,
+                  date: slotDoc.date,
+                  timeSlot: slotDoc.slotLabel,
+                  interviewId: savedInterview._id,
+                  frontendBaseUrl
+                });
+              }
+            } catch (alertErr) {
+              console.warn('Webhook booking confirmation notice:', alertErr.message);
+            }
           }
         }
       }
@@ -640,13 +742,24 @@ router.get('/history', authenticate, async (req, res) => {
       }
     }
 
-    const payments = await Payment.find(filter)
-      .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company')
-      .populate('interviewId', 'date timeSlot topic meetingRoomId status')
-      .sort({ createdAt: -1 });
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
-    res.json(payments);
+    const [total, payments] = await Promise.all([
+      Payment.countDocuments(filter),
+      Payment.find(filter)
+        .populate('candidateId', 'name email avatar')
+        .populate('interviewerId', 'name email avatar title company')
+        .populate('interviewId', 'date timeSlot topic meetingRoomId status')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    ]);
+
+    res.json({
+      success: true,
+      data: payments,
+      pagination: formatMeta(total)
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -665,10 +778,15 @@ router.get('/payouts', authenticate, requireRole('professional', 'admin'), async
     const holdMs = payoutHoldDays * 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    const [payouts, completedSessions] = await Promise.all([
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
+
+    const [allPayouts, completedSessions, totalPayouts] = await Promise.all([
       Payout.find({ interviewerId }).sort({ createdAt: -1 }),
-      Interview.find({ interviewerId, status: 'completed' }).select('price paidAmount platformFee endTime updatedAt createdAt')
+      Interview.find({ interviewerId, status: 'completed' }).select('price paidAmount platformFee endTime updatedAt createdAt'),
+      Payout.countDocuments({ interviewerId })
     ]);
+
+    const paginatedPayouts = allPayouts.slice(skip, skip + limit);
 
     // Calculate net earning for each session (P6): price - platform commission
     let totalEarned = 0;
@@ -690,8 +808,8 @@ router.get('/payouts', authenticate, requireRole('professional', 'admin'), async
       }
     }
 
-    const paidOut = payouts.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
-    const pendingPayout = payouts.filter(p => p.status === 'pending' || p.status === 'processing').reduce((sum, p) => sum + p.amount, 0);
+    const paidOut = allPayouts.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
+    const pendingPayout = allPayouts.filter(p => p.status === 'pending' || p.status === 'processing').reduce((sum, p) => sum + p.amount, 0);
     const availableBalance = Math.max(0, eligibleEarned - paidOut - pendingPayout);
 
     res.json({
@@ -706,7 +824,8 @@ router.get('/payouts', authenticate, requireRole('professional', 'admin'), async
         payoutHoldDays,
         platformCommissionPercent: commissionPercent
       },
-      payouts
+      payouts: paginatedPayouts,
+      pagination: formatMeta(totalPayouts)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -44,21 +44,18 @@ const Dashboard = () => {
 
       // Fetch user's interviews
       const interviewData = await apiClient.get(`/api/interviews?userId=${userId}&role=${user.role}`);
-      if (Array.isArray(interviewData)) {
-        setInterviews(interviewData);
-      }
+      const interviewList = Array.isArray(interviewData) ? interviewData : (interviewData?.data || []);
+      setInterviews(interviewList);
 
       // If candidate, fetch interviewers & feedback
       if (user.role === 'candidate') {
         const profData = await apiClient.get('/api/users?role=professional');
-        if (Array.isArray(profData)) {
-          setInterviewers(profData);
-        }
+        const profList = Array.isArray(profData) ? profData : (profData?.data || []);
+        setInterviewers(profList);
 
         const feedData = await apiClient.get(`/api/feedbacks/candidate/${userId}`);
-        if (Array.isArray(feedData)) {
-          setFeedbacks(feedData);
-        }
+        const feedList = Array.isArray(feedData) ? feedData : (feedData?.data || []);
+        setFeedbacks(feedList);
       }
     } catch (err) {
       setError(err.message);

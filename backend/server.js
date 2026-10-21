@@ -9,35 +9,8 @@ const cookieParser = require('cookie-parser');
 require('dotenv').config();
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
-const isProd = process.env.NODE_ENV === 'production';
-
-// S2: Secret validation - Server must refuse to boot without required secrets (min 32 chars)
-if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-  console.error('\n============================================================');
-  console.error('FATAL CONFIGURATION ERROR: JWT_SECRET is missing or less than 32 characters!');
-  console.error('Server cannot start securely. Please set a strong JWT_SECRET.');
-  console.error('============================================================\n');
-  process.exit(1);
-}
-
-if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
-  console.error('\n============================================================');
-  console.error('FATAL CONFIGURATION ERROR: JWT_REFRESH_SECRET is missing or less than 32 characters!');
-  console.error('Server cannot start securely. Please set a strong JWT_REFRESH_SECRET.');
-  console.error('============================================================\n');
-  process.exit(1);
-}
-
-if (isProd) {
-  if (!process.env.MONGO_URI) {
-    console.error('FATAL CONFIGURATION ERROR: MONGO_URI is missing in production!');
-    process.exit(1);
-  }
-  if (!process.env.FRONTEND_URL) {
-    console.error('FATAL CONFIGURATION ERROR: FRONTEND_URL is missing in production!');
-    process.exit(1);
-  }
-}
+const { validateEnv } = require('./config/envValidator');
+validateEnv();
 
 const { apiLimiter } = require('./middleware/rateLimiter');
 

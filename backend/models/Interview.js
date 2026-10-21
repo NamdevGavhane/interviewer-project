@@ -121,11 +121,24 @@ const interviewSchema = new mongoose.Schema({
       text: { type: String },
       time: { type: String }
     }
-  ]
+  ],
+  reminderSent24h: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+  reminderSent1h: {
+    type: Boolean,
+    default: false,
+    index: true
+  }
 }, { timestamps: true });
 
 interviewSchema.index({ candidateId: 1, status: 1 });
 interviewSchema.index({ interviewerId: 1, status: 1 });
 interviewSchema.index({ date: 1, timeSlot: 1 });
+interviewSchema.index({ status: 1, startTime: 1, reminderSent24h: 1 });
+interviewSchema.index({ status: 1, startTime: 1, reminderSent1h: 1 });
 
 module.exports = mongoose.model('Interview', interviewSchema);
+

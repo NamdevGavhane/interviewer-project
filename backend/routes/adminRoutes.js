@@ -5,10 +5,12 @@ const User = require('../models/User');
 const Interview = require('../models/Interview');
 const Payment = require('../models/Payment');
 const Payout = require('../models/Payout');
+const Notification = require('../models/Notification');
 const { authenticate, requireRole } = require('../middleware/auth');
-const { sendProfessionalInvitationEmail } = require('../utils/mailer');
+const { sendProfessionalInvitationEmail, sendPayoutProcessedEmail } = require('../utils/mailer');
 const { validate } = require('../middleware/validate');
 const { inviteProfessionalSchema, requestDecisionSchema } = require('../validators/schemas');
+const { getPagination } = require('../utils/pagination');
 
 // Enforce Admin Authentication on ALL admin routes
 router.use(authenticate, requireRole('admin'));
@@ -295,12 +297,22 @@ router.get('/requests', async (req, res) => {
       ]
     };
 
-    if (status && status !== 'all') {
-      query.approvalStatus = status;
-    }
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
-    const requests = await User.find(query).select('-password').sort({ createdAt: -1 });
-    res.json(requests);
+    const [total, requests] = await Promise.all([
+      User.countDocuments(query),
+      User.find(query)
+        .select('-password')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    ]);
+
+    res.json({
+      success: true,
+      data: requests,
+      pagination: formatMeta(total)
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -385,8 +397,22 @@ router.get('/users', async (req, res) => {
       query.$or = [{ name: regex }, { email: regex }, { company: regex }, { title: regex }];
     }
 
-    const users = await User.find(query).select('-password').sort({ createdAt: -1 });
-    res.json(users);
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
+
+    const [total, users] = await Promise.all([
+      User.countDocuments(query),
+      User.find(query)
+        .select('-password')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    ]);
+
+    res.json({
+      success: true,
+      data: users,
+      pagination: formatMeta(total)
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -469,16 +495,23 @@ router.get('/bookings', async (req, res) => {
     const { status, search } = req.query;
     let query = {};
 
-    if (status && status !== 'all') {
-      query.status = status;
-    }
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
-    const bookings = await Interview.find(query)
-      .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company hourlyRate')
-      .sort({ createdAt: -1 });
+    const [total, bookings] = await Promise.all([
+      Interview.countDocuments(query),
+      Interview.find(query)
+        .populate('candidateId', 'name email avatar')
+        .populate('interviewerId', 'name email avatar title company hourlyRate')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    ]);
 
-    res.json(bookings);
+    res.json({
+      success: true,
+      data: bookings,
+      pagination: formatMeta(total)
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -506,15 +539,22 @@ router.get('/payouts', async (req, res) => {
   try {
     const { status } = req.query;
     let query = {};
-    if (status && status !== 'all') {
-      query.status = status;
-    }
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
-    const payouts = await Payout.find(query)
-      .populate('interviewerId', 'name email title company hourlyRate')
-      .sort({ createdAt: -1 });
+    const [total, payouts] = await Promise.all([
+      Payout.countDocuments(query),
+      Payout.find(query)
+        .populate('interviewerId', 'name email title company hourlyRate')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    ]);
 
-    res.json(payouts);
+    res.json({
+      success: true,
+      data: payouts,
+      pagination: formatMeta(total)
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -545,6 +585,31 @@ router.put('/payouts/:id/status', async (req, res) => {
 
     const populated = await Payout.findById(payout._id)
       .populate('interviewerId', 'name email title company hourlyRate');
+
+    // Notify professional of payout status update (O1, O6)
+    try {
+      if (populated.interviewerId) {
+        await Notification.create({
+          userId: populated.interviewerId._id,
+          type: 'payout_processed',
+          title: `Payout Request ${status.toUpperCase()}`,
+          message: `Your withdrawal of ₹${payout.amount} has been updated to: ${status.toUpperCase()}.${referenceId ? ` Reference: ${referenceId}` : ''}`,
+          link: '/earnings'
+        });
+
+        const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+        await sendPayoutProcessedEmail({
+          professionalName: populated.interviewerId.name,
+          professionalEmail: populated.interviewerId.email,
+          amount: payout.amount,
+          status,
+          referenceId: payout.referenceId || '',
+          frontendBaseUrl
+        });
+      }
+    } catch (alertErr) {
+      console.warn('Payout status alert notice:', alertErr.message);
+    }
 
     res.json({
       success: true,

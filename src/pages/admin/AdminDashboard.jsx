@@ -122,11 +122,11 @@ const AdminDashboard = () => {
       ]);
 
       if (statsData) setStats(statsData);
-      if (usersData) setUsers(usersData);
-      if (requestsData) setRequests(requestsData);
-      if (bookingsData) setBookings(bookingsData);
-      if (invitesData) setInvitations(invitesData);
-      if (payoutsData) setPayouts(Array.isArray(payoutsData) ? payoutsData : []);
+      if (usersData) setUsers(Array.isArray(usersData) ? usersData : (usersData?.data || []));
+      if (requestsData) setRequests(Array.isArray(requestsData) ? requestsData : (requestsData?.data || []));
+      if (bookingsData) setBookings(Array.isArray(bookingsData) ? bookingsData : (bookingsData?.data || []));
+      if (invitesData) setInvitations(Array.isArray(invitesData) ? invitesData : (invitesData?.data || []));
+      if (payoutsData) setPayouts(Array.isArray(payoutsData) ? payoutsData : (payoutsData?.data || []));
       if (settingsRes?.data) setPlatformSettings(settingsRes.data);
       if (configRes?.data) setInterviewConfig(configRes.data);
     } catch (err) {

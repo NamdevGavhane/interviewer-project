@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Clock, AlertTriangle, CheckCircle, ArrowLeft, RefreshCw, Loader2, X } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import apiClient from '../../utils/apiClient';
 
 const CancelBooking = () => {
+  const [searchParams] = useSearchParams();
+  const preselectedInterviewId = searchParams.get('interviewId');
+
   const [scheduledInterviews, setScheduledInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -24,7 +27,16 @@ const CancelBooking = () => {
     try {
       setLoading(true);
       const data = await apiClient.get('/api/interviews');
-      setScheduledInterviews(data.filter(i => i.status === 'scheduled'));
+      const list = Array.isArray(data) ? data : (data?.data || []);
+      const scheduled = list.filter(i => i.status === 'scheduled');
+      setScheduledInterviews(scheduled);
+
+      if (preselectedInterviewId) {
+        const match = scheduled.find(i => String(i._id) === String(preselectedInterviewId));
+        if (match) {
+          setSelectedBooking(match);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -34,7 +46,7 @@ const CancelBooking = () => {
 
   useEffect(() => {
     fetchBookings();
-  }, []);
+  }, [preselectedInterviewId]);
 
   const showToast = (msg) => {
     setToastMessage(msg);

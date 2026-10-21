@@ -11,6 +11,7 @@ const { processInterviewRefund } = require('../services/refundService');
 const { authenticate, requireRole, requireActiveProfessional } = require('../middleware/auth');
 const { chatLimiter } = require('../middleware/rateLimiter');
 const { validateObjectId } = require('../middleware/validateObjectId');
+const { getPagination } = require('../utils/pagination');
 
 // Apply authentication to ALL interview routes
 router.use(authenticate);
@@ -142,12 +143,23 @@ router.get('/', async (req, res) => {
       filter = { candidateId: user._id };
     }
 
-    const interviews = await Interview.find(filter)
-      .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company hourlyRate')
-      .sort({ createdAt: -1 });
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
-    res.json(interviews);
+    const [total, interviews] = await Promise.all([
+      Interview.countDocuments(filter),
+      Interview.find(filter)
+        .populate('candidateId', 'name email avatar')
+        .populate('interviewerId', 'name email avatar title company hourlyRate')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+    ]);
+
+    res.json({
+      success: true,
+      data: interviews,
+      pagination: formatMeta(total)
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

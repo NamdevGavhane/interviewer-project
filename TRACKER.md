@@ -22,13 +22,13 @@
 | [x] | F2 | Done | backend/routes/feedbackRoutes.js, backend/tests/f_series_feedback.test.js | Timing and status gates enforced: feedback rejected before session startTime or if cancelled, restricted to assigned interviewer/admin. |
 | [x] | F3 | Done | backend/routes/feedbackRoutes.js, backend/routes/interviewRoutes.js, backend/tests/f_series_feedback.test.js | Server-controlled interview completion: status transitioned to 'completed' with completedAt timestamp on evaluation submission or authorized post-session close. |
 | [x] | F4 | Done | backend/routes/feedbackRoutes.js, backend/models/Feedback.js, backend/tests/f_series_feedback.test.js | Unique compound index on Feedback.interviewId; in-app notification automatically generated and sent to candidate on feedback publication. |
-| [ ] | O1 | Pending | | |
-| [ ] | O2 | Pending | | |
-| [ ] | O3 | Pending | | |
-| [ ] | O4 | Pending | | |
-| [ ] | O5 | Pending | | |
-| [ ] | O6 | Pending | | |
-| [ ] | O7 | Pending | | |
+| [x] | O1 | Done | backend/models/JobLock.js, backend/services/reminderService.js, backend/models/Interview.js, backend/routes/paymentRoutes.js, backend/services/refundService.js, backend/tests/o_series_operations.test.js | Multi-instance distributed locking via JobLock; 24h & 1h reminder sweep with atomic reservation claim; real emails & in-app alerts dispatched for booking confirmation, reminders, cancellation, and refund. |
+| [x] | O2 | Done | backend/utils/avatarUpload.js, backend/routes/userRoutes.js, src/pages/Profile.jsx, backend/scripts/migrateAvatars.js | Multer memory storage (<=2MB, JPEG/PNG/WebP), Cloudinary stream upload, POST /api/users/avatar endpoint, Profile.jsx upload UI wired, migrateAvatars.js created. |
+| [x] | O3 | Done | backend/config/envValidator.js, backend/server.js, backend/.env.example, .env.example | Zod startup env validator halts production with process.exit(1) on missing required secrets; comprehensive backend & frontend .env.example files maintained. |
+| [x] | O4 | Done | backend/utils/pagination.js, backend/routes/interviewRoutes.js, backend/routes/paymentRoutes.js, backend/routes/notificationRoutes.js, backend/routes/adminRoutes.js, backend/models/*.js | getPagination helper enforces page/limit bounds; all list endpoints (/interviews, /payment/history, /payouts, /notifications, /admin/users, /admin/bookings, /admin/payouts) paginated with compound indexes. |
+| [x] | O5 | Done | backend/routes/aiInterviewRoutes.js, backend/tests/o_series_operations.test.js | Candidate inputs sanitized and wrapped in protective delimiters; Zod schemas validate AI JSON outputs; retries with exponential backoff; all hardcoded || 75 scores removed; returns 503 if AI unconfigured. |
+| [x] | O6 | Done | backend/utils/mailer.js, backend/tests/o_series_operations.test.js | Complete transactional HTML email templates for confirmations, reminders, cancellations, refunds, feedback publications, and payout updates; fails with 503 in production if SMTP absent. |
+| [x] | O7 | Done | src/layouts/SidebarLayout.jsx, backend/routes/notificationRoutes.js | Bell dropdown wired to /api/notifications with 30s background polling, unread count badge, mark-as-read, and mark-all-read. |
 | [ ] | H1 | Pending | | |
 | [ ] | H2 | Pending | | |
 | [ ] | H3 | Pending | | |
@@ -64,12 +64,13 @@
 | [ ] | X4 | Pending | | |
 | [ ] | X5 | Pending | | |
 | [ ] | X6 | Pending | | |
-| [ ] | X7 | Pending | | |
+| [x] | X7 | Done | src/pages/Interviews.jsx, src/pages/booking/CancelBooking.jsx | Fixed 404 cancel navigation to use query parameter ?interviewId= and wired CancelBooking.jsx to auto-select matching booking. |
 | [ ] | X8 | Pending | | |
 | [ ] | X9 | Pending | | |
-| [ ] | X10 | Pending | | |
+| [x] | X10 | Done | src/pages/Profile.jsx | Fixed currentUserId ReferenceError by referencing currentUser?._id; replaced fake time slot fallbacks with empty state. |
 | [ ] | X11 | Pending | | |
 | [ ] | X12 | Pending | | |
 | [ ] | X13 | Pending | | |
 
-NEXT: P1
+NEXT: H1
+

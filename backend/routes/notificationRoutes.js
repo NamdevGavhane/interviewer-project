@@ -3,6 +3,7 @@ const router = express.Router();
 const Notification = require('../models/Notification');
 const { authenticate } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
+const { getPagination } = require('../utils/pagination');
 
 router.use(authenticate);
 
@@ -11,17 +12,23 @@ router.use(authenticate);
 // @access  Protected
 router.get('/', async (req, res) => {
   try {
-    const [notifications, unreadCount] = await Promise.all([
+    const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
+
+    const [total, notifications, unreadCount] = await Promise.all([
+      Notification.countDocuments({ userId: req.user._id }),
       Notification.find({ userId: req.user._id })
         .sort({ createdAt: -1 })
-        .limit(50),
+        .skip(skip)
+        .limit(limit),
       Notification.countDocuments({ userId: req.user._id, isRead: false })
     ]);
 
     res.json({
       success: true,
       unreadCount,
-      notifications
+      notifications,
+      data: notifications,
+      pagination: formatMeta(total)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -8,6 +8,7 @@ const RefreshToken = require('../models/RefreshToken');
 const Interview = require('../models/Interview');
 const Settings = require('../models/Settings');
 const Payout = require('../models/Payout');
+const { uploadAvatar, uploadToCloudinary } = require('../utils/avatarUpload');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -810,6 +811,47 @@ router.get('/:id', authenticate, validateObjectId('id'), async (req, res) => {
     res.json({ success: true, data: professional });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   POST /api/users/avatar
+// @desc    Upload avatar image via multipart/form-data to Cloudinary (O2)
+// @access  Protected
+router.post('/avatar', authenticate, (req, res, next) => {
+  uploadAvatar.single('avatar')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, message: 'File size exceeds maximum 2MB limit.' });
+      }
+      return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No avatar image file uploaded.' });
+    }
+
+    const secureUrl = await uploadToCloudinary(req.file.buffer, req.user._id);
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { avatar: secureUrl } },
+      { new: true }
+    ).select('-password');
+
+    res.json({
+      success: true,
+      message: 'Avatar uploaded successfully!',
+      avatar: secureUrl,
+      user: updatedUser
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({
+      success: false,
+      message: err.message || 'Avatar upload failed'
+    });
   }
 });
 

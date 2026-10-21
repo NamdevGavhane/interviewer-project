@@ -45,4 +45,7 @@ const payoutSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+payoutSchema.index({ interviewerId: 1, createdAt: -1 });
+payoutSchema.index({ status: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Payout', payoutSchema);

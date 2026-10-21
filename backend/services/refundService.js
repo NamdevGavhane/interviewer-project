@@ -2,6 +2,9 @@ const Razorpay = require('razorpay');
 const Interview = require('../models/Interview');
 const Payment = require('../models/Payment');
 const Settings = require('../models/Settings');
+const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { sendCancellationEmail, sendRefundProcessedEmail } = require('../utils/mailer');
 const { releaseSlotForInterview } = require('./availabilityService');
 
 const getRazorpayInstance = () => {
@@ -80,6 +83,13 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
     await interview.save();
     await releaseSlotForInterview(interview._id);
 
+    await dispatchCancellationAlerts({
+      interview,
+      reason: interview.cancellationReason,
+      requestedByUserId,
+      refundAmount: 0
+    });
+
     return {
       success: true,
       refunded: false,
@@ -105,6 +115,13 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
     interview.paymentStatus = 'refunded';
     await interview.save();
     await releaseSlotForInterview(interview._id);
+
+    await dispatchCancellationAlerts({
+      interview,
+      reason: interview.cancellationReason,
+      requestedByUserId,
+      refundAmount: 0
+    });
 
     return {
       success: true,
@@ -155,6 +172,14 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
 
     await releaseSlotForInterview(interview._id);
 
+    await dispatchCancellationAlerts({
+      interview,
+      reason: interview.cancellationReason,
+      requestedByUserId,
+      refundAmount: payment.amount,
+      refundId: refund.id
+    });
+
     return {
       success: true,
       refunded: true,
@@ -171,6 +196,79 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
       status: 502,
       message: `Gateway refund failed: ${gatewayErr.message || 'Razorpay refund rejected'}`
     };
+  }
+};
+
+const dispatchCancellationAlerts = async ({ interview, reason, requestedByUserId, refundAmount = 0, refundId = '' }) => {
+  try {
+    const [candidate, interviewer, requester] = await Promise.all([
+      User.findById(interview.candidateId).select('name email'),
+      User.findById(interview.interviewerId).select('name email'),
+      User.findById(requestedByUserId).select('name')
+    ]);
+
+    const cancelledByName = requester?.name || 'A participant';
+    const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+
+    // In-app notifications
+    if (candidate) {
+      await Notification.create({
+        userId: candidate._id,
+        interviewId: interview._id,
+        type: 'interview_cancelled',
+        title: 'Interview Cancelled',
+        message: `Your session on "${interview.topic}" (${interview.date}) has been cancelled by ${cancelledByName}.${refundAmount > 0 ? ` Full refund of ₹${refundAmount} initiated.` : ''}`,
+        link: '/interviews'
+      });
+
+      await sendCancellationEmail({
+        recipientName: candidate.name,
+        recipientEmail: candidate.email,
+        topic: interview.topic,
+        date: interview.date,
+        timeSlot: interview.timeSlot,
+        reason,
+        cancelledByName,
+        refundAmount,
+        frontendBaseUrl
+      });
+
+      if (refundAmount > 0) {
+        await sendRefundProcessedEmail({
+          recipientName: candidate.name,
+          recipientEmail: candidate.email,
+          topic: interview.topic,
+          refundAmount,
+          refundId,
+          frontendBaseUrl
+        });
+      }
+    }
+
+    if (interviewer) {
+      await Notification.create({
+        userId: interviewer._id,
+        interviewId: interview._id,
+        type: 'interview_cancelled',
+        title: 'Interview Cancelled',
+        message: `The session on "${interview.topic}" (${interview.date}) with candidate ${candidate?.name || 'Candidate'} was cancelled by ${cancelledByName}.`,
+        link: '/interviews'
+      });
+
+      await sendCancellationEmail({
+        recipientName: interviewer.name,
+        recipientEmail: interviewer.email,
+        topic: interview.topic,
+        date: interview.date,
+        timeSlot: interview.timeSlot,
+        reason,
+        cancelledByName,
+        refundAmount: 0,
+        frontendBaseUrl
+      });
+    }
+  } catch (alertErr) {
+    console.warn('Cancellation alert dispatch warning:', alertErr.message);
   }
 };
 

@@ -18,6 +18,8 @@ const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
 
   // Form State
   const [editForm, setEditForm] = useState({
@@ -28,6 +30,38 @@ const Profile = () => {
     hourlyRate: 100,
     skills: ''
   });
+
+  const handleAvatarFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setAvatarError('Please select a valid image (JPEG, PNG, or WebP).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setAvatarError('Image file size must be 2MB or less.');
+      return;
+    }
+
+    try {
+      setUploadingAvatar(true);
+      setAvatarError('');
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const res = await apiClient.post('/api/users/avatar', formData);
+      if (res && res.avatar) {
+        setProfileData(prev => ({ ...prev, avatar: res.avatar }));
+        setSaveToast(true);
+        setTimeout(() => setSaveToast(false), 3000);
+      }
+    } catch (err) {
+      setAvatarError(err.message || 'Avatar upload failed');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const fetchProfile = async () => {
     if (!targetId) {
@@ -89,7 +123,7 @@ const Profile = () => {
   if (loading) return <div className="card text-center p-12 text-muted">Loading profile data...</div>;
   if (!profileData) return <div className="card p-6">Profile not found. Please log in first.</div>;
 
-  const isOwnProfile = currentUserId === profileData._id;
+  const isOwnProfile = Boolean(currentUser?._id && currentUser._id === profileData._id);
 
   return (
     <div>
@@ -204,11 +238,26 @@ const Profile = () => {
           <div className="card mb-6">
             <div className="flex justify-between items-start mb-6">
               <div className="flex gap-4">
-                <Avatar 
-                  name={profileData.name} 
-                  avatar={profileData.avatar} 
-                  size={80} 
-                />
+                <div className="flex flex-col items-center gap-2">
+                  <Avatar 
+                    name={profileData.name} 
+                    avatar={profileData.avatar} 
+                    size={80} 
+                  />
+                  {isOwnProfile && (
+                    <label className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', cursor: 'pointer' }}>
+                      {uploadingAvatar ? 'Uploading...' : 'Change Photo'}
+                      <input 
+                        type="file" 
+                        accept="image/jpeg,image/png,image/webp" 
+                        onChange={handleAvatarFileChange} 
+                        style={{ display: 'none' }} 
+                        disabled={uploadingAvatar}
+                      />
+                    </label>
+                  )}
+                  {avatarError && <div className="text-xs text-red-500 mt-1 max-w-[120px] text-center">{avatarError}</div>}
+                </div>
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <h2 className="text-xl font-bold">{profileData.name}</h2>
@@ -272,19 +321,25 @@ const Profile = () => {
               </div>
               
               <div className="flex flex-col gap-3">
-                {(profileData.availabilitySlots || ['10:00 AM - 10:45 AM', '02:00 PM - 02:45 PM', '06:00 PM - 06:45 PM']).map((slot, i) => (
-                  <div key={i} className="flex justify-between items-center p-3 border rounded-lg hover:border-primary transition-colors" style={{ borderColor: 'var(--border)' }}>
-                    <div className="flex items-center gap-3">
-                      <Clock size={16} className="text-primary" />
-                      <div className="text-sm font-medium">{slot}</div>
+                {profileData.availabilitySlots && profileData.availabilitySlots.length > 0 ? (
+                  profileData.availabilitySlots.map((slot, i) => (
+                    <div key={i} className="flex justify-between items-center p-3 border rounded-lg hover:border-primary transition-colors" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex items-center gap-3">
+                        <Clock size={16} className="text-primary" />
+                        <div className="text-sm font-medium">{slot}</div>
+                      </div>
+                      {!isOwnProfile && isCandidate && (
+                        <Link to={`/booking?interviewerId=${profileData._id}`}>
+                          <button className="btn btn-primary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}>Book</button>
+                        </Link>
+                      )}
                     </div>
-                    {!isOwnProfile && isCandidate && (
-                      <Link to={`/booking?interviewerId=${profileData._id}`}>
-                        <button className="btn btn-primary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }}>Book</button>
-                      </Link>
-                    )}
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-sm text-muted bg-slate-50 rounded-lg border border-dashed" style={{ borderColor: 'var(--border)' }}>
+                    No active time slots available. {isOwnProfile ? 'Add availability from your schedule dashboard.' : 'Check back later for updated slots.'}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

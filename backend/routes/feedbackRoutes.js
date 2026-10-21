@@ -3,6 +3,8 @@ const router = express.Router();
 const Feedback = require('../models/Feedback');
 const Interview = require('../models/Interview');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { sendFeedbackPublishedEmail } = require('../utils/mailer');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
 
@@ -109,7 +111,7 @@ router.post('/', async (req, res) => {
     }
     await interview.save();
 
-    // Send in-app notification to candidate (F4)
+    // Send in-app notification & transactional email to candidate (F4, O1, O6)
     try {
       await Notification.create({
         userId: interview.candidateId,
@@ -119,8 +121,22 @@ router.post('/', async (req, res) => {
         link: `/feedback/${interview._id}`,
         interviewId: interview._id
       });
+
+      const candidateUser = await User.findById(interview.candidateId).select('name email');
+      if (candidateUser) {
+        const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+        await sendFeedbackPublishedEmail({
+          candidateName: candidateUser.name,
+          candidateEmail: candidateUser.email,
+          interviewerName: req.user.name,
+          topic: interview.topic,
+          overallScore,
+          interviewId: interview._id,
+          frontendBaseUrl
+        });
+      }
     } catch (notifErr) {
-      console.warn('Notification creation notice:', notifErr.message);
+      console.warn('Feedback notification dispatch notice:', notifErr.message);
     }
 
     const populated = await Feedback.findById(feedback._id)

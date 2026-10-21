@@ -37,8 +37,9 @@ const SidebarLayout = () => {
     if (!userData) return;
     try {
       const res = await apiClient.get('/api/notifications');
-      setNotifications(res.data.notifications || []);
-      setUnreadCount(res.data.unreadCount || 0);
+      const list = res?.notifications || res?.data || (Array.isArray(res) ? res : []);
+      setNotifications(list);
+      setUnreadCount(res?.unreadCount !== undefined ? res.unreadCount : list.filter(n => !n.isRead).length);
     } catch (err) {
       // Quiet notice
     }
@@ -46,7 +47,7 @@ const SidebarLayout = () => {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 45000); // Poll every 45s
+    const interval = setInterval(fetchNotifications, 30000); // Poll every 30s (O7)
     return () => clearInterval(interval);
   }, [userData]);
 

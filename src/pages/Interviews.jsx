@@ -46,7 +46,7 @@ const Interviews = () => {
   }, [user, isAuthenticated, authLoading]);
 
   const handleCancelInterview = async (interviewId) => {
-    navigate(`/booking/cancel/${interviewId}`);
+    navigate(`/booking/cancel?interviewId=${interviewId}`);
   };
 
   const handleDownloadReportForInterview = async (interviewItem) => {
