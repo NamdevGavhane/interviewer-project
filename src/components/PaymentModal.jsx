@@ -120,7 +120,7 @@ const PaymentModal = ({
         key: keyId,
         amount: Math.round(totalAmount * 100), // in paise
         currency: 'INR',
-        name: 'InterviewPro',
+        name: 'DevSphere',
         description: `Mock Interview: ${topic}`,
         order_id: orderId,
         theme: {

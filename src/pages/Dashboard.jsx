@@ -462,7 +462,7 @@ const Dashboard = () => {
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 mt-1 truncate">
                           <Building2 size={13} className="text-primary flex-shrink-0" />
                           <span className="truncate">
-                            {prof.name?.includes('Shushant') || prof.company?.includes('Batch 3') ? 'Cognizant' : (prof.company || 'Tech Leader')}
+                            {prof.company || 'Tech Enterprise'}
                           </span>
                         </div>
 
@@ -470,7 +470,7 @@ const Dashboard = () => {
                         <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5 truncate">
                           <Briefcase size={12} className="text-muted flex-shrink-0" />
                           <span className="truncate">
-                            {prof.name?.includes('Shushant') || prof.title?.includes('Batch 3') || prof.domain?.includes('Batch 3') ? 'MERN Stack Development' : (prof.domain || prof.title || 'Full Stack Engineering')}
+                            {prof.domain || prof.title || 'Technical Specialist'}
                           </span>
                         </div>
 

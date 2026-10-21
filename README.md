@@ -1,4 +1,4 @@
-# 🎯 InterviewPro - Full Stack Mock Interview Platform
+# 🎯 DevSphere - Full Stack Technical Mock Interview Platform
 
 An end-to-end full-stack platform for technical mock interviews, AI interview preparation, expert bookings, Razorpay & Unified UPI payments, automated feedback analytics, and platform administration.
 
@@ -7,7 +7,7 @@ An end-to-end full-stack platform for technical mock interviews, AI interview pr
 ## 🏛️ System Architecture & Module Hierarchy
 
 ```text
-InterviewPro
+DevSphere
 |
 ├── Authentication Module
 |   ├── Register

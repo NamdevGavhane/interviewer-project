@@ -107,16 +107,16 @@ const SidebarLayout = () => {
 
   const userInitials = userData?.name
     ? userData.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-    : 'IP';
+    : 'DS';
 
   return (
     <div className="app-container">
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="flex items-center gap-2 mb-4" style={{ padding: '0 0.5rem' }}>
-          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.3rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>IP</div>
+          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.3rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>DS</div>
           <div>
-            <h1 className="text-lg font-bold" style={{ color: 'var(--primary)', lineHeight: 1.2 }}>InterviewPro</h1>
+            <h1 className="text-lg font-bold" style={{ color: 'var(--primary)', lineHeight: 1.2 }}>DevSphere</h1>
             <span className="text-xs text-muted">Mock Prep & Live Calls</span>
           </div>
         </div>

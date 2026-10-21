@@ -849,7 +849,7 @@ const VideoRoom = () => {
         ? (interview.candidateId?.email || 'Engineering Candidate') 
         : (interview.interviewerId?.title || 'Professional'))
     : (isInterviewer ? 'Engineering Candidate' : 'Professional');
-  const partnerTitle = rawPartnerTitle?.includes('Batch 3') ? 'Professional' : rawPartnerTitle;
+  const partnerTitle = rawPartnerTitle;
 
   const partnerAvatar = interview
     ? (isInterviewer ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
@@ -900,10 +900,10 @@ const VideoRoom = () => {
       {/* Header */}
       <header className="flex justify-between items-center p-3 px-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.1)', backgroundColor: '#0f172a', flexShrink: 0 }}>
         <div className="flex items-center gap-3">
-          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>IP</div>
+          <div style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '0.25rem 0.6rem', borderRadius: '8px', fontWeight: 'bold' }}>DS</div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base md:text-lg font-bold" style={{ color: 'white' }}>InterviewPro Live Room</h1>
+              <h1 className="text-base md:text-lg font-bold" style={{ color: 'white' }}>DevSphere Live Room</h1>
               <span className={`badge ${isCallConnected ? 'badge-success' : 'badge-warning'} text-xs font-semibold`}>
                 {isCallConnected ? '● Live Call Connected' : 'Waiting for Partner'}
               </span>
@@ -1008,11 +1008,24 @@ const VideoRoom = () => {
 
             {/* Standby / Interviewer Image when waiting for peer stream */}
             {(!isCallConnected || !remoteStream) && (
-              <img 
-                src="/rahul-sharma.jpg" 
-                alt={partnerName} 
-                className="vr-remote-poster"
-              />
+              <div 
+                className="vr-remote-poster flex flex-col items-center justify-center"
+                style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  width: '100%', 
+                  height: '100%', 
+                  background: 'radial-gradient(ellipse at center, #1e1b4b 0%, #090d16 100%)',
+                  gap: '14px'
+                }}
+              >
+                <Avatar user={{ name: partnerName, avatar: partnerAvatar }} size="xl" />
+                <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                  Waiting for {partnerName} to stream video...
+                </span>
+              </div>
             )}
 
             {/* Remote Interviewer Floating Card (Bottom-Left) */}

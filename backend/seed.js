@@ -51,7 +51,7 @@ const seedDatabase = async () => {
         approvalStatus: 'approved',
         isVerified: true,
         title: 'Platform Administrator',
-        company: 'InterviewPro Core',
+        company: 'DevSphere Core',
         bio: 'Super administrator managing platform settings, interviewer verifications, and financial policies.'
       });
       await admin.save();

@@ -64,8 +64,8 @@ const AdminDashboard = () => {
     slotDurationMinutes: 45,
     slotPresets: [],
     aiDailyLimit: 5,
-    supportEmail: 'support@interviewpro.com',
-    siteName: 'InterviewPro'
+    supportEmail: 'support@devsphere.com',
+    siteName: 'DevSphere'
   });
   const [interviewConfig, setInterviewConfig] = useState({
     topics: [],
@@ -377,7 +377,7 @@ const AdminDashboard = () => {
         <div>
           <div className="flex items-center gap-2">
             <span className="badge badge-danger text-xs font-semibold uppercase">Super Administrator</span>
-            <span className="text-xs text-muted">InterviewPro Governance Console</span>
+            <span className="text-xs text-muted">DevSphere Governance Console</span>
           </div>
           <h2 className="text-2xl font-bold mt-1">Admin Panel & Professional Requests</h2>
           <p className="text-muted text-sm">Review incoming professional interviewer applications, grant accreditation, and oversee all platform operations.</p>
@@ -1800,7 +1800,7 @@ const AdminDashboard = () => {
           <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
             <div>
               <h3 className="font-bold text-base">Global Interview Bookings</h3>
-              <p className="text-xs text-muted">Supervise all scheduled, completed, and cancelled sessions across InterviewPro.</p>
+              <p className="text-xs text-muted">Supervise all scheduled, completed, and cancelled sessions across DevSphere.</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted">Status:</span>

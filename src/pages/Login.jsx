@@ -87,7 +87,7 @@ const Login = () => {
 
   // Load remembered candidate email
   useEffect(() => {
-    const savedEmail = localStorage.getItem('interviewpro_candidate_email');
+    const savedEmail = localStorage.getItem('devsphere_candidate_email') || localStorage.getItem('interviewpro_candidate_email');
     if (savedEmail) {
       setEmail(savedEmail);
       setRememberMe(true);
@@ -114,8 +114,9 @@ const Login = () => {
 
     try {
       if (rememberMe) {
-        localStorage.setItem('interviewpro_candidate_email', email.trim().toLowerCase());
+        localStorage.setItem('devsphere_candidate_email', email.trim().toLowerCase());
       } else {
+        localStorage.removeItem('devsphere_candidate_email');
         localStorage.removeItem('interviewpro_candidate_email');
       }
 
@@ -203,7 +204,7 @@ const Login = () => {
             <User size={20} className="ip-logo-user-svg" />
           </div>
           <span className="ip-logo-title">
-            Interview<span className="ip-logo-title-accent">Pro</span>
+            Dev<span className="ip-logo-title-accent">Sphere</span>
           </span>
         </div>
 
@@ -221,7 +222,7 @@ const Login = () => {
       <main className="ip-main-wrapper">
         <div className="ip-layout-grid">
           {/* LEFT SIDE: Value proposition & features */}
-          <section className="ip-left-col" aria-label="Why Choose InterviewPro">
+          <section className="ip-left-col" aria-label="Why Choose DevSphere">
             <h1 className="ip-hero-headline">
               Level Up Your<br />Interview Skills
             </h1>

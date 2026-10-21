@@ -29,15 +29,15 @@
 | [x] | O5 | Done | backend/routes/aiInterviewRoutes.js, backend/tests/o_series_operations.test.js | Candidate inputs sanitized and wrapped in protective delimiters; Zod schemas validate AI JSON outputs; retries with exponential backoff; all hardcoded || 75 scores removed; returns 503 if AI unconfigured. |
 | [x] | O6 | Done | backend/utils/mailer.js, backend/tests/o_series_operations.test.js | Complete transactional HTML email templates for confirmations, reminders, cancellations, refunds, feedback publications, and payout updates; fails with 503 in production if SMTP absent. |
 | [x] | O7 | Done | src/layouts/SidebarLayout.jsx, backend/routes/notificationRoutes.js | Bell dropdown wired to /api/notifications with 30s background polling, unread count badge, mark-as-read, and mark-all-read. |
-| [ ] | H1 | Pending | | |
-| [ ] | H2 | Pending | | |
-| [ ] | H3 | Pending | | |
-| [ ] | H4 | Pending | | |
-| [ ] | H5 | Pending | | |
-| [ ] | H6 | Pending | | |
-| [ ] | H7 | Pending | | |
-| [ ] | H8 | Pending | | |
-| [ ] | H9 | Pending | | |
+| [x] | H1 | Done | src/pages/ProfessionalLogin.jsx | Removed "Quick Demo Credentials Helper" block containing hardcoded demo logins (shushant@example.com, raju@example.com). |
+| [x] | H2 | Done | src/pages/Dashboard.jsx | Removed hardcoded string checks ('Shushant', 'Cognizant', 'Batch 3') and replaced with genuine dynamic company and domain properties. |
+| [x] | H3 | Done | src/pages/VideoRoom.jsx | Replaced hardcoded /rahul-sharma.jpg poster with dynamic Avatar standby container, removed 'Batch 3' check from partnerTitle. |
+| [x] | H4 | Done | backend/routes/interviewRoutes.js | Configured WebRTC ICE servers dynamically via ICE_SERVERS, STUN_URL, and TURN_URL environment variables with fallback. |
+| [x] | H5 | Done | public/, src/assets/ | Deleted all unused mock demo image assets (namdev-admin.*, namdev-upi-qr.png, shushant-gaikwad.png, raju-bojane.png, rahul-sharma.jpg, ml-developer.png). |
+| [x] | H6 | Done | backend/seed.js | Ensured idempotent seeding of Settings, InterviewConfig, and super-admin with DevSphere Core branding. |
+| [x] | H7 | Done | src/pages/Login.jsx, src/layouts/SidebarLayout.jsx, src/utils/*.js | Audited and rebranded platform name across the codebase to DevSphere, replaced hardcoded avatar references. |
+| [x] | H8 | Done | src/pages/Interviews.jsx, src/pages/Dashboard.jsx | Verified loading, empty, and error states for list endpoints. |
+| [x] | H9 | Done | README.md | Rebranded architecture and setup documentation to DevSphere. |
 | [ ] | T1 | Pending | | |
 | [ ] | D1 | Pending | | |
 | [ ] | D2 | Pending | | |
@@ -72,5 +72,5 @@
 | [ ] | X12 | Pending | | |
 | [ ] | X13 | Pending | | |
 
-NEXT: H1
+NEXT: T1
 

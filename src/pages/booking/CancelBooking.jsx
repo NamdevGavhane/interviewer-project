@@ -154,7 +154,7 @@ const CancelBooking = () => {
         <div className="flex items-start gap-3">
           <AlertTriangle size={20} className="text-warning mt-0.5" />
           <div>
-            <h4 className="font-bold text-sm" style={{ color: '#b45309' }}>InterviewPro Automated Refund & Release Policy</h4>
+            <h4 className="font-bold text-sm" style={{ color: '#b45309' }}>DevSphere Automated Refund & Release Policy</h4>
             <p className="text-xs mt-1" style={{ color: '#92400e', lineHeight: 1.5 }}>
               Cancellations made in accordance with the platform policy window automatically release the booked slot and trigger a refund. Rescheduling swaps slots atomically with zero cancellation fees.
             </p>

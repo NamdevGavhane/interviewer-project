@@ -236,59 +236,6 @@ const ProfessionalLogin = () => {
             </button>
           </form>
 
-          {/* Quick Demo Credentials Helper */}
-          <div style={{
-            marginTop: '1.75rem',
-            padding: '1rem',
-            background: '#f8fafc',
-            borderRadius: '12px',
-            border: '1px solid #e2e8f0',
-            fontSize: '0.75rem'
-          }}>
-            <div style={{ fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
-              💡 Quick Verified Professional Accounts:
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('shushant@example.com');
-                  setPassword('password123');
-                }}
-                style={{
-                  background: 'white',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '8px',
-                  padding: '6px 8px',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 700, color: '#4f46e5' }}>Shushant G.</div>
-                <div style={{ color: '#64748b', fontSize: '0.68rem' }}>shushant@example.com</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('raju@example.com');
-                  setPassword('password123');
-                }}
-                style={{
-                  background: 'white',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '8px',
-                  padding: '6px 8px',
-                  textAlign: 'left',
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 700, color: '#7c3aed' }}>Raju Bojane</div>
-                <div style={{ color: '#64748b', fontSize: '0.68rem' }}>raju@example.com</div>
-              </button>
-            </div>
-          </div>
-
           {/* Footer Navigation */}
           <div style={{
             marginTop: '1.75rem',

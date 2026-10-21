@@ -32,7 +32,7 @@ export const downloadInvoicePDF = (paymentData) => {
     
     const interviewerName = paymentData.interviewerName || paymentData.interviewerId?.name || 'Interviewer';
     const interviewerTitle = paymentData.interviewerTitle || paymentData.interviewerId?.title || 'Technical Specialist';
-    const company = paymentData.company || paymentData.interviewerId?.company || 'InterviewPro Expert';
+    const company = paymentData.company || paymentData.interviewerId?.company || 'DevSphere Expert';
     const timeSlot = paymentData.timeSlot || paymentData.interviewId?.timeSlot || 'Scheduled Slot';
 
     const topic = paymentData.topic || paymentData.interviewId?.topic || 'Technical Mock Interview';
@@ -51,12 +51,12 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
-    doc.text('InterviewPro', margin, 42);
+    doc.text('DevSphere', margin, 42);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text('1-on-1 Mock Technical Preparation Platform', margin, 58);
-    doc.text('support@interviewpro.com | https://interviewpro.dev', margin, 72);
+    doc.text('support@devsphere.com | https://interviewpro-frontend-4c78.onrender.com', margin, 72);
 
     // Right side Header text
     doc.setFont('helvetica', 'bold');
@@ -226,7 +226,7 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.text('PCI-DSS Level 1 Compliant Transaction Processing', margin, y + 30);
     doc.text('Session Guarantee: If the session is interrupted or cancelled', margin, y + 42);
     doc.text('within refund policy window, full refund is issued automatically.', margin, y + 54);
-    doc.text('Questions? Contact us 24x7 at support@interviewpro.com', margin, y + 66);
+    doc.text('Questions? Contact us 24x7 at support@devsphere.com', margin, y + 66);
 
     y += 120;
 
@@ -237,7 +237,7 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.setTextColor(26, 115, 232);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('INTERVIEWPRO DIGITAL SEAL', margin + 12, y + 18);
+    doc.text('DEVSPHERE DIGITAL SEAL', margin + 12, y + 18);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);

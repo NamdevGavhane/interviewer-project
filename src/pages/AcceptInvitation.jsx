@@ -121,7 +121,7 @@ const AcceptInvitation = () => {
             Professional Interviewer Setup
           </h1>
           <p style={{ margin: 0, fontSize: '0.875rem', color: '#e0e7ff', opacity: 0.9 }}>
-            InterviewPro Senior Mock Interview Panel
+            DevSphere Senior Mock Interview Panel
           </p>
         </div>
 

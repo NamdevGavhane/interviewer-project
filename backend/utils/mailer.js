@@ -34,7 +34,7 @@ const sendEmail = async ({ to, subject, html, text }) => {
     return { sent: false, error: 'SMTP not configured in environment variables' };
   }
 
-  const from = process.env.SMTP_FROM || `"InterviewPro" <${process.env.SMTP_USER}>`;
+  const from = process.env.SMTP_FROM || `"DevSphere" <${process.env.SMTP_USER}>`;
 
   const info = await transporter.sendMail({
     from,
@@ -61,7 +61,7 @@ const emailContainer = (content, header) => `
       ${content}
     </div>
     <div style="background: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0;">
-      © ${new Date().getFullYear()} InterviewPro. All rights reserved.
+      © ${new Date().getFullYear()} DevSphere. All rights reserved.
     </div>
   </div>
 `;
@@ -72,12 +72,12 @@ const emailContainer = (content, header) => `
 const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = 'http://localhost:5173' }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const verificationLink = `${cleanBaseUrl}/verify-email?token=${encodeURIComponent(token)}`;
-  const subject = 'Verify Your Email Address - InterviewPro';
+  const subject = 'Verify Your Email Address - DevSphere';
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${name}</strong>,</p>
     <p style="font-size: 14px; line-height: 1.6; color: #475569;">
-      Thank you for creating an account on InterviewPro. Please verify your email address to activate your full account access and receive interview notifications.
+      Thank you for creating an account on DevSphere. Please verify your email address to activate your full account access and receive interview notifications.
     </p>
     <div style="text-align: center; margin: 28px 0;">
       <a href="${verificationLink}" style="background: #4f46e5; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">
@@ -94,7 +94,7 @@ const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = 'ht
   return sendEmail({
     to: email,
     subject,
-    html: emailContainer(content, emailHeader('Welcome to InterviewPro', 'Confirm your email address')),
+    html: emailContainer(content, emailHeader('Welcome to DevSphere', 'Confirm your email address')),
     text: `Verify your email: ${verificationLink}`
   });
 };
@@ -105,7 +105,7 @@ const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = 'ht
 const sendPasswordResetEmail = async ({ name, email, token, frontendBaseUrl = 'http://localhost:5173' }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const resetLink = `${cleanBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
-  const subject = 'Password Reset Request - InterviewPro';
+  const subject = 'Password Reset Request - DevSphere';
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${name}</strong>,</p>
@@ -127,7 +127,7 @@ const sendPasswordResetEmail = async ({ name, email, token, frontendBaseUrl = 'h
   return sendEmail({
     to: email,
     subject,
-    html: emailContainer(content, emailHeader('Reset Your Password', 'InterviewPro Security', 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)')),
+    html: emailContainer(content, emailHeader('Reset Your Password', 'DevSphere Security', 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)')),
     text: `Reset your password: ${resetLink}`
   });
 };
@@ -146,7 +146,7 @@ const sendProfessionalInvitationEmail = async ({
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const invitationLink = `${cleanBaseUrl}/accept-invite?token=${encodeURIComponent(token)}`;
-  const subject = `Exclusive Invitation: Join InterviewPro as a Professional Interviewer`;
+  const subject = `Exclusive Invitation: Join DevSphere as a Professional Interviewer`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${name}</strong>,</p>
@@ -172,7 +172,7 @@ const sendProfessionalInvitationEmail = async ({
   return sendEmail({
     to: email,
     subject,
-    html: emailContainer(content, emailHeader('InterviewPro', 'Official Professional Invitation')),
+    html: emailContainer(content, emailHeader('DevSphere', 'Official Professional Invitation')),
     text: `Accept invitation: ${invitationLink}`
   });
 };
@@ -193,7 +193,7 @@ const sendBookingConfirmationEmail = async ({
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const sessionLink = `${cleanBaseUrl}/interviews`;
-  const subject = `Booking Confirmed: Mock Interview on ${topic} - InterviewPro`;
+  const subject = `Booking Confirmed: Mock Interview on ${topic} - DevSphere`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${recipientName}</strong>,</p>
@@ -246,7 +246,7 @@ const sendInterviewReminderEmail = async ({
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const roomRole = isCandidate ? 'candidate' : 'interviewer';
   const roomLink = `${cleanBaseUrl}/room?interviewId=${interviewId}&role=${roomRole}`;
-  const subject = `[Reminder - ${hoursNotice}h] Mock Interview: ${topic} - InterviewPro`;
+  const subject = `[Reminder - ${hoursNotice}h] Mock Interview: ${topic} - DevSphere`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${recipientName}</strong>,</p>
@@ -271,7 +271,7 @@ const sendInterviewReminderEmail = async ({
   return sendEmail({
     to: recipientEmail,
     subject,
-    html: emailContainer(content, emailHeader(`Interview in ${hoursNotice} Hour${hoursNotice === '1' ? '' : 's'}`, 'InterviewPro Session Alert', 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
+    html: emailContainer(content, emailHeader(`Interview in ${hoursNotice} Hour${hoursNotice === '1' ? '' : 's'}`, 'DevSphere Session Alert', 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
     text: `Interview reminder: Your session starts in ${hoursNotice} hours (${date} ${timeSlot}). Join here: ${roomLink}`
   });
 };
@@ -292,7 +292,7 @@ const sendCancellationEmail = async ({
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const dashboardLink = `${cleanBaseUrl}/interviews`;
-  const subject = `Interview Cancelled: ${topic} - InterviewPro`;
+  const subject = `Interview Cancelled: ${topic} - DevSphere`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${recipientName}</strong>,</p>
@@ -337,7 +337,7 @@ const sendRefundProcessedEmail = async ({
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const historyLink = `${cleanBaseUrl}/payment-history`;
-  const subject = `Refund Processed (₹${refundAmount}) - InterviewPro`;
+  const subject = `Refund Processed (₹${refundAmount}) - DevSphere`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${recipientName}</strong>,</p>
@@ -378,7 +378,7 @@ const sendFeedbackPublishedEmail = async ({
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const reportLink = `${cleanBaseUrl}/feedback/${interviewId}`;
-  const subject = `Your Interview Evaluation is Ready! (${overallScore}/100) - InterviewPro`;
+  const subject = `Your Interview Evaluation is Ready! (${overallScore}/100) - DevSphere`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${candidateName}</strong>,</p>
@@ -420,7 +420,7 @@ const sendPayoutProcessedEmail = async ({
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const earningsLink = `${cleanBaseUrl}/earnings`;
-  const subject = `Payout ${status === 'paid' ? 'Completed' : 'Status Update'}: ₹${amount} - InterviewPro`;
+  const subject = `Payout ${status === 'paid' ? 'Completed' : 'Status Update'}: ₹${amount} - DevSphere`;
 
   const content = `
     <p style="font-size: 16px;">Hello <strong>${professionalName}</strong>,</p>

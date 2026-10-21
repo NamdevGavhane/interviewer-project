@@ -32,7 +32,7 @@ export const downloadInterviewReportPDF = (reportData) => {
     const candidateEmail = candidate.email || 'N/A';
     const hrName = interviewer.name || 'Professional Evaluator';
     const hrTitle = interviewer.title || 'Technical Specialist';
-    const hrCompany = interviewer.company || 'InterviewPro';
+    const hrCompany = interviewer.company || 'DevSphere';
 
     const topic = interview.topic || reportData.topic || 'Mock Technical Interview';
     const sessionDate = interview.date || reportData.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -66,7 +66,7 @@ export const downloadInterviewReportPDF = (reportData) => {
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(22);
-      doc.text('InterviewPro', margin, 38);
+      doc.text('DevSphere', margin, 38);
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9.5);
@@ -99,7 +99,7 @@ export const downloadInterviewReportPDF = (reportData) => {
         doc.setTextColor(100, 116, 139);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8.5);
-        doc.text(`InterviewPro Evaluation Dossier  |  Candidate: ${candidateName}  |  Report ID: ${reportId}`, margin, 22);
+        doc.text(`DevSphere Evaluation Dossier  |  Candidate: ${candidateName}  |  Report ID: ${reportId}`, margin, 22);
         doc.text(`Topic: ${topic}`, pageWidth - margin, 22, { align: 'right' });
         y = 55;
       }
@@ -329,7 +329,7 @@ export const downloadInterviewReportPDF = (reportData) => {
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
     doc.text(
-      'InterviewPro Official Assessment Report • Confidential Evaluation for Professional Development',
+      'DevSphere Official Assessment Report • Confidential Evaluation for Professional Development',
       pageWidth / 2,
       pageHeight - 20,
       { align: 'center' }

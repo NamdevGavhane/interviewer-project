@@ -19,6 +19,8 @@ const app = express();
 // Trust reverse proxy (Vercel/Render) for accurate IP resolution and secure cookies
 app.set('trust proxy', 1);
 
+const isProd = process.env.NODE_ENV === 'production';
+
 // S7: Security Headers with Helmet CSP tailored for SPA, Razorpay & Google Sign-In
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -53,11 +55,16 @@ app.use(helmet({
   }
 }));
 
-// S3: CORS Configuration - Allow ONLY origins from FRONTEND_URL (comma-separated), reject all others
-const allowedOrigins = (process.env.FRONTEND_URL || '')
+// S3: CORS Configuration - Allow origins from FRONTEND_URL and Render production frontend
+const defaultAllowedOrigins = [
+  'https://interviewpro-frontend-4c78.onrender.com',
+  'http://localhost:5173'
+];
+const configuredOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map(o => o.trim().replace(/\/+$/, ''))
   .filter(Boolean);
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredOrigins]));
 
 app.use(cors({
   origin: function (origin, callback) {

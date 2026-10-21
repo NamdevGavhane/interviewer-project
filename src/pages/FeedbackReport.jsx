@@ -305,7 +305,7 @@ const FeedbackReport = () => {
   const candidateName = interview?.candidateId?.name || feedback?.candidateId?.name || 'Candidate';
   const interviewerName = interview?.interviewerId?.name || feedback?.interviewerId?.name || 'Interviewer';
   const interviewerTitle = interview?.interviewerId?.title || feedback?.interviewerId?.title || 'Technical Specialist';
-  const interviewerCompany = interview?.interviewerId?.company || feedback?.interviewerId?.company || 'InterviewPro';
+  const interviewerCompany = interview?.interviewerId?.company || feedback?.interviewerId?.company || 'DevSphere';
   const topicName = interview?.topic || feedback?.interviewId?.topic || 'Mock Technical Interview';
 
   return (

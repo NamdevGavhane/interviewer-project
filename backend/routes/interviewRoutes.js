@@ -391,11 +391,22 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
       }
     }
 
-    // Dynamic ICE / STUN / TURN servers from environment
-    const iceServers = [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ];
+    // Dynamic ICE / STUN / TURN servers from environment (H4)
+    let iceServers = [];
+    if (process.env.ICE_SERVERS) {
+      try {
+        iceServers = JSON.parse(process.env.ICE_SERVERS);
+      } catch (e) {
+        console.warn('[WEBRTC] Failed to parse ICE_SERVERS environment variable:', e.message);
+      }
+    }
+
+    if (!Array.isArray(iceServers) || iceServers.length === 0) {
+      iceServers = [
+        { urls: process.env.STUN_URL || 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ];
+    }
 
     if (process.env.TURN_URL) {
       iceServers.push({

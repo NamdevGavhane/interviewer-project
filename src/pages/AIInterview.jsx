@@ -424,7 +424,7 @@ const AIInterview = () => {
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('InterviewPro - AI Assessment & Q&A Transcript', margin, 35);
+      doc.text('DevSphere - AI Assessment & Q&A Transcript', margin, 35);
       
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -489,7 +489,7 @@ const AIInterview = () => {
         y += cLines.length * 11 + 14;
       });
 
-      doc.save(`InterviewPro_AI_Assessment_${topic}_${Date.now()}.pdf`);
+      doc.save(`DevSphere_AI_Assessment_${topic}_${Date.now()}.pdf`);
     } catch (err) {
       alert('Error generating PDF: ' + err.message);
     } finally {
