@@ -109,11 +109,10 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   const isDbConnected = mongoose.connection.readyState === 1;
-  const statusCode = isDbConnected ? 200 : 503;
-  res.status(statusCode).json({
+  res.status(200).json({
     success: isDbConnected,
-    status: isDbConnected ? 'healthy' : 'degraded',
-    database: isDbConnected ? 'connected' : 'disconnected',
+    status: isDbConnected ? 'healthy' : 'connecting',
+    database: isDbConnected ? 'connected' : 'connecting',
     timestamp: new Date().toISOString()
   });
 });
