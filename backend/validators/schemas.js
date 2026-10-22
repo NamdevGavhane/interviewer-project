@@ -41,7 +41,6 @@ const updateUserSchema = z.object({
   designation: z.string().optional(),
   company: z.string().optional(),
   domain: z.string().optional(),
-  hourlyRate: z.number().min(0).optional(),
   bio: z.string().optional(),
   skills: z.array(z.string()).optional(),
   experience: z.string().optional(),
@@ -56,8 +55,7 @@ const inviteProfessionalSchema = z.object({
   company: z.string().trim().min(1, 'Company name is required'),
   designation: z.string().trim().min(1, 'Designation is required'),
   experience: z.string().trim().min(1, 'Experience is required'),
-  domain: z.string().optional(),
-  hourlyRate: z.number().min(0).optional()
+  domain: z.string().optional()
 });
 
 const requestDecisionSchema = z.object({

@@ -533,7 +533,6 @@ Output STRICT JSON adhering to this schema:
         role: 'professional',
         title: 'Autonomous AI Technical Evaluator',
         company: session.company || 'InterviewPro AI',
-        hourlyRate: 0,
         bio: 'Autonomous AI Technical Interviewer powered by verified large language models.',
         rating: 5.0,
         reviewsCount: 1,

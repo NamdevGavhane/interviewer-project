@@ -79,9 +79,51 @@ const Interviews = () => {
     }
   }
   const upcomingInterviews = uniqueScheduled;
-  const pastInterviews = interviews.filter(i => i.status === 'completed' || i.status === 'cancelled');
+  const pastInterviews = interviews.filter(i => ['completed', 'cancelled', 'expired', 'interviewer_no_show', 'candidate_no_show'].includes(i.status));
 
   const displayedList = activeTab === 'upcoming' ? upcomingInterviews : pastInterviews;
+
+  const renderStatusBadge = (status) => {
+    switch (status) {
+      case 'scheduled':
+        return <span className="badge badge-info text-xs font-semibold uppercase">Scheduled</span>;
+      case 'completed':
+        return <span className="badge badge-success text-xs font-semibold uppercase">Completed</span>;
+      case 'interviewer_no_show':
+        return <span className="badge text-xs font-semibold uppercase" style={{ backgroundColor: '#dc2626', color: '#fff' }}>Interviewer No-Show (Refunded)</span>;
+      case 'candidate_no_show':
+        return <span className="badge text-xs font-semibold uppercase" style={{ backgroundColor: '#d97706', color: '#fff' }}>Candidate No-Show</span>;
+      case 'expired':
+        return <span className="badge badge-secondary text-xs font-semibold uppercase">Expired</span>;
+      case 'cancelled':
+        return <span className="badge text-xs font-semibold uppercase" style={{ backgroundColor: '#64748b', color: '#fff' }}>Cancelled</span>;
+      default:
+        return <span className="badge badge-secondary text-xs font-semibold uppercase">{status}</span>;
+    }
+  };
+
+  const getJoinStatus = (item) => {
+    if (['completed', 'cancelled', 'expired', 'interviewer_no_show', 'candidate_no_show'].includes(item.status)) {
+      return { canJoin: false, label: 'Ended', reason: 'ended' };
+    }
+    if (!item.startTime) {
+      return { canJoin: true, label: 'Join Room', reason: 'active' };
+    }
+
+    const now = Date.now();
+    const startMs = new Date(item.startTime).getTime();
+    const endMs = item.endTime ? new Date(item.endTime).getTime() : startMs + 45 * 60 * 1000;
+    const earliest = startMs - 10 * 60 * 1000;
+    const latest = endMs + 15 * 60 * 1000;
+
+    if (now < earliest) {
+      return { canJoin: false, label: 'Opens 10m before', reason: 'not_started' };
+    }
+    if (now > latest) {
+      return { canJoin: false, label: 'Ended', reason: 'ended' };
+    }
+    return { canJoin: true, label: 'Join Room', reason: 'active' };
+  };
 
   if (authLoading) {
     return (
@@ -308,12 +350,7 @@ const Interviews = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold">{partnerName}</h3>
-                      <span className={`badge ${
-                        item.status === 'scheduled' ? 'badge-info' : 
-                        item.status === 'completed' ? 'badge-success' : 'badge-warning'
-                      }`}>
-                        {item.status.toUpperCase()}
-                      </span>
+                      {renderStatusBadge(item.status)}
                     </div>
                     <p className="text-sm text-muted">{partnerSub}</p>
                     <p className="text-sm font-medium mt-1" style={{ color: 'var(--primary)' }}>
@@ -367,24 +404,40 @@ const Interviews = () => {
                       <span>Invoice PDF</span>
                     </button>
 
-                    {item.status === 'scheduled' && (
-                      <>
-                        <Link to={`/room?interviewId=${item._id}&role=${userRole === 'professional' ? 'interviewer' : 'candidate'}`}>
-                          <button className="btn btn-primary">
-                            <Video size={16} />
-                            Join Room
-                          </button>
-                        </Link>
-                        <button 
-                          className="btn btn-outline" 
-                          style={{ color: 'var(--danger)', borderColor: 'rgba(234, 67, 53, 0.3)' }}
-                          onClick={() => handleCancelInterview(item._id)}
-                          disabled={actionLoading === item._id}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    )}
+                    {item.status === 'scheduled' && (() => {
+                      const joinInfo = getJoinStatus(item);
+                      return (
+                        <>
+                          {joinInfo.canJoin ? (
+                            <Link to={`/room?interviewId=${item._id}&role=${userRole === 'professional' ? 'interviewer' : 'candidate'}`}>
+                              <button className="btn btn-primary flex items-center gap-1.5">
+                                <Video size={16} />
+                                <span>Join Room</span>
+                              </button>
+                            </Link>
+                          ) : (
+                            <button 
+                              className="btn btn-secondary flex items-center gap-1.5 opacity-60 cursor-not-allowed" 
+                              disabled
+                              title={joinInfo.reason === 'not_started' ? 'Room opens 10 minutes prior to scheduled start' : 'Session window concluded'}
+                            >
+                              <Video size={16} />
+                              <span>{joinInfo.label}</span>
+                            </button>
+                          )}
+                          {joinInfo.reason !== 'ended' && (
+                            <button 
+                              className="btn btn-outline" 
+                              style={{ color: 'var(--danger)', borderColor: 'rgba(234, 67, 53, 0.3)' }}
+                              onClick={() => handleCancelInterview(item._id)}
+                              disabled={actionLoading === item._id}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     {item.status === 'completed' && (
                       <>

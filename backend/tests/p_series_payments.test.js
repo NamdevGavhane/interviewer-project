@@ -55,13 +55,13 @@ describe('Phase 2 Unit Tests: Payments, Booking, Timezones (P1..P9)', () => {
 
   describe('P7: Server-side Pricing Source of Truth', () => {
     test('Calculates platform fee and GST accurately from settings', () => {
-      const hourlyRate = 1000;
+      const baseFee = 1000;
       const commissionPercent = 10;
       const gstPercent = 18;
 
-      const platformFee = Math.round((hourlyRate * commissionPercent) / 100);
-      const gstAmount = Math.round(((hourlyRate + platformFee) * gstPercent) / 100);
-      const totalAmount = hourlyRate + platformFee + gstAmount;
+      const platformFee = Math.round((baseFee * commissionPercent) / 100);
+      const gstAmount = Math.round(((baseFee + platformFee) * gstPercent) / 100);
+      const totalAmount = baseFee + platformFee + gstAmount;
 
       expect(platformFee).toBe(100);
       expect(gstAmount).toBe(198); // (1000 + 100) * 18% = 198
@@ -69,13 +69,13 @@ describe('Phase 2 Unit Tests: Payments, Booking, Timezones (P1..P9)', () => {
     });
 
     test('Zero fee session results in 0 platformFee and 0 GST', () => {
-      const hourlyRate = 0;
+      const baseFee = 0;
       const commissionPercent = 10;
       const gstPercent = 18;
 
-      const platformFee = Math.round((hourlyRate * commissionPercent) / 100);
-      const gstAmount = Math.round(((hourlyRate + platformFee) * gstPercent) / 100);
-      const totalAmount = hourlyRate + platformFee + gstAmount;
+      const platformFee = Math.round((baseFee * commissionPercent) / 100);
+      const gstAmount = Math.round(((baseFee + platformFee) * gstPercent) / 100);
+      const totalAmount = baseFee + platformFee + gstAmount;
 
       expect(platformFee).toBe(0);
       expect(gstAmount).toBe(0);

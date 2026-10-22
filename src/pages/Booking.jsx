@@ -298,9 +298,7 @@ const Booking = () => {
     );
   }
 
-  const sessionFee = selectedInterviewer?.hourlyRate !== undefined && selectedInterviewer?.hourlyRate !== null 
-    ? Number(selectedInterviewer.hourlyRate) 
-    : 0;
+
 
   return (
     <div>
