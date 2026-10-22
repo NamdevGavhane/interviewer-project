@@ -131,6 +131,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const configRoutes = require('./routes/configRoutes');
 const { startReminderWorker } = require('./services/reminderService');
+const { startLifecycleWorker } = require('./services/sessionLifecycleService');
 
 // Mount Routes
 app.use('/api/config', configRoutes);
@@ -196,6 +197,7 @@ const connectDB = async () => {
     console.log('Connected to MongoDB successfully');
     isConnecting = false;
     startReminderWorker();
+    startLifecycleWorker();
   } catch (err) {
     isConnecting = false;
     console.error('Failed to connect to MongoDB:', err.message);

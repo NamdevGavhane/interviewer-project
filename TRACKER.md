@@ -72,9 +72,9 @@
 | [ ] | X12 | Pending | | |
 | [ ] | X13 | Pending | | |
 | [x] | M1 | Done | backend/models/Settings.js, backend/models/PendingBooking.js, backend/models/Interview.js, backend/models/Payment.js, backend/routes/configRoutes.js, backend/routes/settingsRoutes.js, backend/routes/paymentRoutes.js, backend/routes/userRoutes.js, backend/routes/interviewRoutes.js, src/pages/Booking.jsx, src/components/PaymentModal.jsx, src/pages/Profile.jsx, src/pages/Dashboard.jsx, src/pages/admin/AdminDashboard.jsx, src/pages/professional/Earnings.jsx | Fixed session price Rs 50 (5000 paise) stored strictly in Settings; interviewer gets 70% (3500 paise); GET /api/config/public serves pricing; create-order & verify-and-book enforce server price and reject mismatches; min payout threshold (30000 paise) enforced; removed hourlyRate inputs and tags across frontend and backend. |
-| [ ] | M2 | Pending | | |
+| [x] | M2 | Done | backend/services/sessionLifecycleService.js, backend/routes/interviewRoutes.js, backend/server.js, src/pages/VideoRoom.jsx, backend/tests/m2_lifecycle.test.js | 10-minute hold release on pending bookings; room access strictly [startTime-10m, endTime+15m] returning 403 "session ended"; media tracks torn down on frontend; auto-status worker running every minute with JobLock (interviewer_no_show with auto refund, candidate_no_show with retained earnings, completed, expired); joinedAt tracked for participants; client PATCH completed blocked with 403; unbooked past slots hidden and pruned after 7 days. Verified with 9/9 tests in m2_lifecycle.test.js. |
 | [ ] | M3 | Pending | | |
 
-NEXT: M2
+NEXT: M3
 
 

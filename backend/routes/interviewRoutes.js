@@ -6,6 +6,7 @@ const User = require('../models/User');
 const Payment = require('../models/Payment');
 const Availability = require('../models/Availability');
 const Counter = require('../models/Counter');
+const Settings = require('../models/Settings');
 const { releaseSlotForInterview, confirmBookedSlot } = require('../services/availabilityService');
 const { processInterviewRefund } = require('../services/refundService');
 const { authenticate, requireRole, requireActiveProfessional } = require('../middleware/auth');
@@ -209,8 +210,18 @@ router.get('/:id', validateObjectId('id'), async (req, res) => {
 router.patch('/:id/status', validateObjectId('id'), async (req, res) => {
   try {
     const { status, cancelReason } = req.body;
-    if (!['scheduled', 'completed', 'cancelled'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid status value. Must be scheduled, completed, or cancelled.' });
+    if (status === 'completed') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only the server can set completed, never a client PATCH.'
+      });
+    }
+
+    if (status !== 'cancelled') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status value. Only cancellation may be requested via this endpoint.'
+      });
     }
 
     const interview = await Interview.findById(req.params.id);
@@ -371,31 +382,52 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
       });
     }
 
-    // Timing window check (allow participants in 15 minutes before startTime until 2 hours after endTime)
+    // Timing window check strictly [startTime - joinOpensMinutesBefore, endTime + joinGraceMinutesAfter]
+    const settings = await Settings.getSettings();
+    const joinOpensMinutesBefore = Number(settings.joinOpensMinutesBefore ?? 10);
+    const joinGraceMinutesAfter = Number(settings.joinGraceMinutesAfter ?? 15);
+    const slotDuration = Number(settings.slotDurationMinutes ?? 45);
+
     if (!isAdmin && interview.startTime) {
       const now = Date.now();
       const startTimeMs = new Date(interview.startTime).getTime();
       const endTimeMs = interview.endTime 
         ? new Date(interview.endTime).getTime() 
-        : startTimeMs + 45 * 60 * 1000;
+        : startTimeMs + slotDuration * 60 * 1000;
 
-      const earliestJoinTime = startTimeMs - 15 * 60 * 1000;
-      const latestJoinTime = endTimeMs + 2 * 60 * 60 * 1000;
+      const earliestJoinTime = startTimeMs - joinOpensMinutesBefore * 60 * 1000;
+      const latestJoinTime = endTimeMs + joinGraceMinutesAfter * 60 * 1000;
 
       if (now < earliestJoinTime) {
         const minutesUntilOpen = Math.ceil((earliestJoinTime - now) / 60000);
         return res.status(403).json({
           success: false,
-          message: `The interview room is not open yet. It will open 15 minutes before the scheduled start time (in approximately ${minutesUntilOpen} minutes).`
+          notStarted: true,
+          message: `The interview room is not open yet. It will open ${joinOpensMinutesBefore} minutes before the scheduled start time (in approximately ${minutesUntilOpen} minutes).`
         });
       }
 
-      if (now > latestJoinTime && interview.status === 'completed') {
+      if (now > latestJoinTime || ['completed', 'cancelled', 'expired', 'interviewer_no_show', 'candidate_no_show'].includes(interview.status)) {
         return res.status(403).json({
           success: false,
-          message: 'This interview session has concluded and the room is closed.'
+          sessionEnded: true,
+          message: 'session ended'
         });
       }
+    }
+
+    // Log joinedAt for participants (M2)
+    const updateFields = {};
+    if (isCandidate && !interview.candidateJoinedAt) {
+      updateFields.candidateJoinedAt = new Date();
+      interview.candidateJoinedAt = updateFields.candidateJoinedAt;
+    }
+    if (isInterviewer && !interview.interviewerJoinedAt) {
+      updateFields.interviewerJoinedAt = new Date();
+      interview.interviewerJoinedAt = updateFields.interviewerJoinedAt;
+    }
+    if (Object.keys(updateFields).length > 0) {
+      await Interview.findByIdAndUpdate(interview._id, { $set: updateFields });
     }
 
     // Dynamic ICE / STUN / TURN servers from environment (H4)

@@ -55,6 +55,7 @@ const VideoRoom = () => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [mediaError, setMediaError] = useState(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   
   // WebRTC Connection State
@@ -106,9 +107,34 @@ const VideoRoom = () => {
   const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
   const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
-  // 1. Fetch room access and dynamic ICE credentials
+  // Helper to teardown all active media tracks cleanly (M2)
+  const teardownMediaTracks = () => {
+    if (mediaStreamRef.current) {
+      try {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      } catch (e) {
+        console.warn('Track teardown notice:', e);
+      }
+      mediaStreamRef.current = null;
+    }
+    if (currentCallRef.current) {
+      try { currentCallRef.current.close(); } catch (e) {}
+      currentCallRef.current = null;
+    }
+    if (peerRef.current) {
+      try { peerRef.current.destroy(); } catch (e) {}
+      peerRef.current = null;
+    }
+    setCameraActive(false);
+    setIsCallConnected(false);
+  };
+
+  // 1. Fetch room access and dynamic ICE credentials with 30s polling (M2)
   useEffect(() => {
-    if (interviewId) {
+    let pollInterval = null;
+
+    const verifyAccess = () => {
+      if (!interviewId) return;
       apiClient.get(`/api/interviews/${interviewId}/room-access`)
         .then(res => {
           const data = res.data;
@@ -128,9 +154,26 @@ const VideoRoom = () => {
           }
         })
         .catch(err => {
-          setMediaError(err.response?.data?.message || err.message || 'Access Denied: You cannot join this interview room.');
+          const errData = err.response?.data;
+          const msg = errData?.message || err.message;
+          const isEnded = errData?.sessionEnded || (typeof msg === 'string' && msg.toLowerCase().includes('session ended'));
+
+          if (isEnded) {
+            setSessionEnded(true);
+            setMediaError('session ended');
+            teardownMediaTracks();
+          } else {
+            setMediaError(msg || 'Access Denied: You cannot join this interview room.');
+          }
         });
-    }
+    };
+
+    verifyAccess();
+    pollInterval = setInterval(verifyAccess, 30000);
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [interviewId]);
 
   // 2. Timer effect
@@ -791,36 +834,20 @@ const VideoRoom = () => {
     const confirmEnd = window.confirm('Are you sure you want to end this interview session?');
     if (!confirmEnd) return;
 
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-    }
-
-    if (currentCallRef.current) {
-      currentCallRef.current.close();
-    }
-    if (peerRef.current) {
-      peerRef.current.destroy();
-    }
+    // Teardown all media tracks and connections cleanly (M2)
+    teardownMediaTracks();
 
     if (interviewId) {
       try {
-        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'completed' })
-        });
-
-        // Always save live questions and chat transcript to database
-        await fetch(`${API_BASE_URL}/api/interviews/${interviewId}/questions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Save live questions and chat transcript to database if recorded
+        if (liveQuestions.length > 0 || messages.length > 1) {
+          await apiClient.post(`/api/interviews/${interviewId}/questions`, {
             questions: liveQuestions,
             transcript: messages
-          })
-        });
+          });
+        }
       } catch (err) {
-        console.error('Error marking interview complete:', err);
+        console.warn('Notice saving live questions:', err.message);
       }
       navigate(`/feedback?interviewId=${interviewId}&completed=true&role=${currentRole}`);
     } else {
@@ -854,6 +881,32 @@ const VideoRoom = () => {
   const partnerAvatar = interview
     ? (isInterviewer ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
     : '';
+
+  if (sessionEnded) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090d16', color: 'white', padding: '2rem' }}>
+        <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '2.5rem 2rem' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+            <PhoneOff size={32} />
+          </div>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold', marginBottom: '0.75rem', color: 'white' }}>Session Ended</h2>
+          <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '2rem' }}>
+            This interview session has concluded and the room is closed. Camera and microphone media tracks have been securely stopped.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+            <Link to="/interviews" className="btn btn-primary" style={{ padding: '0.65rem 1.5rem', borderRadius: '8px' }}>
+              Return to Interviews
+            </Link>
+            {interviewId && currentRole === 'candidate' && (
+              <Link to={`/feedback-report?interviewId=${interviewId}`} className="btn btn-secondary" style={{ padding: '0.65rem 1.5rem', borderRadius: '8px' }}>
+                View Feedback Report
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="video-room-container" style={{ position: 'relative', overflow: 'hidden', height: '100vh', maxHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#090d16' }}>
