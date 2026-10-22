@@ -19,6 +19,7 @@ const Earnings = () => {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [earningsData, setEarningsData] = useState(null);
   const [payoutsData, setPayoutsData] = useState(null);
+  const [publicConfig, setPublicConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [requestingPayout, setRequestingPayout] = useState(false);
@@ -39,13 +40,15 @@ const Earnings = () => {
     const fetchEarningsAndPayouts = async () => {
       try {
         setLoading(true);
-        const [earningsRes, payoutsRes] = await Promise.all([
+        const [earningsRes, payoutsRes, configRes] = await Promise.all([
           apiClient.get(`/api/users/${user._id}/earnings`),
-          apiClient.get('/api/payment/payouts').catch(() => ({ data: { stats: {}, payouts: [] } }))
+          apiClient.get('/api/payment/payouts').catch(() => ({ data: { stats: {}, payouts: [] } })),
+          apiClient.get('/api/config/public').catch(() => null)
         ]);
 
-        setEarningsData(earningsRes.data);
-        setPayoutsData(payoutsRes.data);
+        setEarningsData(earningsRes.data || earningsRes);
+        setPayoutsData(payoutsRes.data || payoutsRes);
+        if (configRes) setPublicConfig(configRes);
       } catch (err) {
         setError(err.response?.data?.message || err.message || 'Failed to load earnings report');
       } finally {
@@ -61,6 +64,12 @@ const Earnings = () => {
     setPayoutMsg(null);
     const amt = Number(payoutAmount);
     if (!amt || amt <= 0) return;
+
+    const minPayoutThreshold = payoutsData?.stats?.minPayout ?? earningsData?.stats?.minPayout ?? (publicConfig?.minPayoutPaise ? publicConfig.minPayoutPaise / 100 : 0);
+    if (minPayoutThreshold > 0 && amt < minPayoutThreshold) {
+      setPayoutMsg({ type: 'error', text: `Minimum payout request is ₹${minPayoutThreshold}.` });
+      return;
+    }
 
     if (!bankAccountNumber.trim() || !bankIfscCode.trim()) {
       setPayoutMsg({ type: 'error', text: 'Bank Account Number and IFSC Code are required for payout disbursement.' });
@@ -162,14 +171,16 @@ const Earnings = () => {
 
           <div className="card">
             <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
-              <span>Rate Per 45-Min Session</span>
+              <span>Earning Per Session</span>
               <TrendingUp size={18} className="text-primary" />
             </div>
             <div className="text-3xl font-bold mt-2">
-              ₹{earningsData?.professional?.hourlyRate ?? user?.hourlyRate ?? 0}
+              {publicConfig?.mockSessionPricePaise != null
+                ? `₹${(publicConfig.mockSessionPricePaise / 100) * ((publicConfig.interviewerSharePercent ?? 70) / 100)}`
+                : '...'}
             </div>
             <div className="text-xs text-success font-semibold mt-1">
-              Standard Verified Rate
+              Interviewer Share ({publicConfig?.interviewerSharePercent ?? 70}%)
             </div>
           </div>
         </div>
@@ -188,7 +199,10 @@ const Earnings = () => {
           <div className="card p-4 bg-slate-50 border">
             <div>
               <h4 className="font-bold text-sm text-slate-800">Request Payout Disbursement</h4>
-              <p className="text-xs text-muted">Withdraw cleared earnings directly to your verified bank account.</p>
+              <p className="text-xs text-muted">
+                Withdraw cleared earnings directly to your verified bank account.
+                {payoutsData?.stats?.minPayout ? ` Minimum withdrawal: ₹${payoutsData.stats.minPayout}.` : ''}
+              </p>
             </div>
             <form onSubmit={handleRequestPayout} className="mt-3 flex flex-col gap-3">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -228,10 +242,10 @@ const Earnings = () => {
               <div className="flex items-center gap-2">
                 <input 
                   type="number"
-                  min="1"
+                  min={payoutsData?.stats?.minPayout || 1}
                   max={availableBalance}
-                  placeholder={`Amount (max ₹${availableBalance})`}
-                  className="input-field text-xs py-1.5 px-3 w-48"
+                  placeholder={`Amount (min ₹${payoutsData?.stats?.minPayout || 0}, max ₹${availableBalance})`}
+                  className="input-field text-xs py-1.5 px-3 w-56"
                   value={payoutAmount}
                   onChange={(e) => setPayoutAmount(e.target.value)}
                   required

@@ -37,15 +37,19 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Selected interviewer is not an active verified professional.' });
     }
 
-    const hourlyRate = Number(interviewer.hourlyRate) || 0;
-
-    // Security Gate (P1): Direct unpaid booking bypass prevention
-    if (hourlyRate > 0 && req.user.role !== 'admin') {
+    // Security Gate: Direct unpaid booking bypass prevention
+    if (req.user.role !== 'admin') {
       return res.status(400).json({
         success: false,
         message: 'This is a paid session. Direct scheduling without payment is prohibited. Please use the checkout flow (/api/payment/create-order).'
       });
     }
+
+    const settings = await Settings.getSettings();
+    const mockPricePaise = settings.mockSessionPricePaise ?? 5000;
+    const sessionFee = mockPricePaise / 100;
+    const interviewerSharePercent = settings.interviewerSharePercent ?? 70;
+    const interviewerEarningsPaise = Math.round((mockPricePaise * interviewerSharePercent) / 100);
 
     // Validate slot
     const slotDoc = await Availability.findById(slotId);
@@ -71,13 +75,15 @@ router.post('/', async (req, res) => {
       startTime: slotDoc.startTime,
       endTime: slotDoc.endTime,
       topic: topic || 'Mock Technical Interview',
-      price: hourlyRate,
-      paidAmount: hourlyRate,
+      price: sessionFee,
+      paidAmount: sessionFee,
+      amountPaise: mockPricePaise,
+      interviewerEarningsPaise,
       platformFee: 0,
       notes: notes || '',
       status: 'scheduled',
       paymentStatus: 'paid',
-      paymentMethod: hourlyRate === 0 ? 'free' : 'admin_comp',
+      paymentMethod: 'admin_comp',
       invoiceNumber,
       meetingRoomId
     });
@@ -91,27 +97,28 @@ router.post('/', async (req, res) => {
       interviewId: savedInterview._id
     });
 
-    // Create Payment audit record for free/admin session
+    // Create Payment audit record for admin comp session
     const payment = new Payment({
       candidateId,
       interviewerId,
       interviewId: savedInterview._id,
-      orderId: `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-      paymentId: `FREE_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-      amount: hourlyRate,
-      sessionFee: hourlyRate,
+      orderId: `COMP_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      paymentId: `COMP_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      amount: sessionFee,
+      amountPaise: mockPricePaise,
+      sessionFee,
       platformFee: 0,
       gstAmount: 0,
       status: 'captured',
-      paymentMethod: hourlyRate === 0 ? 'free' : 'razorpay',
+      paymentMethod: 'admin_comp',
       invoiceNumber,
-      notes: notes || 'Free session booking'
+      notes: notes || 'Admin complimentary session booking'
     });
     await payment.save();
 
     const populated = await Interview.findById(savedInterview._id)
       .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company hourlyRate');
+      .populate('interviewerId', 'name email avatar title company');
 
     res.status(201).json(populated);
   } catch (err) {
@@ -149,7 +156,7 @@ router.get('/', async (req, res) => {
       Interview.countDocuments(filter),
       Interview.find(filter)
         .populate('candidateId', 'name email avatar')
-        .populate('interviewerId', 'name email avatar title company hourlyRate')
+        .populate('interviewerId', 'name email avatar title company')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -172,7 +179,7 @@ router.get('/:id', validateObjectId('id'), async (req, res) => {
   try {
     const interview = await Interview.findById(req.params.id)
       .populate('candidateId', 'name email avatar role')
-      .populate('interviewerId', 'name email avatar role title company hourlyRate');
+      .populate('interviewerId', 'name email avatar role title company');
 
     if (!interview) {
       return res.status(404).json({ success: false, message: 'Interview not found' });

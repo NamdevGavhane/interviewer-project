@@ -27,7 +27,6 @@ const Profile = () => {
     title: '',
     company: '',
     bio: '',
-    hourlyRate: 100,
     skills: ''
   });
 
@@ -79,7 +78,6 @@ const Profile = () => {
           title: data.title || '',
           company: data.company || '',
           bio: data.bio || '',
-          hourlyRate: data.hourlyRate || 0,
           skills: data.skills ? data.skills.join(', ') : ''
         });
       }
@@ -103,7 +101,6 @@ const Profile = () => {
         title: editForm.title,
         company: editForm.company,
         bio: editForm.bio,
-        hourlyRate: Number(editForm.hourlyRate),
         skills: editForm.skills.split(',').map(s => s.trim()).filter(Boolean)
       });
 
@@ -179,27 +176,14 @@ const Profile = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="input-group">
-              <label>Company / Organization</label>
-              <input 
-                type="text" 
-                className="input-field"
-                value={editForm.company}
-                onChange={(e) => setEditForm(p => ({ ...p, company: e.target.value }))}
-              />
-            </div>
-            {profileData.role === 'professional' && (
-              <div className="input-group">
-                <label>Hourly Rate (₹)</label>
-                <input 
-                  type="number" 
-                  className="input-field"
-                  value={editForm.hourlyRate}
-                  onChange={(e) => setEditForm(p => ({ ...p, hourlyRate: e.target.value }))}
-                />
-              </div>
-            )}
+          <div className="input-group">
+            <label>Company / Organization</label>
+            <input 
+              type="text" 
+              className="input-field"
+              value={editForm.company}
+              onChange={(e) => setEditForm(p => ({ ...p, company: e.target.value }))}
+            />
           </div>
 
           <div className="input-group">
@@ -272,17 +256,11 @@ const Profile = () => {
                 </div>
               </div>
               
-              {profileData.role === 'professional' && (
+              {profileData.role === 'professional' && !isOwnProfile && isCandidate && (
                 <div className="flex flex-col items-end gap-3">
-                  <div className="text-right">
-                    <span className="text-2xl font-bold">₹{profileData.hourlyRate}</span>
-                    <span className="text-muted text-sm"> / session</span>
-                  </div>
-                  {!isOwnProfile && isCandidate && (
-                    <Link to={`/booking?interviewerId=${profileData._id}`}>
-                      <button className="btn btn-primary px-6">Book Mock Interview</button>
-                    </Link>
-                  )}
+                  <Link to={`/booking?interviewerId=${profileData._id}`}>
+                    <button className="btn btn-primary px-6">Book Mock Interview</button>
+                  </Link>
                 </div>
               )}
             </div>

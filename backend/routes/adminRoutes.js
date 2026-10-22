@@ -19,7 +19,7 @@ router.use(authenticate, requireRole('admin'));
 // @desc    Admin creates and invites a Professional account
 router.post('/invite-professional', validate(inviteProfessionalSchema), async (req, res) => {
   try {
-    const { name, email, company, designation, experience, domain, hourlyRate } = req.body;
+    const { name, email, company, designation, experience, domain } = req.body;
     const cleanEmail = email.trim().toLowerCase();
 
     let existingUser = await User.findOne({ email: cleanEmail });
@@ -72,7 +72,6 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
       title: designation.trim(),
       experience: experience.trim(),
       domain: domain ? domain.trim() : 'Software Engineering',
-      hourlyRate: Number(hourlyRate) || 0,
       role: 'professional',
       accountStatus: 'invited',
       approvalStatus: 'approved',
@@ -501,7 +500,7 @@ router.get('/bookings', async (req, res) => {
       Interview.countDocuments(query),
       Interview.find(query)
         .populate('candidateId', 'name email avatar')
-        .populate('interviewerId', 'name email avatar title company hourlyRate')
+        .populate('interviewerId', 'name email avatar title company')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -544,7 +543,7 @@ router.get('/payouts', async (req, res) => {
     const [total, payouts] = await Promise.all([
       Payout.countDocuments(query),
       Payout.find(query)
-        .populate('interviewerId', 'name email title company hourlyRate')
+        .populate('interviewerId', 'name email title company')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -584,7 +583,7 @@ router.put('/payouts/:id/status', async (req, res) => {
     await payout.save();
 
     const populated = await Payout.findById(payout._id)
-      .populate('interviewerId', 'name email title company hourlyRate');
+      .populate('interviewerId', 'name email title company');
 
     // Notify professional of payout status update (O1, O6)
     try {

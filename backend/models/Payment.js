@@ -35,14 +35,18 @@ const paymentSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  amountPaise: {
+    type: Number,
+    default: 5000,
+  },
   sessionFee: {
     type: Number,
     required: true,
-    default: 100,
+    default: 50,
   },
   platformFee: {
     type: Number,
-    default: 10,
+    default: 0,
   },
   gstAmount: {
     type: Number,

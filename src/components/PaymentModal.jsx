@@ -32,18 +32,39 @@ const PaymentModal = ({
   isOpen,
   onClose,
   bookingDetails,
-  onSuccess
+  onSuccess,
+  onHoldExpired
 }) => {
   const [processing, setProcessing] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(600);
 
   useEffect(() => {
     if (isOpen) {
       loadRazorpayScript().then(loaded => setScriptLoaded(loaded));
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !bookingDetails) return;
+    const holdMs = (bookingDetails.holdMinutes || 10) * 60 * 1000;
+    const createdAt = bookingDetails.createdAt || Date.now();
+    const expiresAt = createdAt + holdMs;
+
+    const updateTimer = () => {
+      const diffSec = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+      setRemainingSeconds(diffSec);
+      if (diffSec <= 0) {
+        if (onHoldExpired) onHoldExpired();
+      }
+    };
+
+    updateTimer();
+    const timerInterval = setInterval(updateTimer, 1000);
+    return () => clearInterval(timerInterval);
+  }, [isOpen, bookingDetails, onHoldExpired]);
 
   if (!isOpen || !bookingDetails) return null;
 
@@ -56,9 +77,6 @@ const PaymentModal = ({
     notes = '',
     orderId,
     keyId,
-    sessionFee = 0,
-    platformFee = 0,
-    gstAmount = 0,
     totalAmount = 0,
     freeSession = false
   } = bookingDetails;
@@ -285,6 +303,17 @@ const PaymentModal = ({
             <span>{topic || 'General Mock Technical Interview'}</span>
           </div>
 
+          {/* Slot Hold Countdown Alert (M3) */}
+          <div className="p-3 mb-4 rounded-xl border border-amber-200 bg-amber-50/70 flex items-center justify-between text-xs text-amber-900">
+            <div className="flex items-center gap-2">
+              <Clock size={16} className="text-amber-600 animate-pulse" />
+              <span>Time remaining to complete payment:</span>
+            </div>
+            <span className="font-mono font-bold text-sm text-amber-700 bg-amber-100/80 px-2.5 py-0.5 rounded-md">
+              {Math.floor(remainingSeconds / 60)}:{(remainingSeconds % 60).toString().padStart(2, '0')}
+            </span>
+          </div>
+
           {/* Price Breakdown */}
           {isFree ? (
             <div className="text-center p-6 bg-emerald-50 rounded-xl border border-emerald-200 mb-4">
@@ -299,21 +328,9 @@ const PaymentModal = ({
           ) : (
             <div className="p-4 mb-5 rounded-xl border border-slate-200 bg-slate-50/50">
               <div className="flex justify-between items-center text-xs py-1 text-slate-600">
-                <span>Interviewer Session Fee</span>
-                <span className="font-semibold text-slate-800">₹{sessionFee}</span>
+                <span>1-on-1 Mock Interview Session</span>
+                <span className="font-semibold text-slate-800">₹{totalAmount}</span>
               </div>
-              {platformFee > 0 && (
-                <div className="flex justify-between items-center text-xs py-1 text-slate-600">
-                  <span>Platform Service Fee</span>
-                  <span className="font-semibold text-slate-800">₹{platformFee}</span>
-                </div>
-              )}
-              {gstAmount > 0 && (
-                <div className="flex justify-between items-center text-xs py-1 text-slate-600">
-                  <span>GST</span>
-                  <span className="font-semibold text-slate-800">₹{gstAmount}</span>
-                </div>
-              )}
               <div className="border-t border-slate-200 mt-2 pt-2 flex justify-between items-center">
                 <span className="text-sm font-bold text-slate-900">Total Payable</span>
                 <span className="text-lg font-bold text-primary">₹{totalAmount} INR</span>

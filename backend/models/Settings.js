@@ -17,6 +17,44 @@ const settingsSchema = new mongoose.Schema({
     type: String,
     default: 'INR'
   },
+  // M1: Fixed session pricing in paise (Rs 50 = 5000)
+  mockSessionPricePaise: {
+    type: Number,
+    default: 5000,
+    min: 0
+  },
+  interviewerSharePercent: {
+    type: Number,
+    default: 70,
+    min: 0,
+    max: 100
+  },
+  minPayoutPaise: {
+    type: Number,
+    default: 30000,
+    min: 0
+  },
+  // M2: Timings & Lifecycle configuration (minutes)
+  pendingPaymentMinutes: {
+    type: Number,
+    default: 10,
+    min: 1
+  },
+  joinOpensMinutesBefore: {
+    type: Number,
+    default: 10,
+    min: 0
+  },
+  joinGraceMinutesAfter: {
+    type: Number,
+    default: 15,
+    min: 0
+  },
+  noShowWaitMinutes: {
+    type: Number,
+    default: 10,
+    min: 0
+  },
   refundWindowHours: {
     type: Number,
     default: 24,
@@ -74,6 +112,39 @@ settingsSchema.statics.getSettings = async function() {
   let settings = await this.findOne();
   if (!settings) {
     settings = await this.create({});
+  } else {
+    let changed = false;
+    if (settings.mockSessionPricePaise === undefined) {
+      settings.mockSessionPricePaise = 5000;
+      changed = true;
+    }
+    if (settings.interviewerSharePercent === undefined) {
+      settings.interviewerSharePercent = 70;
+      changed = true;
+    }
+    if (settings.minPayoutPaise === undefined) {
+      settings.minPayoutPaise = 30000;
+      changed = true;
+    }
+    if (settings.pendingPaymentMinutes === undefined) {
+      settings.pendingPaymentMinutes = 10;
+      changed = true;
+    }
+    if (settings.joinOpensMinutesBefore === undefined) {
+      settings.joinOpensMinutesBefore = 10;
+      changed = true;
+    }
+    if (settings.joinGraceMinutesAfter === undefined) {
+      settings.joinGraceMinutesAfter = 15;
+      changed = true;
+    }
+    if (settings.noShowWaitMinutes === undefined) {
+      settings.noShowWaitMinutes = 10;
+      changed = true;
+    }
+    if (changed) {
+      await settings.save();
+    }
   }
   return settings;
 };

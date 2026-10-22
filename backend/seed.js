@@ -12,12 +12,16 @@ const seedDatabase = async () => {
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB for idempotent seeding...');
 
-    // 1. Ensure Default Settings Exist
+    // 1. Ensure Default Settings Exist (M1, M2)
     const settings = await Settings.getSettings();
     console.log('Platform settings verified:', {
-      commission: `${settings.platformCommissionPercent}%`,
-      gst: `${settings.gstPercent}%`,
-      refundWindow: `${settings.refundWindowHours}h`
+      mockSessionPricePaise: settings.mockSessionPricePaise,
+      interviewerSharePercent: `${settings.interviewerSharePercent}%`,
+      minPayoutPaise: settings.minPayoutPaise,
+      pendingPaymentMinutes: `${settings.pendingPaymentMinutes}m`,
+      joinOpensMinutesBefore: `${settings.joinOpensMinutesBefore}m`,
+      joinGraceMinutesAfter: `${settings.joinGraceMinutesAfter}m`,
+      noShowWaitMinutes: `${settings.noShowWaitMinutes}m`
     });
 
     // 2. Ensure Default Interview Options Config Exists

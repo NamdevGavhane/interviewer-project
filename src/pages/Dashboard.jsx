@@ -14,10 +14,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Editable fields for Professional
-  const [priceInput, setPriceInput] = useState('');
-  const [savingPrice, setSavingPrice] = useState(false);
-  const [priceSavedToast, setPriceSavedToast] = useState(false);
 
   const [slotsList, setSlotsList] = useState([]);
   const [newSlotInput, setNewSlotInput] = useState('');
@@ -39,7 +35,6 @@ const Dashboard = () => {
       // Fetch user profile
       const user = await apiClient.get(`/api/users/${userId}`);
       setUserData(user);
-      setPriceInput(user.hourlyRate || 0);
       setSlotsList(user.availabilitySlots || []);
 
       // Fetch user's interviews
@@ -68,23 +63,6 @@ const Dashboard = () => {
     loadData();
   }, [userId]);
 
-  // Handle saving new price for professional
-  const handleUpdatePrice = async () => {
-    if (!priceInput || isNaN(priceInput)) return;
-    try {
-      setSavingPrice(true);
-      const updated = await apiClient.put(`/api/users/${userId}`, { hourlyRate: Number(priceInput) });
-      if (updated) {
-        setUserData(updated);
-        setPriceSavedToast(true);
-        setTimeout(() => setPriceSavedToast(false), 3000);
-      }
-    } catch (err) {
-      alert('Error updating price: ' + err.message);
-    } finally {
-      setSavingPrice(false);
-    }
-  };
 
   // Handle saving availability slots
   const handleAddSlot = () => {
@@ -135,7 +113,7 @@ const Dashboard = () => {
   const completedInterviews = interviews.filter(i => i.status === 'completed');
 
   // Compute earnings dynamically from actual completed sessions
-  const dynamicEarnings = completedInterviews.reduce((acc, curr) => acc + (curr.price || userData.hourlyRate || 0), 0);
+  const dynamicEarnings = completedInterviews.reduce((acc, curr) => acc + (curr.interviewerEarningsPaise ? (curr.interviewerEarningsPaise / 100) : (curr.price ? Math.round(curr.price * 0.7) : 0)), 0);
 
   const avgFeedbackScore = feedbacks.length > 0 
     ? `${Math.round(feedbacks.reduce((acc, f) => acc + (f.overallScore || 0), 0) / feedbacks.length)}/100`
@@ -334,40 +312,6 @@ const Dashboard = () => {
         <div className="flex flex-col gap-6">
           {isProfessional ? (
             <>
-              {/* Dynamic Rate Setting */}
-              <div className="card">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign size={20} className="text-muted" />
-                  <h3 className="text-lg font-bold">Set Your Session Price</h3>
-                </div>
-                <p className="text-sm text-muted mb-4">Your hourly rate charged to candidates (saved in MongoDB).</p>
-                
-                <div className="flex items-center gap-3 mb-4">
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', fontWeight: 'bold' }}>₹</span>
-                    <input 
-                      type="number"
-                      className="input-field w-full"
-                      style={{ paddingLeft: '2rem' }}
-                      value={priceInput}
-                      onChange={(e) => setPriceInput(e.target.value)}
-                    />
-                  </div>
-                  <button 
-                    className="btn btn-primary"
-                    onClick={handleUpdatePrice}
-                    disabled={savingPrice}
-                  >
-                    {savingPrice ? 'Saving...' : 'Update Price'}
-                  </button>
-                </div>
-
-                {priceSavedToast && (
-                  <div className="badge badge-success text-xs py-1 px-2 w-full text-center">
-                    ✓ Price updated successfully in database!
-                  </div>
-                )}
-              </div>
 
               {/* Dynamic Availability Management */}
               <div className="card">
@@ -477,7 +421,7 @@ const Dashboard = () => {
                         {/* Rate Tag & Rating */}
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                            ₹{prof.hourlyRate || 100}/session
+                            1-on-1 Session
                           </span>
                           <span className="text-[11px] text-amber-500 font-semibold flex items-center gap-0.5">
                             ★ {prof.rating || 4.98}

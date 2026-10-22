@@ -40,7 +40,7 @@ const {
 const mongoose = require('mongoose');
 const { validateObjectId } = require('../middleware/validateObjectId');
 
-const PUBLIC_PROFESSIONAL_FIELDS = '_id name title designation company domain hourlyRate bio skills rating reviewsCount avatar role accountStatus isVerified approvalStatus experience linkedin createdAt';
+const PUBLIC_PROFESSIONAL_FIELDS = '_id name title designation company domain bio skills rating reviewsCount avatar role accountStatus isVerified approvalStatus experience linkedin createdAt';
 
 // Initialize Google OAuth2 Client
 const getGoogleClient = () => {
@@ -263,8 +263,7 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
           avatar: user.avatar,
           title: user.title,
           isVerified: user.isVerified,
-          isEmailVerified: user.isEmailVerified,
-          hourlyRate: user.hourlyRate
+          isEmailVerified: user.isEmailVerified
         }
       }
     });
@@ -881,7 +880,6 @@ router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSche
       designation,
       company,
       domain,
-      hourlyRate,
       bio,
       skills,
       experience,
@@ -905,7 +903,6 @@ router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSche
     }
     if (company !== undefined) updateData.company = company;
     if (domain !== undefined) updateData.domain = domain;
-    if (hourlyRate !== undefined) updateData.hourlyRate = Number(hourlyRate);
     if (bio !== undefined) updateData.bio = bio;
     if (skills !== undefined) updateData.skills = skills;
     if (experience !== undefined) updateData.experience = experience;
@@ -951,35 +948,45 @@ router.get('/:id/earnings', authenticate, requireRole('professional', 'admin'), 
       .sort({ createdAt: -1 });
 
     const settings = await Settings.getSettings();
-    const commissionPercent = Number(settings.platformCommissionPercent) || 0;
+    const interviewerSharePercent = Number(settings.interviewerSharePercent) || 70;
+    const minPayoutPaise = settings.minPayoutPaise ?? 30000;
 
     const completed = interviews.filter(i => i.status === 'completed');
+    const eligibleSessions = interviews.filter(i => i.status === 'completed' || i.status === 'candidate_no_show');
     const scheduled = interviews.filter(i => i.status === 'scheduled');
     const cancelled = interviews.filter(i => i.status === 'cancelled');
 
-    const grossCompleted = completed.reduce((sum, item) => sum + (item.price || 0), 0);
-    const platformFeeCut = Math.round((grossCompleted * commissionPercent) / 100);
-    const netPayout = Math.max(0, grossCompleted - platformFeeCut);
-    const pendingEarnings = scheduled.reduce((sum, item) => sum + (item.price || 0), 0);
+    const totalEarned = eligibleSessions.reduce((sum, item) => {
+      if (item.interviewerEarningsPaise) {
+        return sum + (item.interviewerEarningsPaise / 100);
+      }
+      return sum + Math.round((item.price || 0) * (interviewerSharePercent / 100));
+    }, 0);
+
+    const pendingEarnings = scheduled.reduce((sum, item) => {
+      if (item.interviewerEarningsPaise) {
+        return sum + (item.interviewerEarningsPaise / 100);
+      }
+      return sum + Math.round((item.price || 0) * (interviewerSharePercent / 100));
+    }, 0);
 
     res.json({
       professional: {
         id: user._id,
         name: user.name,
-        hourlyRate: user.hourlyRate || 0,
         isVerified: user.isVerified || false
       },
       stats: {
-        totalEarned: netPayout,
-        grossEarned: grossCompleted,
+        totalEarned,
+        netPayout: totalEarned,
         pendingEarnings,
-        platformFeeGenerated: platformFeeCut,
-        netPayout,
+        minPayoutPaise,
+        minPayout: minPayoutPaise / 100,
         completedSessions: completed.length,
         scheduledSessions: scheduled.length,
         cancelledSessions: cancelled.length,
         totalSessions: interviews.length,
-        platformCommissionPercent: commissionPercent
+        interviewerSharePercent
       },
       sessions: interviews
     });

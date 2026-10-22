@@ -23,6 +23,7 @@ const Booking = () => {
 
   const [interviewers, setInterviewers] = useState([]);
   const [selectedInterviewer, setSelectedInterviewer] = useState(null);
+  const [publicConfig, setPublicConfig] = useState(null);
   
   // Real dynamic availability
   const [availableSlots, setAvailableSlots] = useState([]);
@@ -35,6 +36,7 @@ const Booking = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [holdExpiredMessage, setHoldExpiredMessage] = useState('');
   const [successBooking, setSuccessBooking] = useState(null);
   const [confirmedPayment, setConfirmedPayment] = useState(null);
 
@@ -42,32 +44,37 @@ const Booking = () => {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentOrderData, setPaymentOrderData] = useState(null);
 
-  // 1. Fetch professionals on mount
+  // 1. Fetch public config and professionals on mount
   useEffect(() => {
-    const fetchProfessionals = async () => {
+    const initData = async () => {
       try {
         setLoading(true);
-        const data = await apiClient.get('/api/users?role=professional');
-        setInterviewers(data);
+        const [configData, usersData] = await Promise.all([
+          apiClient.get('/api/config/public').catch(() => null),
+          apiClient.get('/api/users?role=professional')
+        ]);
 
-        if (data.length > 0) {
+        if (configData) setPublicConfig(configData);
+        setInterviewers(usersData);
+
+        if (usersData.length > 0) {
           const match = preselectedInterviewerId 
-            ? data.find(u => u._id === preselectedInterviewerId) 
-            : data[0];
-          const chosen = match || data[0];
+            ? usersData.find(u => u._id === preselectedInterviewerId) 
+            : usersData[0];
+          const chosen = match || usersData[0];
           setSelectedInterviewer(chosen);
           if (chosen.title || chosen.domain) {
             setTopic(`${chosen.domain || chosen.title} Technical Mock Interview`);
           }
         }
       } catch (err) {
-        setError('Error loading interviewers: ' + err.message);
+        setError('Error loading booking data: ' + err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchProfessionals();
+    initData();
   }, [preselectedInterviewerId]);
 
   // 2. Fetch real dynamic availability whenever selectedInterviewer changes
@@ -78,12 +85,12 @@ const Booking = () => {
       try {
         setLoadingSlots(true);
         setSelectedSlotObj(null);
+        setHoldExpiredMessage('');
         const res = await apiClient.get(`/api/availability/${selectedInterviewer._id}`);
         const slots = res?.data || [];
         setAvailableSlots(slots);
 
         if (slots.length > 0) {
-          // Select first available date by default
           const firstDate = slots[0].date;
           setSelectedDate(firstDate);
           setSelectedSlotObj(slots[0]);
@@ -118,48 +125,21 @@ const Booking = () => {
   // Slots for currently selected date
   const slotsForSelectedDate = availableSlots.filter(s => s.date === selectedDate);
 
+  // Dynamic session price from public config (M1)
+  const sessionPrice = publicConfig?.mockSessionPricePaise != null
+    ? (publicConfig.mockSessionPricePaise / 100)
+    : null;
+
   // Initiate Booking / Payment Flow
   const handleInitiateBooking = async (e) => {
     e.preventDefault();
+    setHoldExpiredMessage('');
 
     if (!selectedInterviewer || !selectedSlotObj) {
       alert('Please select an interviewer and an available time slot.');
       return;
     }
 
-    const fee = selectedInterviewer.hourlyRate !== undefined && selectedInterviewer.hourlyRate !== null 
-      ? Number(selectedInterviewer.hourlyRate) 
-      : 0;
-
-    // Handle Free Session (hourlyRate === 0) directly without payment gateway
-    if (fee === 0) {
-      try {
-        setSubmitting(true);
-        const freeBooking = await apiClient.post('/api/interviews', {
-          interviewerId: selectedInterviewer._id,
-          date: selectedSlotObj.date,
-          timeSlot: selectedSlotObj.slotLabel,
-          slotId: selectedSlotObj._id,
-          topic,
-          notes
-        });
-
-        setSuccessBooking(freeBooking);
-        setConfirmedPayment({
-          amount: 0,
-          invoiceNumber: freeBooking.invoiceNumber || `INV-FREE-${freeBooking._id.slice(-6).toUpperCase()}`,
-          paymentId: 'FREE_SESSION',
-          paymentMethod: 'Free Community Session'
-        });
-      } catch (err) {
-        alert('Booking failed: ' + err.message);
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
-
-    // Paid Session: Initialize Razorpay Order via Backend with atomic slot reservation (P2, P7)
     try {
       setSubmitting(true);
       const orderRes = await apiClient.post('/api/payment/create-order', {
@@ -170,20 +150,24 @@ const Booking = () => {
       });
 
       const orderData = orderRes?.data || orderRes;
+      const holdMinutes = orderData.holdMinutes || publicConfig?.pendingPaymentMinutes || 10;
 
       setPaymentOrderData({
         orderId: orderData.orderId,
-        sessionFee: orderData.sessionFee || fee,
-        platformFee: orderData.platformFee || 0,
-        gstAmount: orderData.gstAmount || 0,
-        totalAmount: orderData.amount || fee,
+        sessionFee: orderData.sessionFee ?? sessionPrice,
+        platformFee: 0,
+        gstAmount: 0,
+        totalAmount: orderData.amount ?? sessionPrice,
+        amountPaise: orderData.amountPaise,
+        holdMinutes,
         keyId: orderData.keyId,
         interviewer: selectedInterviewer,
         selectedDate: selectedSlotObj.date,
         selectedSlot: selectedSlotObj.slotLabel,
         slotId: selectedSlotObj._id,
         topic,
-        notes
+        notes,
+        createdAt: Date.now()
       });
 
       setIsPaymentModalOpen(true);
@@ -193,6 +177,13 @@ const Booking = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleHoldExpired = () => {
+    setIsPaymentModalOpen(false);
+    setPaymentOrderData(null);
+    setSelectedSlotObj(null);
+    setHoldExpiredMessage('Time expired, slot released. Please select a slot again to book.');
   };
 
   const handlePaymentSuccess = (result) => {
@@ -332,6 +323,13 @@ const Booking = () => {
         </div>
       )}
 
+      {holdExpiredMessage && (
+        <div className="card p-4 mb-6 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+          <AlertCircle size={18} className="text-amber-600" />
+          <span>{holdExpiredMessage}</span>
+        </div>
+      )}
+
       <form onSubmit={handleInitiateBooking}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.1fr', gap: '2rem' }}>
           {/* Left Column */}
@@ -414,7 +412,7 @@ const Booking = () => {
 
                     <div className="text-right flex-shrink-0 pl-3">
                       <div className="font-bold text-base text-primary">
-                        {prof.hourlyRate ? `₹${prof.hourlyRate}` : 'Free'}
+                        {sessionPrice != null ? `₹${sessionPrice}` : ''}
                       </div>
                       <div className="text-[11px] text-muted font-medium">/ session</div>
                     </div>
@@ -539,21 +537,17 @@ const Booking = () => {
               <div className="flex flex-col gap-2 mb-6 text-sm">
                 <div className="flex justify-between text-muted">
                   <span>Session Rate</span>
-                  <span>{sessionFee === 0 ? 'Free' : `₹${sessionFee}`}</span>
-                </div>
-                <div className="flex justify-between text-muted">
-                  <span>Platform Fee</span>
-                  <span>₹0</span>
+                  <span>{sessionPrice != null ? `₹${sessionPrice}` : '...'}</span>
                 </div>
                 <div className="flex justify-between font-bold text-base pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                   <span>Total Payable</span>
-                  <span className="text-primary">{sessionFee === 0 ? 'Free' : `₹${sessionFee} INR`}</span>
+                  <span className="text-primary">{sessionPrice != null ? `₹${sessionPrice} INR` : '...'}</span>
                 </div>
               </div>
 
               <button
                 type="submit"
-                disabled={submitting || !selectedSlotObj}
+                disabled={submitting || !selectedSlotObj || sessionPrice == null}
                 className="btn btn-primary w-full py-3 font-bold flex items-center justify-center gap-2"
               >
                 {submitting ? (
@@ -562,7 +556,7 @@ const Booking = () => {
                     <span>Processing Booking...</span>
                   </>
                 ) : (
-                  <span>{sessionFee === 0 ? 'Confirm Free Booking' : `Proceed to Pay ₹${sessionFee}`}</span>
+                  <span>Proceed to Pay {sessionPrice != null ? `₹${sessionPrice}` : ''}</span>
                 )}
               </button>
             </div>
@@ -570,13 +564,14 @@ const Booking = () => {
         </div>
       </form>
 
-      {/* Payment Gateway Modal (Phase 3) */}
+      {/* Payment Gateway Modal */}
       {isPaymentModalOpen && paymentOrderData && (
         <PaymentModal
           isOpen={isPaymentModalOpen}
           onClose={() => setIsPaymentModalOpen(false)}
           bookingDetails={paymentOrderData}
           onSuccess={handlePaymentSuccess}
+          onHoldExpired={handleHoldExpired}
         />
       )}
     </div>

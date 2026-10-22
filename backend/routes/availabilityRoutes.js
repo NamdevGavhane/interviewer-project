@@ -224,7 +224,7 @@ router.post('/reschedule', authenticate, async (req, res) => {
 
     const populated = await Interview.findById(interview._id)
       .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company hourlyRate');
+      .populate('interviewerId', 'name email avatar title company');
 
     res.json({
       success: true,

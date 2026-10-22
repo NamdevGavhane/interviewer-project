@@ -53,8 +53,15 @@ const AdminDashboard = () => {
   const [payoutStatusFilter, setPayoutStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   
-  // Platform Settings State
+  // Platform Settings State (M1, M2)
   const [platformSettings, setPlatformSettings] = useState({
+    mockSessionPricePaise: 5000,
+    interviewerSharePercent: 70,
+    minPayoutPaise: 30000,
+    pendingPaymentMinutes: 10,
+    joinOpensMinutesBefore: 10,
+    joinGraceMinutesAfter: 15,
+    noShowWaitMinutes: 10,
     platformCommissionPercent: 10,
     gstPercent: 18,
     currency: 'INR',
@@ -92,8 +99,7 @@ const AdminDashboard = () => {
     company: '',
     designation: '',
     experience: '5+ Years',
-    domain: 'Full Stack MERN',
-    hourlyRate: 100
+    domain: 'Full Stack MERN'
   });
   const [inviting, setInviting] = useState(false);
   const [inviteSuccessData, setInviteSuccessData] = useState(null);
@@ -972,7 +978,7 @@ const AdminDashboard = () => {
                             <span>•</span>
                             <span>{req.company || 'Tech Org'}</span>
                             <span>•</span>
-                            <span className="font-semibold text-success">Fee: ₹{req.hourlyRate || 100} / 45m</span>
+                            <span className="font-semibold text-success">Professional Interviewer</span>
                             {req.experience && (
                               <>
                                 <span>•</span>
@@ -1207,7 +1213,7 @@ const AdminDashboard = () => {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         {u.role === 'professional' ? (
                           <div>
-                            <div className="font-semibold text-success">₹{u.hourlyRate || 100} / session</div>
+                            <div className="font-semibold text-success">Verified Professional</div>
                             <div className="text-xs text-muted">{u.title || 'Interviewer'}</div>
                           </div>
                         ) : (
@@ -1307,7 +1313,7 @@ const AdminDashboard = () => {
                         </div>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <div className="font-bold text-success">₹{p.hourlyRate || 100} / 45m</div>
+                        <div className="font-bold text-success">Verified Professional</div>
                         <div className="text-xs text-muted">⭐ {p.rating || '5.0'} ({p.reviewsCount || 0} reviews)</div>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
@@ -1351,6 +1357,104 @@ const AdminDashboard = () => {
 
             <form onSubmit={handleSavePlatformSettings}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Fixed Session Price (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-field text-sm"
+                    value={platformSettings.mockSessionPricePaise !== undefined ? platformSettings.mockSessionPricePaise / 100 : 50}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, mockSessionPricePaise: Math.round(Number(e.target.value) * 100) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Total price paid by candidates for every 1-on-1 mock interview (in INR)</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Interviewer Share (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="input-field text-sm"
+                    value={platformSettings.interviewerSharePercent ?? 70}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, interviewerSharePercent: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Percentage of session fee earned by the interviewer (Default 70%)</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Minimum Payout (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-field text-sm"
+                    value={platformSettings.minPayoutPaise !== undefined ? platformSettings.minPayoutPaise / 100 : 300}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, minPayoutPaise: Math.round(Number(e.target.value) * 100) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minimum earnings balance required for interviewer withdrawal</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Payment Hold Slot (Minutes)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.pendingPaymentMinutes ?? 10}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, pendingPaymentMinutes: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minutes a slot is locked while candidate completes payment</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Room Access Opens Before (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.joinOpensMinutesBefore ?? 10}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, joinOpensMinutesBefore: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minutes before session startTime join button unlocks</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Room Access Grace After (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.joinGraceMinutesAfter ?? 15}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, joinGraceMinutesAfter: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minutes after endTime room remains active before auto-close</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Interviewer No-Show Wait (Minutes)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.noShowWaitMinutes ?? 10}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, noShowWaitMinutes: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">If interviewer hasn't joined within this time, auto-refund candidate</span>
+                </div>
                 <div className="input-group mb-0">
                   <label className="text-xs font-semibold">Platform Commission (%)</label>
                   <input

@@ -129,9 +129,11 @@ const availabilityRoutes = require('./routes/availabilityRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const configRoutes = require('./routes/configRoutes');
 const { startReminderWorker } = require('./services/reminderService');
 
 // Mount Routes
+app.use('/api/config', configRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/feedbacks', feedbackRoutes);

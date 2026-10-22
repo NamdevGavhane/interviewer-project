@@ -44,9 +44,29 @@ const interviewSchema = new mongoose.Schema({
     required: true,
     min: 0,
   },
+  amountPaise: {
+    type: Number,
+    default: 5000,
+  },
+  interviewerEarningsPaise: {
+    type: Number,
+    default: 3500,
+  },
+  candidateJoinedAt: {
+    type: Date,
+    default: null,
+  },
+  interviewerJoinedAt: {
+    type: Date,
+    default: null,
+  },
+  completedAt: {
+    type: Date,
+    default: null,
+  },
   status: {
     type: String,
-    enum: ['scheduled', 'completed', 'cancelled', 'rescheduled'],
+    enum: ['scheduled', 'completed', 'cancelled', 'rescheduled', 'interviewer_no_show', 'candidate_no_show', 'expired'],
     default: 'scheduled',
     index: true,
   },

@@ -33,18 +33,33 @@ const pendingBookingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  // Frozen financial figures (P7 / P2)
+  // Frozen financial figures (M1 / P7 / P2)
+  amountPaise: {
+    type: Number,
+    required: true,
+    default: 5000
+  },
+  interviewerSharePaise: {
+    type: Number,
+    required: true,
+    default: 3500
+  },
+  platformSharePaise: {
+    type: Number,
+    required: true,
+    default: 1500
+  },
   sessionFee: {
     type: Number,
     required: true
   },
   platformFee: {
     type: Number,
-    required: true
+    default: 0
   },
   gstAmount: {
     type: Number,
-    required: true
+    default: 0
   },
   amount: {
     type: Number,

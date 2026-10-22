@@ -71,6 +71,10 @@
 | [ ] | X11 | Pending | | |
 | [ ] | X12 | Pending | | |
 | [ ] | X13 | Pending | | |
+| [x] | M1 | Done | backend/models/Settings.js, backend/models/PendingBooking.js, backend/models/Interview.js, backend/models/Payment.js, backend/routes/configRoutes.js, backend/routes/settingsRoutes.js, backend/routes/paymentRoutes.js, backend/routes/userRoutes.js, backend/routes/interviewRoutes.js, src/pages/Booking.jsx, src/components/PaymentModal.jsx, src/pages/Profile.jsx, src/pages/Dashboard.jsx, src/pages/admin/AdminDashboard.jsx, src/pages/professional/Earnings.jsx | Fixed session price Rs 50 (5000 paise) stored strictly in Settings; interviewer gets 70% (3500 paise); GET /api/config/public serves pricing; create-order & verify-and-book enforce server price and reject mismatches; min payout threshold (30000 paise) enforced; removed hourlyRate inputs and tags across frontend and backend. |
+| [ ] | M2 | Pending | | |
+| [ ] | M3 | Pending | | |
 
-NEXT: T1
+NEXT: M2
+
 
