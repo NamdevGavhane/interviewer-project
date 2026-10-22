@@ -89,26 +89,32 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
     const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
     const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
 
-    const mailResult = await sendProfessionalInvitationEmail({
-      name: newProfessional.name,
-      email: newProfessional.email,
-      company: newProfessional.company,
-      designation: newProfessional.designation,
-      experience: newProfessional.experience,
-      token,
-      frontendBaseUrl
-    });
+    let mailResult = { sent: false };
+    try {
+      mailResult = await sendProfessionalInvitationEmail({
+        name: newProfessional.name,
+        email: newProfessional.email,
+        company: newProfessional.company,
+        designation: newProfessional.designation,
+        experience: newProfessional.experience,
+        token,
+        frontendBaseUrl
+      });
+    } catch (mailErr) {
+      console.warn('[ADMIN INVITE] Email dispatch skipped (SMTP unconfigured or blocked):', mailErr.message);
+      mailResult = { sent: false, error: mailErr.message };
+    }
 
     res.status(201).json({
       success: true,
-      message: mailResult.sent 
+      message: mailResult && mailResult.sent 
         ? `Official invitation email successfully delivered to ${cleanEmail}.`
-        : `Invitation created for ${cleanEmail}. (SMTP not configured in backend/.env — copy the invitation link below to share with the professional).`,
+        : `Invitation created for ${cleanEmail}! (SMTP not configured — copy and share the invitation link below).`,
       data: {
         user: newProfessional,
         token,
         invitationLink,
-        mailSent: mailResult.sent
+        mailSent: !!(mailResult && mailResult.sent)
       }
     });
   } catch (err) {
@@ -159,22 +165,28 @@ router.post('/invitations/:id/resend', async (req, res) => {
     const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
     const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
 
-    const mailResult = await sendProfessionalInvitationEmail({
-      name: user.name,
-      email: user.email,
-      company: user.company,
-      designation: user.designation || user.title,
-      experience: user.experience,
-      token,
-      frontendBaseUrl
-    });
+    let mailResult = { sent: false };
+    try {
+      mailResult = await sendProfessionalInvitationEmail({
+        name: user.name,
+        email: user.email,
+        company: user.company,
+        designation: user.designation || user.title,
+        experience: user.experience,
+        token,
+        frontendBaseUrl
+      });
+    } catch (mailErr) {
+      console.warn('[ADMIN RESEND] Email dispatch skipped (SMTP unconfigured or blocked):', mailErr.message);
+      mailResult = { sent: false, error: mailErr.message };
+    }
 
     res.json({
       success: true,
-      message: mailResult.sent 
+      message: mailResult && mailResult.sent 
         ? `Fresh invitation email dispatched to ${user.email}`
         : `Fresh invitation link generated for ${user.email} (SMTP not configured).`,
-      data: { user, token, invitationLink, mailSent: mailResult.sent }
+      data: { user, token, invitationLink, mailSent: !!(mailResult && mailResult.sent) }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
