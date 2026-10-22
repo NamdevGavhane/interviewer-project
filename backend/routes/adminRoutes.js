@@ -37,22 +37,35 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
         existingUser.invitedBy = req.user._id;
         await existingUser.save();
 
-        const mailResult = await sendProfessionalInvitationEmail({
-          name: existingUser.name,
-          email: existingUser.email,
-          company: existingUser.company,
-          designation: existingUser.designation,
-          experience: existingUser.experience,
-          token,
-          frontendBaseUrl: req.headers.origin || 'http://localhost:5173'
-        });
+        const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
+
+        let mailResult = { sent: false };
+        try {
+          mailResult = await sendProfessionalInvitationEmail({
+            name: existingUser.name,
+            email: existingUser.email,
+            company: existingUser.company,
+            designation: existingUser.designation,
+            experience: existingUser.experience,
+            token,
+            frontendBaseUrl
+          });
+        } catch (mailErr) {
+          console.warn('[ADMIN RE-INVITE] Email dispatch skipped (SMTP unconfigured or blocked):', mailErr.message);
+          mailResult = { sent: false, error: mailErr.message };
+        }
 
         return res.status(200).json({
           success: true,
-          message: `Re-sent invitation email to ${cleanEmail}.`,
+          message: mailResult && mailResult.sent
+            ? `Re-sent invitation email to ${cleanEmail}.`
+            : `Invitation refreshed for ${cleanEmail}! (SMTP not configured — copy and share the invitation link below).`,
           data: {
             user: existingUser,
-            mailSent: mailResult.sent
+            token,
+            invitationLink,
+            mailSent: !!(mailResult && mailResult.sent)
           }
         });
       }

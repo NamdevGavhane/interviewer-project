@@ -91,12 +91,17 @@ const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = 'ht
     <p style="font-size: 12px; color: #94a3b8;">This link will expire in 24 hours.</p>
   `;
 
-  return sendEmail({
-    to: email,
-    subject,
-    html: emailContainer(content, emailHeader('Welcome to DevSphere', 'Confirm your email address')),
-    text: `Verify your email: ${verificationLink}`
-  });
+  try {
+    return await sendEmail({
+      to: email,
+      subject,
+      html: emailContainer(content, emailHeader('Welcome to DevSphere', 'Confirm your email address')),
+      text: `Verify your email: ${verificationLink}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendVerificationEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -124,12 +129,17 @@ const sendPasswordResetEmail = async ({ name, email, token, frontendBaseUrl = 'h
     <p style="font-size: 12px; color: #94a3b8;">This password reset link is valid for 1 hour. If you did not make this request, please disregard this email.</p>
   `;
 
-  return sendEmail({
-    to: email,
-    subject,
-    html: emailContainer(content, emailHeader('Reset Your Password', 'DevSphere Security', 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)')),
-    text: `Reset your password: ${resetLink}`
-  });
+  try {
+    return await sendEmail({
+      to: email,
+      subject,
+      html: emailContainer(content, emailHeader('Reset Your Password', 'DevSphere Security', 'linear-gradient(135deg, #ef4444 0%, #f97316 100%)')),
+      text: `Reset your password: ${resetLink}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendPasswordResetEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -169,12 +179,17 @@ const sendProfessionalInvitationEmail = async ({
     </p>
   `;
 
-  return sendEmail({
-    to: email,
-    subject,
-    html: emailContainer(content, emailHeader('DevSphere', 'Official Professional Invitation')),
-    text: `Accept invitation: ${invitationLink}`
-  });
+  try {
+    return await sendEmail({
+      to: email,
+      subject,
+      html: emailContainer(content, emailHeader('DevSphere', 'Official Professional Invitation')),
+      text: `Accept invitation: ${invitationLink}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendProfessionalInvitationEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -220,12 +235,17 @@ const sendBookingConfirmationEmail = async ({
     </p>
   `;
 
-  return sendEmail({
-    to: recipientEmail,
-    subject,
-    html: emailContainer(content, emailHeader('Booking Confirmed', `Scheduled for ${date}`)),
-    text: `Booking confirmed: ${topic} on ${date} at ${timeSlot}. View details: ${sessionLink}`
-  });
+  try {
+    return await sendEmail({
+      to: recipientEmail,
+      subject,
+      html: emailContainer(content, emailHeader('Booking Confirmed', `Scheduled for ${date}`)),
+      text: `Booking confirmed: ${topic} on ${date} at ${timeSlot}. View details: ${sessionLink}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendBookingConfirmationEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -268,12 +288,17 @@ const sendInterviewReminderEmail = async ({
     </div>
   `;
 
-  return sendEmail({
-    to: recipientEmail,
-    subject,
-    html: emailContainer(content, emailHeader(`Interview in ${hoursNotice} Hour${hoursNotice === '1' ? '' : 's'}`, 'DevSphere Session Alert', 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
-    text: `Interview reminder: Your session starts in ${hoursNotice} hours (${date} ${timeSlot}). Join here: ${roomLink}`
-  });
+  try {
+    return await sendEmail({
+      to: recipientEmail,
+      subject,
+      html: emailContainer(content, emailHeader(`Interview in ${hoursNotice} Hour${hoursNotice === '1' ? '' : 's'}`, 'DevSphere Session Alert', 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
+      text: `Interview reminder: Your session starts in ${hoursNotice} hours (${date} ${timeSlot}). Join here: ${roomLink}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendInterviewReminderEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -316,12 +341,17 @@ const sendCancellationEmail = async ({
     </div>
   `;
 
-  return sendEmail({
-    to: recipientEmail,
-    subject,
-    html: emailContainer(content, emailHeader('Interview Cancelled', `Session on ${date}`, 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)')),
-    text: `Interview cancelled: ${topic} on ${date} (${timeSlot}). Reason: ${reason || 'N/A'}`
-  });
+  try {
+    return await sendEmail({
+      to: recipientEmail,
+      subject,
+      html: emailContainer(content, emailHeader('Interview Cancelled', `Session on ${date}`, 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)')),
+      text: `Interview cancelled: ${topic} on ${date} (${timeSlot}). Reason: ${reason || 'N/A'}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendCancellationEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -356,12 +386,17 @@ const sendRefundProcessedEmail = async ({
     </div>
   `;
 
-  return sendEmail({
-    to: recipientEmail,
-    subject,
-    html: emailContainer(content, emailHeader('Refund Processed', `₹${refundAmount} credited`, 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
-    text: `Refund processed: ₹${refundAmount} for ${topic}. Refund ID: ${refundId}`
-  });
+  try {
+    return await sendEmail({
+      to: recipientEmail,
+      subject,
+      html: emailContainer(content, emailHeader('Refund Processed', `₹${refundAmount} credited`, 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
+      text: `Refund processed: ₹${refundAmount} for ${topic}. Refund ID: ${refundId}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendRefundProcessedEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -399,12 +434,17 @@ const sendFeedbackPublishedEmail = async ({
     </div>
   `;
 
-  return sendEmail({
-    to: candidateEmail,
-    subject,
-    html: emailContainer(content, emailHeader('Feedback Published', 'Comprehensive Scorecard Ready')),
-    text: `Your feedback for ${topic} is ready (Score: ${overallScore}/100). View report: ${reportLink}`
-  });
+  try {
+    return await sendEmail({
+      to: candidateEmail,
+      subject,
+      html: emailContainer(content, emailHeader('Feedback Published', 'Comprehensive Scorecard Ready')),
+      text: `Your feedback for ${topic} is ready (Score: ${overallScore}/100). View report: ${reportLink}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendFeedbackPublishedEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 /**
@@ -439,12 +479,17 @@ const sendPayoutProcessedEmail = async ({
     </div>
   `;
 
-  return sendEmail({
-    to: professionalEmail,
-    subject,
-    html: emailContainer(content, emailHeader(`Payout ${status.toUpperCase()}`, `₹${amount}`, status === 'paid' ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)')),
-    text: `Payout ${status}: ₹${amount}. Reference: ${referenceId || 'N/A'}`
-  });
+  try {
+    return await sendEmail({
+      to: professionalEmail,
+      subject,
+      html: emailContainer(content, emailHeader(`Payout ${status.toUpperCase()}`, `₹${amount}`, status === 'paid' ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)')),
+      text: `Payout ${status}: ₹${amount}. Reference: ${referenceId || 'N/A'}`
+    });
+  } catch (err) {
+    console.warn('[MAILER] sendPayoutProcessedEmail skipped or failed:', err.message);
+    return { sent: false, error: err.message };
+  }
 };
 
 module.exports = {
