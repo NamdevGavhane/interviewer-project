@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Eye, EyeOff, ShieldCheck, Lock, AlertCircle, ArrowRight, UserCheck } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck, AlertCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL } from '../config/api';
 
 const ProfessionalLogin = () => {
   // Requirement 7: The Professional Login page must contain only Email and Password fields.
@@ -243,8 +242,17 @@ const ProfessionalLogin = () => {
             paddingTop: '1.25rem',
             textAlign: 'center',
             fontSize: '0.85rem',
-            color: '#64748b'
+            color: '#64748b',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
           }}>
+            <div>
+              Want to become an interviewer?{' '}
+              <Link to="/professional/signup" style={{ color: '#4f46e5', fontWeight: 600, textDecoration: 'none' }}>
+                Apply here
+              </Link>
+            </div>
             <div>
               Looking for mock interview practice?{' '}
               <Link to="/login" style={{ color: '#4f46e5', fontWeight: 600, textDecoration: 'none' }}>
