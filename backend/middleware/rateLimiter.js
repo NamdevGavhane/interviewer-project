@@ -103,6 +103,19 @@ const chatLimiter = rateLimit({
   }
 });
 
+// 8. Professional Self-Signup Limiter: 5 per hour per IP, skipped when NODE_ENV === 'test'
+const professionalSignupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  message: {
+    success: false,
+    message: 'Too many signup attempts. Please try again after an hour.'
+  }
+});
+
 module.exports = {
   apiLimiter,
   pollingLimiter,
@@ -110,6 +123,7 @@ module.exports = {
   passwordResetLimiter,
   paymentLimiter,
   aiLimiter,
-  chatLimiter
+  chatLimiter,
+  professionalSignupLimiter
 };
 
