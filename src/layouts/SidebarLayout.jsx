@@ -40,9 +40,10 @@ const SidebarLayout = () => {
     if (!userData) return;
     try {
       const res = await apiClient.get('/api/notifications');
-      const list = res?.notifications || res?.data || (Array.isArray(res) ? res : []);
+      const rawList = res?.notifications || res?.data || (Array.isArray(res) ? res : []);
+      const list = Array.isArray(rawList) ? rawList.filter(Boolean) : [];
       setNotifications(list);
-      setUnreadCount(res?.unreadCount !== undefined ? res.unreadCount : list.filter(n => !n.isRead).length);
+      setUnreadCount(typeof res?.unreadCount === 'number' ? res.unreadCount : list.filter(n => n && !n.isRead).length);
     } catch (err) {
       // Quiet notice
     }
@@ -109,7 +110,7 @@ const SidebarLayout = () => {
   const isCandidate = currentRole === 'candidate';
 
   const userInitials = userData?.name
-    ? userData.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+    ? userData.name.trim().split(/\s+/).map(n => n[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || 'DS'
     : 'DS';
 
   return (
@@ -357,28 +358,28 @@ const SidebarLayout = () => {
                   </div>
 
                   <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
-                    {notifications.length === 0 ? (
+                    {!Array.isArray(notifications) || notifications.length === 0 ? (
                       <div className="p-6 text-center text-xs text-muted">
                         No notifications yet.
                       </div>
                     ) : (
-                      notifications.map(n => (
+                      notifications.filter(Boolean).map(n => (
                         <div 
-                          key={n._id}
+                          key={n._id || Math.random()}
                           onClick={() => handleMarkAsRead(n._id, n.link)}
                           className={`p-3 border-b text-xs cursor-pointer transition-colors hover:bg-slate-50 ${!n.isRead ? 'bg-blue-50/40' : ''}`}
                         >
                           <div className="flex justify-between items-start gap-1">
                             <span className={`font-semibold ${!n.isRead ? 'text-primary' : 'text-slate-800'}`}>
-                              {n.title}
+                              {n.title || 'Notification'}
                             </span>
                             {!n.isRead && (
                               <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--primary)', marginTop: '4px' }}></span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{n.message}</p>
+                          <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{n.message || ''}</p>
                           <span className="text-[10px] text-slate-400 mt-1 block">
-                            {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {n.createdAt ? new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </span>
                         </div>
                       ))

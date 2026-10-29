@@ -106,21 +106,22 @@ const Dashboard = () => {
   // Deduplicate scheduled interviews so only 1 distinct session appears per slot
   const uniqueScheduled = [];
   const seenScheduledSlots = new Set();
-  for (const session of interviews.filter(i => i.status === 'scheduled')) {
-    const key = `${session.interviewerId?._id || session.interviewerId}_${session.date}_${session.timeSlot}`;
+  for (const session of (interviews || []).filter(i => i && i.status === 'scheduled')) {
+    const interviewerKey = session.interviewerId?._id || session.interviewerId || 'unknown';
+    const key = `${interviewerKey}_${session.date || ''}_${session.timeSlot || ''}`;
     if (!seenScheduledSlots.has(key)) {
       seenScheduledSlots.add(key);
       uniqueScheduled.push(session);
     }
   }
   const upcomingInterviews = uniqueScheduled;
-  const completedInterviews = interviews.filter(i => i.status === 'completed');
+  const completedInterviews = (interviews || []).filter(i => i && i.status === 'completed');
 
   // Compute earnings dynamically from actual completed sessions
   const dynamicEarnings = completedInterviews.reduce((acc, curr) => acc + (curr.interviewerEarningsPaise ? (curr.interviewerEarningsPaise / 100) : (curr.price ? Math.round(curr.price * 0.7) : 0)), 0);
 
-  const avgFeedbackScore = feedbacks.length > 0 
-    ? `${Math.round(feedbacks.reduce((acc, f) => acc + (f.overallScore || 0), 0) / feedbacks.length)}/100`
+  const avgFeedbackScore = (feedbacks || []).length > 0 
+    ? `${Math.round(feedbacks.reduce((acc, f) => acc + (f?.overallScore || 0), 0) / feedbacks.length)}/100`
     : 'No evaluations yet';
 
   const isProfessional = userData.role === 'professional';

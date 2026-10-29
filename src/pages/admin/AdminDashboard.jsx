@@ -121,22 +121,22 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       const [statsData, usersData, requestsData, bookingsData, invitesData, payoutsData, settingsRes, configRes] = await Promise.all([
-        apiClient.get('/api/admin/stats'),
-        apiClient.get('/api/admin/users'),
-        apiClient.get('/api/admin/requests'),
-        apiClient.get('/api/admin/bookings'),
-        apiClient.get('/api/admin/invitations'),
+        apiClient.get('/api/admin/stats').catch(() => null),
+        apiClient.get('/api/admin/users').catch(() => []),
+        apiClient.get('/api/admin/requests').catch(() => []),
+        apiClient.get('/api/admin/bookings').catch(() => []),
+        apiClient.get('/api/admin/invitations').catch(() => []),
         apiClient.get('/api/admin/payouts').catch(() => ({ data: [] })),
         apiClient.get('/api/settings').catch(() => null),
         apiClient.get('/api/settings/interview-config').catch(() => null)
       ]);
 
       if (statsData) setStats(statsData);
-      if (usersData) setUsers(Array.isArray(usersData) ? usersData : (usersData?.data || []));
-      if (requestsData) setRequests(Array.isArray(requestsData) ? requestsData : (requestsData?.data || []));
-      if (bookingsData) setBookings(Array.isArray(bookingsData) ? bookingsData : (bookingsData?.data || []));
-      if (invitesData) setInvitations(Array.isArray(invitesData) ? invitesData : (invitesData?.data || []));
-      if (payoutsData) setPayouts(Array.isArray(payoutsData) ? payoutsData : (payoutsData?.data || []));
+      setUsers(Array.isArray(usersData) ? usersData.filter(Boolean) : (Array.isArray(usersData?.data) ? usersData.data.filter(Boolean) : []));
+      setRequests(Array.isArray(requestsData) ? requestsData.filter(Boolean) : (Array.isArray(requestsData?.data) ? requestsData.data.filter(Boolean) : []));
+      setBookings(Array.isArray(bookingsData) ? bookingsData.filter(Boolean) : (Array.isArray(bookingsData?.data) ? bookingsData.data.filter(Boolean) : []));
+      setInvitations(Array.isArray(invitesData) ? invitesData.filter(Boolean) : (Array.isArray(invitesData?.data) ? invitesData.data.filter(Boolean) : []));
+      setPayouts(Array.isArray(payoutsData) ? payoutsData.filter(Boolean) : (Array.isArray(payoutsData?.data) ? payoutsData.data.filter(Boolean) : []));
       if (settingsRes?.data) setPlatformSettings(settingsRes.data);
       if (configRes?.data) setInterviewConfig(configRes.data);
     } catch (err) {
@@ -374,6 +374,7 @@ const AdminDashboard = () => {
 
   // Helper: compute clean invitation status
   const getInvitationStatus = (inv) => {
+    if (!inv) return 'invited';
     if (inv.isDeactivated || inv.accountStatus === 'deactivated') return 'deactivated';
     if (inv.password || inv.acceptedAt || (inv.accountStatus === 'active' && !inv.invitationToken)) return 'accepted';
     if (inv.invitationExpires && new Date(inv.invitationExpires) < new Date()) return 'expired';
@@ -381,19 +382,21 @@ const AdminDashboard = () => {
   };
 
   // Filtered Requests
-  const filteredRequests = requests.filter(r => {
+  const filteredRequests = (requests || []).filter(r => {
+    if (!r) return false;
     if (requestStatusFilter === 'all') return true;
     return r.approvalStatus === requestStatusFilter;
   });
 
-  const pendingRequestsCount = requests.filter(r => r.approvalStatus === 'pending').length;
+  const pendingRequestsCount = (requests || []).filter(r => r && r.approvalStatus === 'pending').length;
 
   // Filtered Users
-  const filteredUsers = users.filter(u => {
+  const filteredUsers = (users || []).filter(u => {
+    if (!u) return false;
     const matchesSearch = searchQuery === '' || 
-      u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.company?.toLowerCase().includes(searchQuery.toLowerCase());
+      (u.name && u.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.company && u.company.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     return matchesSearch && matchesRole;
   });
@@ -402,10 +405,11 @@ const AdminDashboard = () => {
   const paginatedUsers = filteredUsers.slice((userPage - 1) * usersPerPage, userPage * usersPerPage);
 
   // Professionals for accreditation tab
-  const professionals = users.filter(u => u.role === 'professional');
+  const professionals = (users || []).filter(u => u && u.role === 'professional');
 
   // Filtered Bookings
-  const filteredBookings = bookings.filter(b => {
+  const filteredBookings = (bookings || []).filter(b => {
+    if (!b) return false;
     if (bookingStatusFilter !== 'all') {
       if (bookingStatusFilter === 'unpaid') {
         if (b.paymentStatus !== 'unpaid') return false;
@@ -419,7 +423,7 @@ const AdminDashboard = () => {
       const matchRoom = b.meetingRoomId?.toLowerCase().includes(q);
       const matchCand = b.candidateId?.name?.toLowerCase().includes(q) || b.candidateId?.email?.toLowerCase().includes(q);
       const matchInterviewer = b.interviewerId?.name?.toLowerCase().includes(q) || b.interviewerId?.email?.toLowerCase().includes(q);
-      return matchTopic || matchRoom || matchCand || matchInterviewer;
+      return Boolean(matchTopic || matchRoom || matchCand || matchInterviewer);
     }
     return true;
   });
@@ -615,8 +619,8 @@ const AdminDashboard = () => {
               <span>Platform Volume</span>
               <DollarSign size={16} className="text-success" />
             </div>
-            <div className="text-2xl font-bold mt-2 text-primary">₹{stats.totalVolume?.toLocaleString()}</div>
-            <div className="text-xs text-muted mt-1">Platform Revenue: ₹{stats.platformRevenue?.toLocaleString()}</div>
+            <div className="text-2xl font-bold mt-2 text-primary">₹{(stats.totalVolume || 0).toLocaleString()}</div>
+            <div className="text-xs text-muted mt-1">Platform Revenue: ₹{(stats.platformRevenue || 0).toLocaleString()}</div>
           </div>
         </div>
       )}

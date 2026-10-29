@@ -37,7 +37,8 @@ const PaymentHistory = () => {
 
   const userRole = user?.role || 'candidate';
 
-  const filteredRecords = payments.filter(r => {
+  const filteredRecords = (payments || []).filter(r => {
+    if (!r) return false;
     const term = search.toLowerCase();
     const inv = r.invoiceNumber?.toLowerCase() || '';
     const payId = r.paymentId?.toLowerCase() || '';
