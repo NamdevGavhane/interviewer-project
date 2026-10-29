@@ -1,31 +1,31 @@
 import { useState, useEffect } from 'react';
-import { 
-  Users, 
-  ShieldCheck, 
-  Calendar, 
-  Trash2, 
-  CheckCircle, 
+import {
+  Users,
+  ShieldCheck,
+  Calendar,
+  Trash2,
+  CheckCircle,
   CheckCircle2,
-  XCircle, 
-  Search, 
+  XCircle,
+  Search,
   AlertTriangle,
-  RefreshCw, 
-  Clock, 
-  DollarSign, 
-  LogOut, 
-  Briefcase, 
-  User, 
-  ExternalLink, 
-  UserPlus, 
-  Send, 
-  Copy, 
-  Check, 
-  Mail, 
-  Power, 
-  Ban, 
-  X, 
-  Sliders, 
-  Save, 
+  RefreshCw,
+  Clock,
+  DollarSign,
+  LogOut,
+  Briefcase,
+  User,
+  ExternalLink,
+  UserPlus,
+  Send,
+  Copy,
+  Check,
+  Mail,
+  Power,
+  Ban,
+  X,
+  Sliders,
+  Save,
   Eye,
   ChevronLeft,
   ChevronRight,
@@ -49,7 +49,7 @@ const AdminDashboard = () => {
   const [payouts, setPayouts] = useState([]);
   const [payoutStatusFilter, setPayoutStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
-  
+
   // Platform Settings State
   const [platformSettings, setPlatformSettings] = useState({
     mockSessionPricePaise: 5000,
@@ -393,7 +393,7 @@ const AdminDashboard = () => {
   // Filtered Users
   const filteredUsers = (users || []).filter(u => {
     if (!u) return false;
-    const matchesSearch = searchQuery === '' || 
+    const matchesSearch = searchQuery === '' ||
       (u.name && u.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (u.email && u.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (u.company && u.company.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -464,11 +464,11 @@ const AdminDashboard = () => {
           <p className="text-muted text-sm">Oversee candidates, verified professionals, interview sessions, payouts, and platform operations.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
+          <button
             onClick={() => {
               setInviteSuccessData(null);
               setShowInviteModal(true);
-            }} 
+            }}
             className="btn btn-primary text-xs flex items-center gap-1.5"
             style={{
               background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
@@ -482,8 +482,8 @@ const AdminDashboard = () => {
             <UserPlus size={15} />
             <span>+ Invite Professional</span>
           </button>
-          <button 
-            onClick={fetchData} 
+          <button
+            onClick={fetchData}
             className="btn btn-outline text-xs flex items-center gap-1.5"
             disabled={loading}
           >
@@ -516,15 +516,15 @@ const AdminDashboard = () => {
       {/* Top Stats Cards */}
       {stats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
-          
+
           {/* 1. Invited Professionals Stat Card */}
-          <div 
+          <div
             className="card p-4 transition-all"
             onClick={() => setSearchParams({ tab: 'invitations' })}
-            style={{ 
-              cursor: 'pointer', 
-              border: '1px solid #e9d5ff', 
-              backgroundColor: '#faf5ff' 
+            style={{
+              cursor: 'pointer',
+              border: '1px solid #e9d5ff',
+              backgroundColor: '#faf5ff'
             }}
           >
             <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
@@ -540,13 +540,13 @@ const AdminDashboard = () => {
           </div>
 
           {/* 2. Pending Professional Requests */}
-          <div 
-            className="card p-4 transition-all" 
+          <div
+            className="card p-4 transition-all"
             onClick={() => {
               setSearchParams({ tab: 'requests' });
               setRequestStatusFilter('pending');
             }}
-            style={{ 
+            style={{
               cursor: 'pointer',
               border: pendingRequestsCount > 0 ? '2px solid rgba(245, 158, 11, 0.6)' : '1px solid var(--border)',
               backgroundColor: pendingRequestsCount > 0 ? 'rgba(254, 243, 199, 0.35)' : 'white'
@@ -565,7 +565,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* 3. Total Users */}
-          <div 
+          <div
             className="card p-4 transition-all"
             onClick={() => setSearchParams({ tab: 'users' })}
             style={{ cursor: 'pointer' }}
@@ -579,7 +579,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* 4. Verified Professionals */}
-          <div 
+          <div
             className="card p-4 transition-all"
             onClick={() => {
               setSearchParams({ tab: 'users' });
@@ -596,7 +596,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* 5. Total Bookings */}
-          <div 
+          <div
             className="card p-4 transition-all"
             onClick={() => setSearchParams({ tab: 'bookings' })}
             style={{ cursor: 'pointer' }}
@@ -610,7 +610,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* 6. Platform Revenue */}
-          <div 
+          <div
             className="card p-4 transition-all"
             onClick={() => setSearchParams({ tab: 'payouts' })}
             style={{ cursor: 'pointer' }}
@@ -627,7 +627,7 @@ const AdminDashboard = () => {
 
       {/* Module Navigation Tabs */}
       <div className="tabs-container mb-6">
-        <button 
+        <button
           className={`tab-button ${currentTab === 'overview' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'overview' })}
         >
@@ -635,7 +635,7 @@ const AdminDashboard = () => {
           <span>Overview</span>
         </button>
 
-        <button 
+        <button
           className={`tab-button ${currentTab === 'requests' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'requests' })}
           style={{ position: 'relative' }}
@@ -643,11 +643,11 @@ const AdminDashboard = () => {
           <Briefcase size={16} style={{ display: 'inline', marginRight: '6px' }} />
           <span>Professional Requests</span>
           {pendingRequestsCount > 0 && (
-            <span 
-              className="badge badge-warning text-xs font-bold ml-2" 
-              style={{ 
-                fontSize: '0.7rem', 
-                padding: '0.15rem 0.5rem', 
+            <span
+              className="badge badge-warning text-xs font-bold ml-2"
+              style={{
+                fontSize: '0.7rem',
+                padding: '0.15rem 0.5rem',
                 borderRadius: '12px',
                 backgroundColor: '#f59e0b',
                 color: 'white'
@@ -658,18 +658,18 @@ const AdminDashboard = () => {
           )}
         </button>
 
-        <button 
+        <button
           className={`tab-button ${currentTab === 'invitations' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'invitations' })}
         >
           <Mail size={16} style={{ display: 'inline', marginRight: '6px' }} />
           <span>Professional Invitations ({invitations.length})</span>
           {invitations.filter(i => getInvitationStatus(i) === 'invited').length > 0 && (
-            <span 
-              className="badge text-xs font-bold ml-2" 
-              style={{ 
-                fontSize: '0.7rem', 
-                padding: '0.15rem 0.5rem', 
+            <span
+              className="badge text-xs font-bold ml-2"
+              style={{
+                fontSize: '0.7rem',
+                padding: '0.15rem 0.5rem',
                 borderRadius: '12px',
                 backgroundColor: '#7c3aed',
                 color: 'white'
@@ -680,7 +680,7 @@ const AdminDashboard = () => {
           )}
         </button>
 
-        <button 
+        <button
           className={`tab-button ${currentTab === 'users' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'users' })}
         >
@@ -688,7 +688,7 @@ const AdminDashboard = () => {
           <span>All Users ({users.length})</span>
         </button>
 
-        <button 
+        <button
           className={`tab-button ${currentTab === 'bookings' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'bookings' })}
         >
@@ -696,18 +696,18 @@ const AdminDashboard = () => {
           <span>All Bookings ({bookings.length})</span>
         </button>
 
-        <button 
+        <button
           className={`tab-button ${currentTab === 'payouts' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'payouts' })}
         >
           <DollarSign size={16} style={{ display: 'inline', marginRight: '6px' }} />
           <span>Payout Requests</span>
           {payouts.filter(p => p.status === 'pending').length > 0 && (
-            <span 
-              className="badge text-xs font-bold ml-2" 
-              style={{ 
-                fontSize: '0.7rem', 
-                padding: '0.15rem 0.5rem', 
+            <span
+              className="badge text-xs font-bold ml-2"
+              style={{
+                fontSize: '0.7rem',
+                padding: '0.15rem 0.5rem',
                 borderRadius: '12px',
                 backgroundColor: '#b45309',
                 color: 'white'
@@ -718,7 +718,7 @@ const AdminDashboard = () => {
           )}
         </button>
 
-        <button 
+        <button
           className={`tab-button ${currentTab === 'settings' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'settings' })}
         >
@@ -784,7 +784,7 @@ const AdminDashboard = () => {
 
           {/* Fast Navigation Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-            <div 
+            <div
               className="card p-5 cursor-pointer hover:shadow-md transition-all"
               onClick={() => {
                 setInviteSuccessData(null);
@@ -799,7 +799,7 @@ const AdminDashboard = () => {
               <p className="text-xs text-muted">Generate a secure single-use invitation link for an interviewer.</p>
             </div>
 
-            <div 
+            <div
               className="card p-5 cursor-pointer hover:shadow-md transition-all"
               onClick={() => setSearchParams({ tab: 'requests' })}
               style={{ borderLeft: '4px solid #f59e0b' }}
@@ -811,7 +811,7 @@ const AdminDashboard = () => {
               <p className="text-xs text-muted">Approve or reject candidates applying to become interviewers.</p>
             </div>
 
-            <div 
+            <div
               className="card p-5 cursor-pointer hover:shadow-md transition-all"
               onClick={() => setSearchParams({ tab: 'bookings' })}
               style={{ borderLeft: '4px solid #2563eb' }}
@@ -823,7 +823,7 @@ const AdminDashboard = () => {
               <p className="text-xs text-muted">View upcoming mock sessions, statuses, and override outcomes.</p>
             </div>
 
-            <div 
+            <div
               className="card p-5 cursor-pointer hover:shadow-md transition-all"
               onClick={() => setSearchParams({ tab: 'settings' })}
               style={{ borderLeft: '4px solid #10b981' }}
@@ -843,7 +843,7 @@ const AdminDashboard = () => {
                 <h3 className="font-bold text-sm">Latest Interview Bookings</h3>
                 <p className="text-xs text-muted">Recent candidate bookings across the platform.</p>
               </div>
-              <button 
+              <button
                 onClick={() => setSearchParams({ tab: 'bookings' })}
                 className="btn btn-outline text-xs py-1 px-2.5"
               >
@@ -873,10 +873,9 @@ const AdminDashboard = () => {
                         ₹{b.price || (b.amountPaise ? b.amountPaise / 100 : 0)}
                       </td>
                       <td style={{ padding: '0.65rem 1rem' }}>
-                        <span className={`badge ${
-                          b.status === 'completed' ? 'badge-success' : 
-                          b.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
-                        } text-xs py-0.5 px-2`}>
+                        <span className={`badge ${b.status === 'completed' ? 'badge-success' :
+                            b.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
+                          } text-xs py-0.5 px-2`}>
                           {b.status}
                         </span>
                       </td>
@@ -1215,29 +1214,29 @@ const AdminDashboard = () => {
                 const isRejected = req.approvalStatus === 'rejected';
 
                 return (
-                  <div 
+                  <div
                     key={req._id}
                     className="p-5 border-b transition-colors"
-                    style={{ 
+                    style={{
                       borderColor: 'var(--border)',
                       backgroundColor: isPending ? 'rgba(254, 243, 199, 0.15)' : 'white'
                     }}
                   >
                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                      
+
                       {/* Left: Applicant Profile & Details */}
                       <div className="flex items-start gap-4 flex-1">
-                        <Avatar 
-                          name={req.name} 
-                          avatar={req.avatar} 
-                          size={52} 
-                          style={{ marginTop: '2px' }} 
+                        <Avatar
+                          name={req.name}
+                          avatar={req.avatar}
+                          size={52}
+                          style={{ marginTop: '2px' }}
                         />
                         <div style={{ flex: 1 }}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-base">{req.name}</span>
                             <span className="text-xs text-muted">({req.email})</span>
-                            
+
                             {/* Status Badge */}
                             {isPending && (
                               <span className="badge badge-warning text-xs font-semibold py-0.5 px-2">
@@ -1292,9 +1291,9 @@ const AdminDashboard = () => {
 
                           <div className="flex items-center gap-3 mt-2">
                             {req.linkedin && (
-                              <a 
+                              <a
                                 href={req.linkedin.startsWith('http') ? req.linkedin : `https://${req.linkedin}`}
-                                target="_blank" 
+                                target="_blank"
                                 rel="noreferrer"
                                 className="text-xs text-primary inline-flex items-center gap-1 hover:underline font-medium"
                               >
@@ -1358,10 +1357,10 @@ const AdminDashboard = () => {
                             <button
                               type="button"
                               className="btn text-xs py-1.5 px-3 flex items-center justify-center gap-1.5"
-                              style={{ 
-                                backgroundColor: 'rgba(239, 68, 68, 0.1)', 
-                                color: '#dc2626', 
-                                border: '1px solid rgba(239, 68, 68, 0.25)' 
+                              style={{
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                color: '#dc2626',
+                                border: '1px solid rgba(239, 68, 68, 0.25)'
                               }}
                               disabled={actionLoading?.startsWith(`decision_${req._id}`)}
                               onClick={() => {
@@ -1423,10 +1422,10 @@ const AdminDashboard = () => {
             <div className="flex items-center gap-2 w-full md:w-auto">
               <div style={{ position: 'relative', width: '100%', minWidth: '260px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: '#94a3b8' }} />
-                <input 
-                  type="text" 
-                  placeholder="Search name, email, company..." 
-                  className="input-field" 
+                <input
+                  type="text"
+                  placeholder="Search name, email, company..."
+                  className="input-field"
                   style={{ paddingLeft: '2.2rem', paddingBottom: '0.4rem', paddingTop: '0.4rem', fontSize: '0.85rem' }}
                   value={searchQuery}
                   onChange={(e) => {
@@ -1439,8 +1438,8 @@ const AdminDashboard = () => {
 
             <div className="flex items-center gap-2 w-full md:w-auto justify-end">
               <span className="text-xs text-muted">Filter Role:</span>
-              <select 
-                className="input-field" 
+              <select
+                className="input-field"
                 style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
                 value={roleFilter}
                 onChange={(e) => {
@@ -1479,10 +1478,10 @@ const AdminDashboard = () => {
                     <tr key={u._id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div className="flex items-center gap-3">
-                          <Avatar 
-                            name={u.name} 
-                            avatar={u.avatar} 
-                            size={38} 
+                          <Avatar
+                            name={u.name}
+                            avatar={u.avatar}
+                            size={38}
                           />
                           <div>
                             <div className="font-bold flex items-center gap-1.5">
@@ -1500,7 +1499,7 @@ const AdminDashboard = () => {
                             Administrator 🛡️
                           </span>
                         ) : (
-                          <select 
+                          <select
                             className="input-field"
                             style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
                             value={u.role}
@@ -1629,10 +1628,10 @@ const AdminDashboard = () => {
                     <tr key={p._id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div className="flex items-center gap-3">
-                          <Avatar 
-                            name={p.name} 
-                            avatar={p.avatar} 
-                            size={42} 
+                          <Avatar
+                            name={p.name}
+                            avatar={p.avatar}
+                            size={42}
                           />
                           <div>
                             <div className="font-bold flex items-center gap-1.5">
@@ -1706,8 +1705,8 @@ const AdminDashboard = () => {
                 />
               </div>
 
-              <select 
-                className="input-field" 
+              <select
+                className="input-field"
                 style={{ width: 'auto', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
                 value={bookingStatusFilter}
                 onChange={(e) => setBookingStatusFilter(e.target.value)}
@@ -1770,24 +1769,22 @@ const AdminDashboard = () => {
                         </div>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <span className={`badge ${
-                          b.paymentStatus === 'paid' ? 'badge-success' : 
-                          b.paymentStatus === 'refunded' ? 'badge-danger' : 'badge-warning'
-                        } text-xs font-semibold py-0.5 px-2`}>
+                        <span className={`badge ${b.paymentStatus === 'paid' ? 'badge-success' :
+                            b.paymentStatus === 'refunded' ? 'badge-danger' : 'badge-warning'
+                          } text-xs font-semibold py-0.5 px-2`}>
                           {b.paymentStatus === 'paid' ? 'Paid ✅' : b.paymentStatus === 'refunded' ? 'Refunded ↩️' : 'Unpaid ⏳'}
                         </span>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <span className={`badge ${
-                          b.status === 'completed' ? 'badge-success' : 
-                          b.status === 'cancelled' ? 'badge-danger' : 
-                          b.status === 'interviewer_no_show' || b.status === 'candidate_no_show' ? 'badge-danger' : 'badge-warning'
-                        } text-xs font-semibold py-1 px-2.5`}>
-                          {b.status === 'completed' ? 'Completed ✅' : 
-                           b.status === 'cancelled' ? 'Cancelled ❌' : 
-                           b.status === 'interviewer_no_show' ? 'Interviewer No-Show ⚠️' :
-                           b.status === 'candidate_no_show' ? 'Candidate No-Show ⚠️' :
-                           b.status === 'expired' ? 'Expired ⌛' : 'Scheduled 📅'}
+                        <span className={`badge ${b.status === 'completed' ? 'badge-success' :
+                            b.status === 'cancelled' ? 'badge-danger' :
+                              b.status === 'interviewer_no_show' || b.status === 'candidate_no_show' ? 'badge-danger' : 'badge-warning'
+                          } text-xs font-semibold py-1 px-2.5`}>
+                          {b.status === 'completed' ? 'Completed ✅' :
+                            b.status === 'cancelled' ? 'Cancelled ❌' :
+                              b.status === 'interviewer_no_show' ? 'Interviewer No-Show ⚠️' :
+                                b.status === 'candidate_no_show' ? 'Candidate No-Show ⚠️' :
+                                  b.status === 'expired' ? 'Expired ⌛' : 'Scheduled 📅'}
                         </span>
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
@@ -1836,8 +1833,8 @@ const AdminDashboard = () => {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted">Status:</span>
-              <select 
-                className="input-field" 
+              <select
+                className="input-field"
                 style={{ width: 'auto', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
                 value={payoutStatusFilter}
                 onChange={(e) => setPayoutStatusFilter(e.target.value)}
@@ -1907,11 +1904,10 @@ const AdminDashboard = () => {
                           <div className="text-[11px] text-muted">{new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                         </td>
                         <td style={{ padding: '0.75rem 1rem' }}>
-                          <span className={`badge ${
-                            p.status === 'completed' ? 'badge-success' : 
-                            p.status === 'rejected' ? 'badge-danger' : 
-                            p.status === 'processing' ? 'badge-info' : 'badge-warning'
-                          } text-xs font-semibold py-1 px-2.5`}>
+                          <span className={`badge ${p.status === 'completed' ? 'badge-success' :
+                              p.status === 'rejected' ? 'badge-danger' :
+                                p.status === 'processing' ? 'badge-info' : 'badge-warning'
+                            } text-xs font-semibold py-1 px-2.5`}>
                             {p.status?.toUpperCase()}
                           </span>
                         </td>
@@ -2228,7 +2224,7 @@ const AdminDashboard = () => {
                 <label className="text-xs font-semibold block mb-2">Default Slot Presets for Interviewers</label>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {(platformSettings.slotPresets || []).map((preset, idx) => (
-                    <span 
+                    <span
                       key={idx}
                       className="badge text-xs flex items-center gap-1.5 py-1 px-3"
                       style={{ backgroundColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px' }}
@@ -2301,7 +2297,7 @@ const AdminDashboard = () => {
               <label className="text-xs font-semibold block mb-2">Technical Interview Topics</label>
               <div className="flex flex-wrap gap-2 mb-3">
                 {(interviewConfig.topics || []).map((t, idx) => (
-                  <span 
+                  <span
                     key={idx}
                     className="badge badge-primary text-xs flex items-center gap-1.5 py-1 px-3"
                     style={{ borderRadius: '8px' }}
@@ -2346,7 +2342,7 @@ const AdminDashboard = () => {
               <label className="text-xs font-semibold block mb-2">Target Tech Companies</label>
               <div className="flex flex-wrap gap-2 mb-3">
                 {(interviewConfig.companies || []).map((comp, idx) => (
-                  <span 
+                  <span
                     key={idx}
                     className="badge text-xs flex items-center gap-1.5 py-1 px-3"
                     style={{ backgroundColor: '#e2e8f0', color: '#0f172a', borderRadius: '8px' }}
@@ -2404,12 +2400,12 @@ const AdminDashboard = () => {
       {/* ================= MODAL: INVITE PROFESSIONAL ================= */}
       {showInviteModal && (
         <div className="modal-overlay" onClick={() => !inviting && setShowInviteModal(false)}>
-          <div 
-            className="modal-card" 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: '520px', 
-              padding: '2rem', 
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '520px',
+              padding: '2rem',
               borderRadius: '24px',
               border: '1px solid #e2e8f0',
               boxShadow: '0 20px 45px rgba(0,0,0,0.2)'
@@ -2427,7 +2423,7 @@ const AdminDashboard = () => {
                   Enter professional email. An invitation email will be sent with a secure link to set their own password.
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => !inviting && setShowInviteModal(false)}
                 className="btn btn-ghost p-1 text-muted"
                 style={{ borderRadius: '50%' }}
@@ -2528,7 +2524,7 @@ const AdminDashboard = () => {
                 {/* Email Address */}
                 <div className="input-group mb-3">
                   <label className="text-xs font-semibold">Professional Email Address *</label>
-                  <input 
+                  <input
                     type="email"
                     className="input-field text-sm"
                     placeholder="e.g. professional.interviewer@example.com"
@@ -2541,7 +2537,7 @@ const AdminDashboard = () => {
                 {/* Name */}
                 <div className="input-group mb-3">
                   <label className="text-xs font-semibold">Full Name (Optional)</label>
-                  <input 
+                  <input
                     type="text"
                     className="input-field text-sm"
                     placeholder="e.g. Ananya Iyer"
@@ -2554,7 +2550,7 @@ const AdminDashboard = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
                   <div className="input-group mb-0">
                     <label className="text-xs font-semibold">Company (Optional)</label>
-                    <input 
+                    <input
                       type="text"
                       className="input-field text-sm"
                       placeholder="e.g. Google / Microsoft"
@@ -2565,7 +2561,7 @@ const AdminDashboard = () => {
 
                   <div className="input-group mb-0">
                     <label className="text-xs font-semibold">Designation / Title (Optional)</label>
-                    <input 
+                    <input
                       type="text"
                       className="input-field text-sm"
                       placeholder="e.g. Senior Staff Engineer"
@@ -2579,7 +2575,7 @@ const AdminDashboard = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
                   <div className="input-group mb-0">
                     <label className="text-xs font-semibold">Experience</label>
-                    <input 
+                    <input
                       type="text"
                       className="input-field text-sm"
                       placeholder="e.g. 5+ Years"
@@ -2639,12 +2635,12 @@ const AdminDashboard = () => {
       {/* ================= MODAL: VIEW USER DETAILS ================= */}
       {selectedUserForDetails && (
         <div className="modal-overlay" onClick={() => setSelectedUserForDetails(null)}>
-          <div 
-            className="modal-card" 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: '560px', 
-              padding: '2rem', 
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '560px',
+              padding: '2rem',
               borderRadius: '24px',
               border: '1px solid #e2e8f0',
               boxShadow: '0 20px 45px rgba(0,0,0,0.2)'
@@ -2652,10 +2648,10 @@ const AdminDashboard = () => {
           >
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
-                <Avatar 
-                  name={selectedUserForDetails.name} 
-                  avatar={selectedUserForDetails.avatar} 
-                  size={52} 
+                <Avatar
+                  name={selectedUserForDetails.name}
+                  avatar={selectedUserForDetails.avatar}
+                  size={52}
                 />
                 <div>
                   <h3 className="text-xl font-bold flex items-center gap-1.5">
@@ -2665,7 +2661,7 @@ const AdminDashboard = () => {
                   <div className="text-xs text-muted">{selectedUserForDetails.email}</div>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setSelectedUserForDetails(null)}
                 className="btn btn-ghost p-1 text-muted"
                 style={{ borderRadius: '50%' }}
@@ -2745,12 +2741,12 @@ const AdminDashboard = () => {
       {/* ================= MODAL: VIEW REQUEST DETAILS ================= */}
       {selectedRequestForDetails && (
         <div className="modal-overlay" onClick={() => setSelectedRequestForDetails(null)}>
-          <div 
-            className="modal-card" 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: '620px', 
-              padding: '2rem', 
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '620px',
+              padding: '2rem',
               borderRadius: '24px',
               border: '1px solid #e2e8f0',
               boxShadow: '0 20px 45px rgba(0,0,0,0.2)'
@@ -2758,10 +2754,10 @@ const AdminDashboard = () => {
           >
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-3">
-                <Avatar 
-                  name={selectedRequestForDetails.name} 
-                  avatar={selectedRequestForDetails.avatar} 
-                  size={56} 
+                <Avatar
+                  name={selectedRequestForDetails.name}
+                  avatar={selectedRequestForDetails.avatar}
+                  size={56}
                 />
                 <div>
                   <h3 className="text-xl font-bold flex items-center gap-1.5">
@@ -2774,7 +2770,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setSelectedRequestForDetails(null)}
                 className="btn btn-ghost p-1 text-muted"
                 style={{ borderRadius: '50%' }}
@@ -2813,9 +2809,9 @@ const AdminDashboard = () => {
 
             {selectedRequestForDetails.linkedin && (
               <div className="mb-4">
-                <a 
+                <a
                   href={selectedRequestForDetails.linkedin.startsWith('http') ? selectedRequestForDetails.linkedin : `https://${selectedRequestForDetails.linkedin}`}
-                  target="_blank" 
+                  target="_blank"
                   rel="noreferrer"
                   className="text-xs text-primary inline-flex items-center gap-1 font-semibold hover:underline"
                 >

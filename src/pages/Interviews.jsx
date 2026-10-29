@@ -27,8 +27,8 @@ const Interviews = () => {
         apiClient.get('/api/payment/history').catch(() => ({ data: [] }))
       ]);
 
-      setInterviews(resInterviews.data || []);
-      setPayments(resPayments.data || []);
+      setInterviews(Array.isArray(resInterviews) ? resInterviews : (Array.isArray(resInterviews?.data) ? resInterviews.data : []));
+      setPayments(Array.isArray(resPayments) ? resPayments : (Array.isArray(resPayments?.data) ? resPayments.data : []));
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {

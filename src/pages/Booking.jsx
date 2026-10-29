@@ -51,17 +51,22 @@ const Booking = () => {
         setLoading(true);
         const [configData, usersData] = await Promise.all([
           apiClient.get('/api/config/public').catch(() => null),
-          apiClient.get('/api/users?role=professional')
+          apiClient.get('/api/users?role=professional').catch(() => [])
         ]);
 
         if (configData) setPublicConfig(configData);
-        setInterviewers(usersData);
+        const profList = Array.isArray(usersData) 
+          ? usersData 
+          : Array.isArray(usersData?.data) 
+          ? usersData.data 
+          : [];
+        setInterviewers(profList);
 
-        if (usersData.length > 0) {
+        if (profList.length > 0) {
           const match = preselectedInterviewerId 
-            ? usersData.find(u => u._id === preselectedInterviewerId) 
-            : usersData[0];
-          const chosen = match || usersData[0];
+            ? profList.find(u => u._id === preselectedInterviewerId) 
+            : profList[0];
+          const chosen = match || profList[0];
           setSelectedInterviewer(chosen);
           if (chosen.title || chosen.domain) {
             setTopic(`${chosen.domain || chosen.title} Technical Mock Interview`);
@@ -87,13 +92,17 @@ const Booking = () => {
         setSelectedSlotObj(null);
         setHoldExpiredMessage('');
         const res = await apiClient.get(`/api/availability/${selectedInterviewer._id}`);
-        const slots = res?.data || [];
+        const slots = Array.isArray(res) 
+          ? res 
+          : Array.isArray(res?.data) 
+          ? res.data 
+          : [];
         setAvailableSlots(slots);
 
         if (slots.length > 0) {
-          const firstDate = slots[0].date;
+          const firstDate = slots[0]?.date || '';
           setSelectedDate(firstDate);
-          setSelectedSlotObj(slots[0]);
+          setSelectedSlotObj(slots[0] || null);
         } else {
           setSelectedDate('');
           setSelectedSlotObj(null);
@@ -110,7 +119,7 @@ const Booking = () => {
   }, [selectedInterviewer]);
 
   const handleInterviewerChange = (interviewerId) => {
-    const chosen = interviewers.find(u => u._id === interviewerId);
+    const chosen = (interviewers || []).find(u => u && u._id === interviewerId);
     if (chosen) {
       setSelectedInterviewer(chosen);
       if (chosen.domain || chosen.title) {
@@ -120,10 +129,10 @@ const Booking = () => {
   };
 
   // Unique dates with available slots
-  const uniqueDates = Array.from(new Set(availableSlots.map(s => s.date))).sort();
+  const uniqueDates = Array.from(new Set((availableSlots || []).map(s => s?.date).filter(Boolean))).sort();
 
   // Slots for currently selected date
-  const slotsForSelectedDate = availableSlots.filter(s => s.date === selectedDate);
+  const slotsForSelectedDate = (availableSlots || []).filter(s => s && s.date === selectedDate);
 
   // Dynamic session price from public config (M1)
   const sessionPrice = publicConfig?.mockSessionPricePaise != null
@@ -337,7 +346,7 @@ const Booking = () => {
               <label className="font-bold text-base mb-3 block">1. Select Interviewer</label>
               
               <div className="flex flex-col gap-3 mb-2">
-                {interviewers.map(prof => (
+                {(interviewers || []).filter(Boolean).map(prof => (
                   <div 
                     key={prof._id}
                     onClick={() => handleInterviewerChange(prof._id)}
@@ -440,7 +449,7 @@ const Booking = () => {
                   <div className="mb-4">
                     <label className="text-xs font-bold text-muted block uppercase tracking-wider mb-2">Available Dates</label>
                     <div className="flex gap-2 flex-wrap">
-                      {uniqueDates.map(dateStr => (
+                      {(uniqueDates || []).map(dateStr => (
                         <button
                           type="button"
                           key={dateStr}
@@ -465,7 +474,7 @@ const Booking = () => {
                       Available Slots on {selectedDate}
                     </label>
                     <div className="flex gap-2 flex-wrap">
-                      {slotsForSelectedDate.map(slot => (
+                      {(slotsForSelectedDate || []).map(slot => (
                         <button
                           type="button"
                           key={slot._id}

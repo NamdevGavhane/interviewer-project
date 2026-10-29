@@ -4,12 +4,12 @@ import { AlertTriangle, RefreshCw, Home, LogOut, Trash2, Copy, Check, ChevronDow
 export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { 
-      hasError: false, 
-      error: null, 
+    this.state = {
+      hasError: false,
+      error: null,
       errorInfo: null,
       showDetails: false,
-      copied: false 
+      copied: false
     };
   }
 
@@ -63,7 +63,7 @@ export class ErrorBoundary extends React.Component {
     navigator.clipboard.writeText(errorText).then(() => {
       this.setState({ copied: true });
       setTimeout(() => this.setState({ copied: false }), 2500);
-    }).catch(() => {});
+    }).catch(() => { });
   };
 
   render() {
