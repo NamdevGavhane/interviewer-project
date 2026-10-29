@@ -141,6 +141,16 @@ const userSchema = new mongoose.Schema({
   },
   acceptedAt: {
     type: Date,
+  },
+  appliedAt: {
+    type: Date,
+  },
+  decidedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  decidedAt: {
+    type: Date,
   }
 }, {
   timestamps: true,

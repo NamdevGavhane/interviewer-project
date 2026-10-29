@@ -66,6 +66,11 @@ const settingsSchema = new mongoose.Schema({
     min: 0,
     max: 90
   },
+  professionalReapplyAfterDays: {
+    type: Number,
+    default: 30,
+    min: 0
+  },
   bookingWindowDays: {
     type: Number,
     default: 14,
@@ -140,6 +145,10 @@ settingsSchema.statics.getSettings = async function() {
     }
     if (settings.noShowWaitMinutes === undefined) {
       settings.noShowWaitMinutes = 10;
+      changed = true;
+    }
+    if (settings.professionalReapplyAfterDays === undefined) {
+      settings.professionalReapplyAfterDays = 30;
       changed = true;
     }
     if (changed) {
