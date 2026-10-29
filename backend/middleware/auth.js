@@ -138,6 +138,15 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    // B7: Token safety - return 403 for role 'professional' with approvalStatus 'pending' or 'rejected'
+    if (user.role === 'professional' && (user.approvalStatus === 'pending' || user.approvalStatus === 'rejected')) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access restricted: Your professional application is pending or has been rejected.',
+        approvalStatus: user.approvalStatus
+      });
+    }
+
     req.user = user;
     next();
   } catch (err) {

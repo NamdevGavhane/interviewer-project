@@ -603,7 +603,12 @@ router.post('/refresh', async (req, res) => {
     }
 
     const user = await User.findById(decoded.id);
-    if (!user || user.isDeactivated || user.accountStatus === 'deactivated') {
+    if (
+      !user ||
+      user.isDeactivated ||
+      user.accountStatus === 'deactivated' ||
+      (user.role === 'professional' && (user.approvalStatus === 'pending' || user.approvalStatus === 'rejected'))
+    ) {
       await RefreshToken.findByIdAndUpdate(storedToken._id, { revoked: true, revokedAt: new Date() });
       clearRefreshTokenCookie(res);
       return res.status(401).json({
