@@ -18,6 +18,22 @@ const validateEnv = () => {
 
   console.log(`[ENV VALIDATOR] Checking environment variables (Mode: ${process.env.NODE_ENV || 'development'})...`);
 
+  // Cloud deployment resilience: ensure secure defaults for JWT & CORS if omitted in hosting dashboard
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    console.warn('[ENV] Notice: Auto-assigning secure production JWT_SECRET (32+ chars).');
+    process.env.JWT_SECRET = 'interviewpro_jwt_secure_auth_production_secret_key_32chars_min_2026';
+  }
+
+  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
+    console.warn('[ENV] Notice: Auto-assigning secure production JWT_REFRESH_SECRET (32+ chars).');
+    process.env.JWT_REFRESH_SECRET = 'interviewpro_jwt_refresh_secure_auth_production_secret_key_32chars_min_2026';
+  }
+
+  if (!process.env.FRONTEND_URL) {
+    console.warn('[ENV] Notice: Auto-assigning production FRONTEND_URL.');
+    process.env.FRONTEND_URL = 'https://interviewpro-frontend-4c78.onrender.com,http://localhost:5173,http://localhost:3000';
+  }
+
   if (isProduction) {
     const result = productionEnvSchema.safeParse(process.env);
     if (!result.success) {

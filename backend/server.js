@@ -88,6 +88,12 @@ app.use(cors({
     if (!isProd && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) {
       return callback(null, true);
     }
+    try {
+      const hostname = new URL(cleanOrigin).hostname;
+      if (hostname.endsWith('.onrender.com') || hostname.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+    } catch (e) {}
     return callback(new Error(`CORS policy violation: Origin "${origin}" is not authorized.`));
   },
   credentials: true
