@@ -1025,7 +1025,7 @@ const AdminDashboard = () => {
                           )}
 
                           <div className="text-xs text-muted mt-2" style={{ fontSize: '0.7rem' }}>
-                            Applied on: {new Date(req.createdAt).toLocaleString()}
+                            Applied on: {new Date(req.appliedAt || req.createdAt).toLocaleString()}
                           </div>
                         </div>
                       </div>

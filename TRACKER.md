@@ -63,6 +63,8 @@
 | [x] | B9 | Done | backend/tests/setup.js | Configured MONGO_URI_TEST integration with database safety check (enforcing 'test' in db name) and lazy-required mongodb-memory-server when MONGO_URI_TEST is absent. |
 | [x] | F1 | Done | src/pages/ProfessionalSignup.jsx, src/App.jsx | Built ProfessionalSignup page with external Field component, client-side validation, bio counter, and post-submission review instructions. Added /professional/signup route in App.jsx. |
 | [x] | F2 | Done | src/pages/ProfessionalLogin.jsx | Added link to /professional/signup ("Want to become an interviewer? Apply here") and cleaned up unused imports (Lock, UserCheck, API_BASE_URL). |
+| [x] | F3 | Done | src/pages/admin/AdminDashboard.jsx | Updated "Applied on" timestamp in Requests tab to use req.appliedAt || req.createdAt. |
+
 
 
 
