@@ -56,6 +56,8 @@
 | [x] | B2 | Done | backend/validators/schemas.js | Added strict registerProfessionalSchema with name, email, password, company, designation, experience, domain, linkedin (strict https + linkedin hostname), bio constraints. Exported registerProfessionalSchema. |
 | [x] | B3 | Done | backend/middleware/validate.js | Added support for Zod v4 err.issues alongside err.errors so response message formats as "Validation error: field: message". |
 | [x] | B4 | Done | backend/middleware/rateLimiter.js | Added professionalSignupLimiter (5 req/hour per IP, skipped when NODE_ENV === 'test') and exported it. |
+| [x] | B5 | Done | backend/routes/userRoutes.js | Implemented POST /api/users/register-professional with rate limiters, validation, generic 409 on existing accounts, password check & waiting period enforcement on rejected re-apply, and admin in-app notification dispatch. |
+
 
 
 

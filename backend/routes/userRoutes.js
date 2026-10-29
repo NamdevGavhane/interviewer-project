@@ -8,6 +8,7 @@ const RefreshToken = require('../models/RefreshToken');
 const Interview = require('../models/Interview');
 const Settings = require('../models/Settings');
 const Payout = require('../models/Payout');
+const Notification = require('../models/Notification');
 const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { uploadAvatar, uploadToCloudinary } = require('../utils/avatarUpload');
 const {
@@ -30,9 +31,10 @@ const {
   forgotPasswordSchema,
   resetPasswordSchema,
   acceptInviteSchema,
-  updateUserSchema
+  updateUserSchema,
+  registerProfessionalSchema
 } = require('../validators/schemas');
-const { authLimiter, passwordResetLimiter } = require('../middleware/rateLimiter');
+const { authLimiter, passwordResetLimiter, professionalSignupLimiter } = require('../middleware/rateLimiter');
 const {
   sendVerificationEmail,
   sendPasswordResetEmail,
@@ -146,6 +148,161 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Registration failed: ' + err.message });
+  }
+});
+
+// @route   POST /api/users/register-professional
+// @desc    Register a new professional account (pending review) or re-apply if previously rejected
+// @access  Public
+router.post('/register-professional', professionalSignupLimiter, authLimiter, validate(registerProfessionalSchema), async (req, res) => {
+  try {
+    const { name, email, password, company, designation, experience, domain, linkedin, bio } = req.body;
+    const cleanEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({ email: cleanEmail });
+
+    if (!existingUser) {
+      // New applicant
+      const newUser = new User({
+        name: name.trim(),
+        email: cleanEmail,
+        password,
+        role: 'professional',
+        accountStatus: 'pending',
+        approvalStatus: 'pending',
+        isVerified: false,
+        isEmailVerified: false,
+        appliedAt: new Date(),
+        company: company.trim(),
+        designation: designation.trim(),
+        title: designation.trim(),
+        experience: experience.trim(),
+        domain: domain ? domain.trim() : '',
+        linkedin: linkedin.trim(),
+        bio: bio ? bio.trim() : '',
+        availabilitySlots: []
+      });
+
+      await newUser.save();
+
+      // Dispatch in-app notification to all active admins
+      try {
+        const activeAdmins = await User.find({
+          role: 'admin',
+          isDeactivated: { $ne: true },
+          accountStatus: 'active'
+        });
+        if (activeAdmins.length > 0) {
+          const notifications = activeAdmins.map(admin => ({
+            userId: admin._id,
+            type: 'system',
+            title: 'New Professional Application',
+            message: `${newUser.name} has applied to become an interviewer.`,
+            link: '/admin?tab=requests'
+          }));
+          await Notification.insertMany(notifications);
+        }
+      } catch (notifyErr) {
+        // Notification failure must never fail signup
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: 'Application submitted successfully! Your account is pending administrator approval.',
+        data: {
+          email: newUser.email,
+          status: 'pending'
+        }
+      });
+    }
+
+    // Existing user logic
+    const isRejectedProfessional =
+      existingUser.role === 'professional' &&
+      existingUser.approvalStatus === 'rejected' &&
+      !existingUser.isDeactivated &&
+      existingUser.accountStatus !== 'deactivated';
+
+    if (!isRejectedProfessional) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this email address already exists. Please log in.'
+      });
+    }
+
+    // Rejected professional re-applying: require original password
+    const isMatch = await existingUser.comparePassword(password);
+    if (!isMatch) {
+      return res.status(409).json({
+        success: false,
+        message: 'An account with this email address already exists. Please log in.'
+      });
+    }
+
+    // Enforce waiting period from Settings.professionalReapplyAfterDays
+    const settings = await Settings.getSettings();
+    const reapplyDays = typeof settings.professionalReapplyAfterDays === 'number' ? settings.professionalReapplyAfterDays : 30;
+    const decidedBaseDate = existingUser.decidedAt || existingUser.updatedAt || new Date();
+    const canReapplyAfter = new Date(decidedBaseDate.getTime() + reapplyDays * 24 * 60 * 60 * 1000);
+    const now = new Date();
+
+    if (reapplyDays > 0 && now < canReapplyAfter) {
+      return res.status(403).json({
+        success: false,
+        message: `You cannot reapply yet. Applications are subject to a ${reapplyDays}-day waiting period.`,
+        canReapplyAfter
+      });
+    }
+
+    // After waiting period: update profile fields and reset status
+    existingUser.name = name.trim();
+    existingUser.company = company.trim();
+    existingUser.designation = designation.trim();
+    existingUser.title = designation.trim();
+    existingUser.experience = experience.trim();
+    existingUser.domain = domain ? domain.trim() : '';
+    existingUser.linkedin = linkedin.trim();
+    existingUser.bio = bio ? bio.trim() : '';
+    existingUser.approvalStatus = 'pending';
+    existingUser.accountStatus = 'pending';
+    existingUser.isVerified = false;
+    existingUser.rejectionReason = '';
+    existingUser.appliedAt = new Date();
+    existingUser.decidedAt = undefined;
+    existingUser.decidedBy = undefined;
+    await existingUser.save();
+
+    // Dispatch notification to active admins
+    try {
+      const activeAdmins = await User.find({
+        role: 'admin',
+        isDeactivated: { $ne: true },
+        accountStatus: 'active'
+      });
+      if (activeAdmins.length > 0) {
+        const notifications = activeAdmins.map(admin => ({
+          userId: admin._id,
+          type: 'system',
+          title: 'New Professional Application',
+          message: `${existingUser.name} has re-applied to become an interviewer.`,
+          link: '/admin?tab=requests'
+        }));
+        await Notification.insertMany(notifications);
+      }
+    } catch (notifyErr) {
+      // Notification failure must never fail signup
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Application resubmitted successfully! Your account is pending administrator approval.',
+      data: {
+        email: existingUser.email,
+        status: 'pending'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Professional registration failed: ' + err.message });
   }
 });
 
