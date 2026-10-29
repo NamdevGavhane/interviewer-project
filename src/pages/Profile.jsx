@@ -122,10 +122,12 @@ const Profile = () => {
 
   const isOwnProfile = Boolean(currentUser?._id && currentUser._id === profileData._id);
 
+  const dashboardLink = authRole === 'admin' ? '/admin' : '/';
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <Link to="/" className="inline-flex items-center gap-2 text-muted hover:text-primary transition-colors">
+        <Link to={dashboardLink} className="inline-flex items-center gap-2 text-muted hover:text-primary transition-colors">
           <ArrowLeft size={18} />
           <span className="font-medium">Back to Dashboard</span>
         </Link>

@@ -50,12 +50,12 @@ const updateUserSchema = z.object({
 
 // Admin Schemas
 const inviteProfessionalSchema = z.object({
-  name: z.string().trim().min(2, "Professional's name is required"),
+  name: z.string().trim().optional().default('Professional Interviewer'),
   email: z.string().trim().email("Valid professional email is required").toLowerCase(),
-  company: z.string().trim().min(1, 'Company name is required'),
-  designation: z.string().trim().min(1, 'Designation is required'),
-  experience: z.string().trim().min(1, 'Experience is required'),
-  domain: z.string().optional()
+  company: z.string().trim().optional().default('Tech Org'),
+  designation: z.string().trim().optional().default('Technical Interviewer'),
+  experience: z.string().trim().optional().default('5+ Years'),
+  domain: z.string().optional().default('General Software')
 });
 
 const requestDecisionSchema = z.object({

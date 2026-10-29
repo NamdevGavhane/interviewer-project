@@ -37,7 +37,12 @@ router.put('/', authenticate, requireRole('admin'), async (req, res) => {
       gstPercent,
       refundWindowHours,
       supportEmail,
-      siteName
+      siteName,
+      slotPresets,
+      bookingWindowDays,
+      slotDurationMinutes,
+      aiDailyLimit,
+      professionalReapplyAfterDays
     } = req.body;
 
     const updateData = {};
@@ -104,6 +109,42 @@ router.put('/', authenticate, requireRole('admin'), async (req, res) => {
         return res.status(400).json({ success: false, message: 'payoutHoldDays must be non-negative.' });
       }
       updateData.payoutHoldDays = Math.round(days);
+    }
+
+    if (bookingWindowDays !== undefined) {
+      const days = Number(bookingWindowDays);
+      if (isNaN(days) || days < 1 || days > 90) {
+        return res.status(400).json({ success: false, message: 'bookingWindowDays must be between 1 and 90.' });
+      }
+      updateData.bookingWindowDays = Math.round(days);
+    }
+
+    if (slotDurationMinutes !== undefined) {
+      const mins = Number(slotDurationMinutes);
+      if (isNaN(mins) || mins < 15 || mins > 180) {
+        return res.status(400).json({ success: false, message: 'slotDurationMinutes must be between 15 and 180.' });
+      }
+      updateData.slotDurationMinutes = Math.round(mins);
+    }
+
+    if (aiDailyLimit !== undefined) {
+      const limit = Number(aiDailyLimit);
+      if (isNaN(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ success: false, message: 'aiDailyLimit must be between 1 and 100.' });
+      }
+      updateData.aiDailyLimit = Math.round(limit);
+    }
+
+    if (professionalReapplyAfterDays !== undefined) {
+      const days = Number(professionalReapplyAfterDays);
+      if (isNaN(days) || days < 0) {
+        return res.status(400).json({ success: false, message: 'professionalReapplyAfterDays must be non-negative.' });
+      }
+      updateData.professionalReapplyAfterDays = Math.round(days);
+    }
+
+    if (slotPresets !== undefined && Array.isArray(slotPresets)) {
+      updateData.slotPresets = slotPresets.map(p => String(p).trim()).filter(Boolean);
     }
 
     if (platformCommissionPercent !== undefined) updateData.platformCommissionPercent = Number(platformCommissionPercent);

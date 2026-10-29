@@ -9,30 +9,27 @@ import {
   XCircle, 
   Search, 
   AlertTriangle,
-  RefreshCw,
-  UserCheck,
-  Shield,
-  Clock,
-  TrendingUp,
-  DollarSign,
-  LogOut,
-  Briefcase,
-  User,
-  ExternalLink,
-  MessageSquare,
-  UserPlus,
-  Send,
-  Copy,
-  Check,
-  Mail,
-  KeyRound,
-  Power,
-  Ban,
-  X,
-  Sliders,
-  Settings as SettingsIcon,
-  Save,
-  Plus
+  RefreshCw, 
+  Clock, 
+  DollarSign, 
+  LogOut, 
+  Briefcase, 
+  User, 
+  ExternalLink, 
+  UserPlus, 
+  Send, 
+  Copy, 
+  Check, 
+  Mail, 
+  Power, 
+  Ban, 
+  X, 
+  Sliders, 
+  Save, 
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  LayoutDashboard
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import apiClient from '../../utils/apiClient';
@@ -42,7 +39,7 @@ import { useAuth } from '../../context/AuthContext';
 const AdminDashboard = () => {
   const { logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = searchParams.get('tab') || 'requests'; // 'requests' | 'invitations' | 'users' | 'verify' | 'bookings' | 'settings'
+  const currentTab = searchParams.get('tab') || 'overview'; // 'overview' | 'requests' | 'invitations' | 'users' | 'verify' | 'bookings' | 'settings' | 'payouts'
 
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -53,7 +50,7 @@ const AdminDashboard = () => {
   const [payoutStatusFilter, setPayoutStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   
-  // Platform Settings State (M1, M2)
+  // Platform Settings State
   const [platformSettings, setPlatformSettings] = useState({
     mockSessionPricePaise: 5000,
     interviewerSharePercent: 70,
@@ -71,6 +68,7 @@ const AdminDashboard = () => {
     slotDurationMinutes: 45,
     slotPresets: [],
     aiDailyLimit: 5,
+    professionalReapplyAfterDays: 30,
     supportEmail: 'support@devsphere.com',
     siteName: 'DevSphere'
   });
@@ -86,12 +84,15 @@ const AdminDashboard = () => {
 
   // Filters
   const [requestStatusFilter, setRequestStatusFilter] = useState('pending'); // 'pending' | 'approved' | 'rejected' | 'all'
-  const [invitationStatusFilter, setInvitationStatusFilter] = useState('all'); // 'all' | 'invited' | 'active' | 'deactivated'
+  const [invitationStatusFilter, setInvitationStatusFilter] = useState('all'); // 'all' | 'invited' | 'accepted' | 'expired' | 'deactivated'
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
+  const [bookingSearchQuery, setBookingSearchQuery] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const usersPerPage = 15;
 
-  // Professional Invitation Modal State (Requirement 1, 2, 3, 12)
+  // Modals state
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteForm, setInviteForm] = useState({
     name: '',
@@ -104,6 +105,9 @@ const AdminDashboard = () => {
   const [inviting, setInviting] = useState(false);
   const [inviteSuccessData, setInviteSuccessData] = useState(null);
   const [copiedTokenId, setCopiedTokenId] = useState(null);
+
+  const [selectedUserForDetails, setSelectedUserForDetails] = useState(null);
+  const [selectedRequestForDetails, setSelectedRequestForDetails] = useState(null);
 
   const [actionLoading, setActionLoading] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
@@ -122,7 +126,7 @@ const AdminDashboard = () => {
         apiClient.get('/api/admin/requests'),
         apiClient.get('/api/admin/bookings'),
         apiClient.get('/api/admin/invitations'),
-        apiClient.get('/api/admin/payouts').catch(() => []),
+        apiClient.get('/api/admin/payouts').catch(() => ({ data: [] })),
         apiClient.get('/api/settings').catch(() => null),
         apiClient.get('/api/settings/interview-config').catch(() => null)
       ]);
@@ -160,8 +164,7 @@ const AdminDashboard = () => {
         notes
       });
       showToast(res.message || `Payout request updated to ${newStatus}`);
-      const updated = await apiClient.get('/api/admin/payouts');
-      setPayouts(Array.isArray(updated) ? updated : []);
+      await fetchData();
     } catch (err) {
       alert('Failed to update payout: ' + (err.response?.data?.message || err.message));
     } finally {
@@ -200,12 +203,20 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
-  // Admin Dispatches Invitation Email to Professional (Requirement 1, 2, 3, 12)
+  // Admin Dispatches Invitation Email to Professional
   const handleSendInvitation = async (e) => {
     e.preventDefault();
     try {
       setInviting(true);
-      const res = await apiClient.post('/api/admin/invite-professional', inviteForm);
+      const payload = {
+        email: inviteForm.email.trim(),
+        name: inviteForm.name.trim() || 'Professional Interviewer',
+        company: inviteForm.company.trim() || 'Tech Org',
+        designation: inviteForm.designation.trim() || 'Technical Interviewer',
+        experience: inviteForm.experience.trim() || '5+ Years',
+        domain: inviteForm.domain || 'Full Stack MERN'
+      };
+      const res = await apiClient.post('/api/admin/invite-professional', payload);
       setInviteSuccessData({
         ...(res?.data || {}),
         message: res.message || 'Invitation generated successfully!'
@@ -233,7 +244,22 @@ const AdminDashboard = () => {
     }
   };
 
-  // Toggle Account Active vs Deactivated (Requirement 11)
+  // Revoke invitation
+  const handleRevokeInvite = async (userId, email) => {
+    if (!window.confirm(`Are you sure you want to revoke the invitation for ${email}?`)) return;
+    try {
+      setActionLoading(`revoke_${userId}`);
+      const res = await apiClient.post(`/api/admin/invitations/${userId}/revoke`, {});
+      showToast(res.message || 'Invitation revoked');
+      await fetchData();
+    } catch (err) {
+      alert('Failed to revoke invitation: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Toggle Account Active vs Deactivated
   const handleToggleAccountStatus = async (userId, userName) => {
     try {
       setActionLoading(`status_${userId}`);
@@ -260,6 +286,9 @@ const AdminDashboard = () => {
       setActionLoading(`decision_${userId}_${decision}`);
       const res = await apiClient.patch(`/api/admin/requests/${userId}/decision`, { decision, rejectionReason });
       showToast(res.message || 'Decision applied successfully');
+      if (selectedRequestForDetails && selectedRequestForDetails._id === userId) {
+        setSelectedRequestForDetails(null);
+      }
       await fetchData();
     } catch (err) {
       alert('Error updating application: ' + err.message);
@@ -276,7 +305,7 @@ const AdminDashboard = () => {
       showToast(`User role updated to ${newRole}`);
       await fetchData();
     } catch (err) {
-      alert('Failed to update role: ' + err.message);
+      alert('Failed to update role: ' + (err.response?.data?.message || err.message));
     } finally {
       setActionLoading(null);
     }
@@ -303,9 +332,26 @@ const AdminDashboard = () => {
       setActionLoading(`del_${userId}`);
       await apiClient.delete(`/api/admin/users/${userId}`);
       showToast(`User "${userName}" deleted successfully`);
+      if (selectedUserForDetails && selectedUserForDetails._id === userId) {
+        setSelectedUserForDetails(null);
+      }
       await fetchData();
     } catch (err) {
-      alert('Failed to delete user: ' + err.message);
+      alert('Failed to delete user: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Admin Override Booking Status
+  const handleBookingStatus = async (bookingId, newStatus) => {
+    try {
+      setActionLoading(`book_${bookingId}`);
+      const res = await apiClient.patch(`/api/admin/bookings/${bookingId}/status`, { status: newStatus });
+      showToast(res.message || `Booking status updated to ${newStatus}`);
+      await fetchData();
+    } catch (err) {
+      alert('Failed to update booking status: ' + (err.response?.data?.message || err.message));
     } finally {
       setActionLoading(null);
     }
@@ -326,6 +372,14 @@ const AdminDashboard = () => {
     }
   };
 
+  // Helper: compute clean invitation status
+  const getInvitationStatus = (inv) => {
+    if (inv.isDeactivated || inv.accountStatus === 'deactivated') return 'deactivated';
+    if (inv.password || inv.acceptedAt || (inv.accountStatus === 'active' && !inv.invitationToken)) return 'accepted';
+    if (inv.invitationExpires && new Date(inv.invitationExpires) < new Date()) return 'expired';
+    return 'invited'; // Pending Setup
+  };
+
   // Filtered Requests
   const filteredRequests = requests.filter(r => {
     if (requestStatusFilter === 'all') return true;
@@ -344,13 +398,30 @@ const AdminDashboard = () => {
     return matchesSearch && matchesRole;
   });
 
+  const totalUserPages = Math.ceil(filteredUsers.length / usersPerPage) || 1;
+  const paginatedUsers = filteredUsers.slice((userPage - 1) * usersPerPage, userPage * usersPerPage);
+
   // Professionals for accreditation tab
   const professionals = users.filter(u => u.role === 'professional');
 
   // Filtered Bookings
   const filteredBookings = bookings.filter(b => {
-    if (bookingStatusFilter === 'all') return true;
-    return b.status === bookingStatusFilter;
+    if (bookingStatusFilter !== 'all') {
+      if (bookingStatusFilter === 'unpaid') {
+        if (b.paymentStatus !== 'unpaid') return false;
+      } else if (b.status !== bookingStatusFilter) {
+        return false;
+      }
+    }
+    if (bookingSearchQuery && bookingSearchQuery.trim()) {
+      const q = bookingSearchQuery.toLowerCase().trim();
+      const matchTopic = b.topic?.toLowerCase().includes(q);
+      const matchRoom = b.meetingRoomId?.toLowerCase().includes(q);
+      const matchCand = b.candidateId?.name?.toLowerCase().includes(q) || b.candidateId?.email?.toLowerCase().includes(q);
+      const matchInterviewer = b.interviewerId?.name?.toLowerCase().includes(q) || b.interviewerId?.email?.toLowerCase().includes(q);
+      return matchTopic || matchRoom || matchCand || matchInterviewer;
+    }
+    return true;
   });
 
   return (
@@ -385,8 +456,8 @@ const AdminDashboard = () => {
             <span className="badge badge-danger text-xs font-semibold uppercase">Super Administrator</span>
             <span className="text-xs text-muted">DevSphere Governance Console</span>
           </div>
-          <h2 className="text-2xl font-bold mt-1">Admin Panel & Professional Requests</h2>
-          <p className="text-muted text-sm">Review incoming professional interviewer applications, grant accreditation, and oversee all platform operations.</p>
+          <h2 className="text-2xl font-bold mt-1">Admin Panel & Platform Control</h2>
+          <p className="text-muted text-sm">Oversee candidates, verified professionals, interview sessions, payouts, and platform operations.</p>
         </div>
         <div className="flex items-center gap-2">
           <button 
@@ -440,7 +511,7 @@ const AdminDashboard = () => {
 
       {/* Top Stats Cards */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.75rem' }}>
           
           {/* 1. Invited Professionals Stat Card */}
           <div 
@@ -460,7 +531,7 @@ const AdminDashboard = () => {
               {invitations.length} Dispatched
             </div>
             <div className="text-xs text-muted mt-1">
-              {invitations.filter(i => i.accountStatus === 'invited').length} Pending Setup • {invitations.filter(i => i.accountStatus === 'active').length} Active
+              {invitations.filter(i => getInvitationStatus(i) === 'invited').length} Pending Setup • {invitations.filter(i => getInvitationStatus(i) === 'accepted').length} Accepted
             </div>
           </div>
 
@@ -489,7 +560,12 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          <div className="card p-4">
+          {/* 3. Total Users */}
+          <div 
+            className="card p-4 transition-all"
+            onClick={() => setSearchParams({ tab: 'users' })}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
               <span>Total Platform Users</span>
               <Users size={16} className="text-primary" />
@@ -498,7 +574,15 @@ const AdminDashboard = () => {
             <div className="text-xs text-muted mt-1">{stats.candidatesCount} Candidates • {stats.professionalsCount} Professionals</div>
           </div>
 
-          <div className="card p-4">
+          {/* 4. Verified Professionals */}
+          <div 
+            className="card p-4 transition-all"
+            onClick={() => {
+              setSearchParams({ tab: 'users' });
+              setRoleFilter('professional');
+            }}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
               <span>Verified Professionals</span>
               <ShieldCheck size={16} className="text-success" />
@@ -507,7 +591,12 @@ const AdminDashboard = () => {
             <div className="text-xs text-muted mt-1">Approved & accredited interviewers</div>
           </div>
 
-          <div className="card p-4">
+          {/* 5. Total Bookings */}
+          <div 
+            className="card p-4 transition-all"
+            onClick={() => setSearchParams({ tab: 'bookings' })}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
               <span>Total Bookings</span>
               <Calendar size={16} className="text-primary" />
@@ -516,13 +605,18 @@ const AdminDashboard = () => {
             <div className="text-xs text-muted mt-1">{stats.completedBookings} Completed • {stats.scheduledBookings} Scheduled</div>
           </div>
 
-          <div className="card p-4">
+          {/* 6. Platform Revenue */}
+          <div 
+            className="card p-4 transition-all"
+            onClick={() => setSearchParams({ tab: 'payouts' })}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="flex items-center justify-between text-muted text-xs uppercase font-semibold">
               <span>Platform Volume</span>
               <DollarSign size={16} className="text-success" />
             </div>
             <div className="text-2xl font-bold mt-2 text-primary">₹{stats.totalVolume?.toLocaleString()}</div>
-            <div className="text-xs text-muted mt-1">Revenue: ₹{stats.platformRevenue}</div>
+            <div className="text-xs text-muted mt-1">Platform Revenue: ₹{stats.platformRevenue?.toLocaleString()}</div>
           </div>
         </div>
       )}
@@ -530,25 +624,11 @@ const AdminDashboard = () => {
       {/* Module Navigation Tabs */}
       <div className="tabs-container mb-6">
         <button 
-          className={`tab-button ${currentTab === 'invitations' ? 'active' : ''}`}
-          onClick={() => setSearchParams({ tab: 'invitations' })}
+          className={`tab-button ${currentTab === 'overview' ? 'active' : ''}`}
+          onClick={() => setSearchParams({ tab: 'overview' })}
         >
-          <Mail size={16} style={{ display: 'inline', marginRight: '6px' }} />
-          <span>Professional Invitations ({invitations.length})</span>
-          {invitations.filter(i => i.accountStatus === 'invited').length > 0 && (
-            <span 
-              className="badge text-xs font-bold ml-2" 
-              style={{ 
-                fontSize: '0.7rem', 
-                padding: '0.15rem 0.5rem', 
-                borderRadius: '12px',
-                backgroundColor: '#7c3aed',
-                color: 'white'
-              }}
-            >
-              {invitations.filter(i => i.accountStatus === 'invited').length} Pending Setup
-            </span>
-          )}
+          <LayoutDashboard size={16} style={{ display: 'inline', marginRight: '6px' }} />
+          <span>Overview</span>
         </button>
 
         <button 
@@ -575,6 +655,28 @@ const AdminDashboard = () => {
         </button>
 
         <button 
+          className={`tab-button ${currentTab === 'invitations' ? 'active' : ''}`}
+          onClick={() => setSearchParams({ tab: 'invitations' })}
+        >
+          <Mail size={16} style={{ display: 'inline', marginRight: '6px' }} />
+          <span>Professional Invitations ({invitations.length})</span>
+          {invitations.filter(i => getInvitationStatus(i) === 'invited').length > 0 && (
+            <span 
+              className="badge text-xs font-bold ml-2" 
+              style={{ 
+                fontSize: '0.7rem', 
+                padding: '0.15rem 0.5rem', 
+                borderRadius: '12px',
+                backgroundColor: '#7c3aed',
+                color: 'white'
+              }}
+            >
+              {invitations.filter(i => getInvitationStatus(i) === 'invited').length} Pending Setup
+            </span>
+          )}
+        </button>
+
+        <button 
           className={`tab-button ${currentTab === 'users' ? 'active' : ''}`}
           onClick={() => setSearchParams({ tab: 'users' })}
         >
@@ -587,7 +689,7 @@ const AdminDashboard = () => {
           onClick={() => setSearchParams({ tab: 'bookings' })}
         >
           <Calendar size={16} style={{ display: 'inline', marginRight: '6px' }} />
-          <span>Interview Bookings ({bookings.length})</span>
+          <span>All Bookings ({bookings.length})</span>
         </button>
 
         <button 
@@ -625,8 +727,171 @@ const AdminDashboard = () => {
         <div className="card p-12 text-center text-muted">
           Loading Admin Module data from database...
         </div>
+      ) : currentTab === 'overview' ? (
+        /* ================= 0. OVERVIEW DASHBOARD ================= */
+        <div className="flex flex-col gap-6">
+          {/* Action Alerts */}
+          {(pendingRequestsCount > 0 || payouts.filter(p => p.status === 'pending').length > 0 || invitations.filter(i => getInvitationStatus(i) === 'invited').length > 0) && (
+            <div className="card p-4" style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a' }}>
+              <div className="flex items-center gap-2 mb-2 font-bold text-sm text-amber-900">
+                <AlertTriangle size={18} className="text-amber-600" />
+                <span>Immediate Admin Action Required</span>
+              </div>
+              <div className="flex flex-wrap gap-4 text-xs">
+                {pendingRequestsCount > 0 && (
+                  <button
+                    onClick={() => {
+                      setSearchParams({ tab: 'requests' });
+                      setRequestStatusFilter('pending');
+                    }}
+                    className="btn btn-outline text-xs py-1 px-3"
+                    style={{ borderColor: '#d97706', color: '#b45309', backgroundColor: 'white' }}
+                  >
+                    ⚡ Review {pendingRequestsCount} Pending Professional Applications →
+                  </button>
+                )}
+                {payouts.filter(p => p.status === 'pending').length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSearchParams({ tab: 'payouts' });
+                      setPayoutStatusFilter('pending');
+                    }}
+                    className="btn btn-outline text-xs py-1 px-3"
+                    style={{ borderColor: '#2563eb', color: '#1d4ed8', backgroundColor: 'white' }}
+                  >
+                    💰 Process {payouts.filter(p => p.status === 'pending').length} Pending Payout Requests →
+                  </button>
+                )}
+                {invitations.filter(i => getInvitationStatus(i) === 'invited').length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSearchParams({ tab: 'invitations' });
+                      setInvitationStatusFilter('invited');
+                    }}
+                    className="btn btn-outline text-xs py-1 px-3"
+                    style={{ borderColor: '#7c3aed', color: '#6d28d9', backgroundColor: 'white' }}
+                  >
+                    📧 {invitations.filter(i => getInvitationStatus(i) === 'invited').length} Dispatched Invitations Awaiting Setup →
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Fast Navigation Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+            <div 
+              className="card p-5 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => {
+                setInviteSuccessData(null);
+                setShowInviteModal(true);
+              }}
+              style={{ borderLeft: '4px solid #7c3aed' }}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-bold text-sm">Invite Professional</span>
+                <UserPlus size={18} className="text-purple-600" />
+              </div>
+              <p className="text-xs text-muted">Generate a secure single-use invitation link for an interviewer.</p>
+            </div>
+
+            <div 
+              className="card p-5 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => setSearchParams({ tab: 'requests' })}
+              style={{ borderLeft: '4px solid #f59e0b' }}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-bold text-sm">Professional Applications</span>
+                <Briefcase size={18} className="text-amber-600" />
+              </div>
+              <p className="text-xs text-muted">Approve or reject candidates applying to become interviewers.</p>
+            </div>
+
+            <div 
+              className="card p-5 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => setSearchParams({ tab: 'bookings' })}
+              style={{ borderLeft: '4px solid #2563eb' }}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-bold text-sm">Manage All Bookings</span>
+                <Calendar size={18} className="text-blue-600" />
+              </div>
+              <p className="text-xs text-muted">View upcoming mock sessions, statuses, and override outcomes.</p>
+            </div>
+
+            <div 
+              className="card p-5 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => setSearchParams({ tab: 'settings' })}
+              style={{ borderLeft: '4px solid #10b981' }}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-bold text-sm">Platform Economics</span>
+                <Sliders size={18} className="text-emerald-600" />
+              </div>
+              <p className="text-xs text-muted">Adjust mock session price, take-rate %, and cancellation rules.</p>
+            </div>
+          </div>
+
+          {/* Recent Bookings Preview */}
+          <div className="card p-0" style={{ overflow: 'hidden' }}>
+            <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
+              <div>
+                <h3 className="font-bold text-sm">Latest Interview Bookings</h3>
+                <p className="text-xs text-muted">Recent candidate bookings across the platform.</p>
+              </div>
+              <button 
+                onClick={() => setSearchParams({ tab: 'bookings' })}
+                className="btn btn-outline text-xs py-1 px-2.5"
+              >
+                View All {bookings.length} Bookings →
+              </button>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
+                    <th style={{ padding: '0.65rem 1rem' }}>Topic</th>
+                    <th style={{ padding: '0.65rem 1rem' }}>Candidate</th>
+                    <th style={{ padding: '0.65rem 1rem' }}>Interviewer</th>
+                    <th style={{ padding: '0.65rem 1rem' }}>Date & Slot</th>
+                    <th style={{ padding: '0.65rem 1rem' }}>Price</th>
+                    <th style={{ padding: '0.65rem 1rem' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.slice(0, 5).map(b => (
+                    <tr key={b._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '0.65rem 1rem', fontWeight: 600 }}>{b.topic || 'Mock Technical Interview'}</td>
+                      <td style={{ padding: '0.65rem 1rem' }}>{b.candidateId?.name || 'Candidate'}</td>
+                      <td style={{ padding: '0.65rem 1rem' }}>{b.interviewerId?.name || 'Interviewer'}</td>
+                      <td style={{ padding: '0.65rem 1rem' }}>{b.date} • {b.timeSlot}</td>
+                      <td style={{ padding: '0.65rem 1rem', fontWeight: 600, color: '#16a34a' }}>
+                        ₹{b.price || (b.amountPaise ? b.amountPaise / 100 : 0)}
+                      </td>
+                      <td style={{ padding: '0.65rem 1rem' }}>
+                        <span className={`badge ${
+                          b.status === 'completed' ? 'badge-success' : 
+                          b.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
+                        } text-xs py-0.5 px-2`}>
+                          {b.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {bookings.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                        No bookings scheduled yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       ) : currentTab === 'invitations' ? (
-        /* ================= 0. PROFESSIONAL INVITATIONS (Requirement 1, 2, 3, 11, 12) ================= */
+        /* ================= 1. PROFESSIONAL INVITATIONS ================= */
         <div className="card p-0" style={{ overflow: 'hidden' }}>
           {/* Subheader with Search & Action */}
           <div className="p-4 border-b flex flex-col md:flex-row gap-3 justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
@@ -636,7 +901,7 @@ const AdminDashboard = () => {
                 <span className="badge badge-info text-xs">{invitations.length} Total</span>
               </h3>
               <p className="text-xs text-muted">
-                Admin creates and invites professional accounts. Passwords are never sent via email; professionals set their own password upon opening their invitation link.
+                Admin invites professionals by email. Invited professionals receive a secure link to configure their own password.
               </p>
             </div>
 
@@ -667,8 +932,9 @@ const AdminDashboard = () => {
                 onChange={(e) => setInvitationStatusFilter(e.target.value)}
               >
                 <option value="all">All Invitation Statuses</option>
-                <option value="invited">Pending Setup (Invited)</option>
-                <option value="active">Active & Verified</option>
+                <option value="invited">Pending Setup</option>
+                <option value="accepted">Accepted</option>
+                <option value="expired">Expired</option>
                 <option value="deactivated">Deactivated</option>
               </select>
             </div>
@@ -689,13 +955,8 @@ const AdminDashboard = () => {
               </thead>
               <tbody>
                 {invitations.filter(inv => {
-                  if (invitationStatusFilter !== 'all') {
-                    if (invitationStatusFilter === 'deactivated') {
-                      if (!inv.isDeactivated && inv.accountStatus !== 'deactivated') return false;
-                    } else if (inv.accountStatus !== invitationStatusFilter) {
-                      return false;
-                    }
-                  }
+                  const status = getInvitationStatus(inv);
+                  if (invitationStatusFilter !== 'all' && status !== invitationStatusFilter) return false;
                   if (searchQuery) {
                     const q = searchQuery.toLowerCase();
                     return (
@@ -727,13 +988,8 @@ const AdminDashboard = () => {
                   </tr>
                 ) : (
                   invitations.filter(inv => {
-                    if (invitationStatusFilter !== 'all') {
-                      if (invitationStatusFilter === 'deactivated') {
-                        if (!inv.isDeactivated && inv.accountStatus !== 'deactivated') return false;
-                      } else if (inv.accountStatus !== invitationStatusFilter) {
-                        return false;
-                      }
-                    }
+                    const status = getInvitationStatus(inv);
+                    if (invitationStatusFilter !== 'all' && status !== invitationStatusFilter) return false;
                     if (searchQuery) {
                       const q = searchQuery.toLowerCase();
                       return (
@@ -744,8 +1000,11 @@ const AdminDashboard = () => {
                     }
                     return true;
                   }).map(inv => {
-                    const isInvited = inv.accountStatus === 'invited';
-                    const isDeactivated = inv.isDeactivated || inv.accountStatus === 'deactivated';
+                    const status = getInvitationStatus(inv);
+                    const isDeactivated = status === 'deactivated';
+                    const isAccepted = status === 'accepted';
+                    const isExpired = status === 'expired';
+                    const isPendingSetup = status === 'invited';
                     const linkUrl = `${window.location.origin}/accept-invite?token=${inv.invitationToken}`;
 
                     return (
@@ -777,17 +1036,24 @@ const AdminDashboard = () => {
                         </td>
 
                         <td style={{ padding: '0.75rem 1rem' }}>
-                          {isDeactivated ? (
+                          {isDeactivated && (
                             <span className="badge badge-danger text-xs font-semibold py-1 px-2.5">
                               Deactivated 🔴
                             </span>
-                          ) : isInvited ? (
+                          )}
+                          {isPendingSetup && (
                             <span className="badge badge-warning text-xs font-semibold py-1 px-2.5" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>
-                              Awaiting Password Setup ⏳
+                              Pending Setup ⏳
                             </span>
-                          ) : (
+                          )}
+                          {isAccepted && (
                             <span className="badge badge-success text-xs font-semibold py-1 px-2.5">
-                              Active & Verified 🟢
+                              Accepted 🟢
+                            </span>
+                          )}
+                          {isExpired && (
+                            <span className="badge text-xs font-semibold py-1 px-2.5" style={{ backgroundColor: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }}>
+                              Expired ⌛
                             </span>
                           )}
                         </td>
@@ -809,7 +1075,7 @@ const AdminDashboard = () => {
                                 target="_blank"
                                 rel="noreferrer"
                                 className="btn btn-ghost text-xs p-1 text-primary hover:underline"
-                                title="Open invitation link in new tab to test setup"
+                                title="Open invitation link in new tab"
                               >
                                 <ExternalLink size={14} />
                               </a>
@@ -821,8 +1087,8 @@ const AdminDashboard = () => {
 
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                           <div className="flex items-center justify-end gap-1">
-                            {/* Resend invite button */}
-                            {isInvited && (
+                            {/* Resend invite button for pending or expired */}
+                            {(isPendingSetup || isExpired) && (
                               <button
                                 type="button"
                                 className="btn btn-outline text-xs py-1 px-2 flex items-center gap-1"
@@ -836,12 +1102,26 @@ const AdminDashboard = () => {
                               </button>
                             )}
 
-                            {/* Deactivate / Reactivate toggle (Requirement 11) */}
+                            {/* Revoke invite button */}
+                            {(isPendingSetup || isExpired) && (
+                              <button
+                                type="button"
+                                className="btn btn-outline text-danger text-xs py-1 px-2 flex items-center gap-1"
+                                disabled={actionLoading === `revoke_${inv._id}`}
+                                onClick={() => handleRevokeInvite(inv._id, inv.email)}
+                                title="Revoke invitation"
+                              >
+                                <X size={12} />
+                                <span>Revoke</span>
+                              </button>
+                            )}
+
+                            {/* Deactivate / Reactivate toggle */}
                             <button
                               type="button"
                               className="btn btn-ghost p-1.5"
                               style={{ color: isDeactivated ? '#16a34a' : '#ea580c' }}
-                              title={isDeactivated ? 'Reactivate Professional Account' : 'Deactivate Professional Account (Denies Access)'}
+                              title={isDeactivated ? 'Reactivate Professional Account' : 'Deactivate Professional Account'}
                               disabled={actionLoading === `status_${inv._id}`}
                               onClick={() => handleToggleAccountStatus(inv._id, inv.name)}
                             >
@@ -869,7 +1149,7 @@ const AdminDashboard = () => {
           </div>
         </div>
       ) : currentTab === 'requests' ? (
-        /* ================= 1. PROFESSIONAL REQUESTS & APPROVAL ================= */
+        /* ================= 2. PROFESSIONAL REQUESTS & APPROVAL ================= */
         <div className="card p-0" style={{ overflow: 'hidden' }}>
           {/* Subheader with Filters */}
           <div className="p-4 border-b flex flex-col md:flex-row gap-3 justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
@@ -878,7 +1158,7 @@ const AdminDashboard = () => {
                 <span>Incoming Professional Interviewer Applications</span>
                 <span className="badge badge-info text-xs">{requests.length} Total</span>
               </h3>
-              <p className="text-xs text-muted">When a professional registers, evaluate their credentials here and decide whether to approve them as a Professional or convert to a Candidate.</p>
+              <p className="text-xs text-muted">Evaluate professional credentials. Approved professionals are verified and eligible to accept candidate bookings.</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -921,7 +1201,7 @@ const AdminDashboard = () => {
             <div className="p-12 text-center text-muted">
               <Clock size={36} className="mx-auto mb-2 text-muted" />
               <p className="font-semibold">No applications found in "{requestStatusFilter}" status.</p>
-              <p className="text-xs mt-1">When any professional signs up from the sign up page, their application request appears here for your decision.</p>
+              <p className="text-xs mt-1">When any professional registers, their application request appears here for admin verification.</p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -962,7 +1242,7 @@ const AdminDashboard = () => {
                             )}
                             {isApproved && (
                               <span className="badge badge-success text-xs font-semibold py-0.5 px-2">
-                                ✅ APPROVED PROFESSIONAL
+                                ✅ APPROVED & VERIFIED
                               </span>
                             )}
                             {isRejected && (
@@ -974,7 +1254,7 @@ const AdminDashboard = () => {
 
                           {/* Role, Title & Company */}
                           <div className="text-xs text-muted mt-1 flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-primary">{req.title || 'Technical Interviewer'}</span>
+                            <span className="font-semibold text-primary">{req.title || req.designation || 'Technical Interviewer'}</span>
                             <span>•</span>
                             <span>{req.company || 'Tech Org'}</span>
                             <span>•</span>
@@ -1006,17 +1286,28 @@ const AdminDashboard = () => {
                             </p>
                           )}
 
-                          {req.linkedin && (
-                            <a 
-                              href={req.linkedin.startsWith('http') ? req.linkedin : `https://${req.linkedin}`}
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="text-xs text-primary mt-1 inline-flex items-center gap-1 hover:underline"
+                          <div className="flex items-center gap-3 mt-2">
+                            {req.linkedin && (
+                              <a 
+                                href={req.linkedin.startsWith('http') ? req.linkedin : `https://${req.linkedin}`}
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-xs text-primary inline-flex items-center gap-1 hover:underline font-medium"
+                              >
+                                <span>View LinkedIn Profile</span>
+                                <ExternalLink size={12} />
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRequestForDetails(req)}
+                              className="text-xs text-primary inline-flex items-center gap-1 hover:underline font-semibold"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                             >
-                              <span>View LinkedIn Profile</span>
-                              <ExternalLink size={12} />
-                            </a>
-                          )}
+                              <Eye size={13} />
+                              <span>View Full Application Details</span>
+                            </button>
+                          </div>
 
                           {req.rejectionReason && (
                             <div className="mt-2 p-2 rounded text-xs text-danger" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', maxWidth: '600px' }}>
@@ -1084,7 +1375,7 @@ const AdminDashboard = () => {
                           <div className="flex flex-col gap-1.5">
                             <span className="text-xs text-success font-semibold flex items-center gap-1">
                               <ShieldCheck size={14} />
-                              <span>Active Professional Interviewer</span>
+                              <span>Active Verified Interviewer</span>
                             </span>
                             <button
                               type="button"
@@ -1122,7 +1413,7 @@ const AdminDashboard = () => {
           )}
         </div>
       ) : currentTab === 'users' ? (
-        /* ================= 2. MANAGE USERS ================= */
+        /* ================= 3. MANAGE USERS ================= */
         <div className="card p-0" style={{ overflow: 'hidden' }}>
           <div className="p-4 border-b flex flex-col md:flex-row gap-3 justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
             <div className="flex items-center gap-2 w-full md:w-auto">
@@ -1134,7 +1425,10 @@ const AdminDashboard = () => {
                   className="input-field" 
                   style={{ paddingLeft: '2.2rem', paddingBottom: '0.4rem', paddingTop: '0.4rem', fontSize: '0.85rem' }}
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setUserPage(1);
+                  }}
                 />
               </div>
             </div>
@@ -1145,7 +1439,10 @@ const AdminDashboard = () => {
                 className="input-field" 
                 style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
                 value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
+                onChange={(e) => {
+                  setRoleFilter(e.target.value);
+                  setUserPage(1);
+                }}
               >
                 <option value="all">All Roles</option>
                 <option value="candidate">Candidates</option>
@@ -1162,19 +1459,19 @@ const AdminDashboard = () => {
                   <th style={{ padding: '0.75rem 1rem' }}>User Profile</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Role</th>
                   <th style={{ padding: '0.75rem 1rem' }}>Approval Status</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Rate / Title</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Title / Company</th>
                   <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.length === 0 ? (
+                {paginatedUsers.length === 0 ? (
                   <tr>
                     <td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
                       No users match your filter criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map(u => (
+                  paginatedUsers.map(u => (
                     <tr key={u._id} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <div className="flex items-center gap-3">
@@ -1186,24 +1483,30 @@ const AdminDashboard = () => {
                           <div>
                             <div className="font-bold flex items-center gap-1.5">
                               {u.name}
-                              {u.isVerified && <ShieldCheck size={15} className="text-success" />}
+                              {u.isVerified && <ShieldCheck size={15} className="text-success" title="Verified Professional" />}
+                              {u.role === 'admin' && <span className="badge badge-danger text-[10px] font-bold">ADMIN</span>}
                             </div>
                             <div className="text-xs text-muted">{u.email}</div>
                           </div>
                         </div>
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
-                        <select 
-                          className="input-field"
-                          style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
-                          value={u.role}
-                          disabled={actionLoading === `role_${u._id}`}
-                          onChange={(e) => handleRoleChange(u._id, e.target.value)}
-                        >
-                          <option value="candidate">Candidate</option>
-                          <option value="professional">Professional</option>
-                          <option value="admin">Admin</option>
-                        </select>
+                        {u.role === 'admin' ? (
+                          <span className="badge badge-danger text-xs font-semibold py-1 px-2.5">
+                            Administrator 🛡️
+                          </span>
+                        ) : (
+                          <select 
+                            className="input-field"
+                            style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                            value={u.role}
+                            disabled={actionLoading === `role_${u._id}`}
+                            onChange={(e) => handleRoleChange(u._id, e.target.value)}
+                          >
+                            <option value="candidate">Candidate</option>
+                            <option value="professional">Professional</option>
+                          </select>
+                        )}
                       </td>
                       <td style={{ padding: '0.75rem 1rem' }}>
                         <span className={`badge ${u.approvalStatus === 'pending' ? 'badge-warning' : u.approvalStatus === 'rejected' ? 'badge-danger' : 'badge-success'} text-xs font-semibold py-1 px-2`}>
@@ -1213,15 +1516,23 @@ const AdminDashboard = () => {
                       <td style={{ padding: '0.75rem 1rem' }}>
                         {u.role === 'professional' ? (
                           <div>
-                            <div className="font-semibold text-success">Verified Professional</div>
-                            <div className="text-xs text-muted">{u.title || 'Interviewer'}</div>
+                            <div className="font-semibold text-success">{u.title || 'Verified Professional'}</div>
+                            <div className="text-xs text-muted">{u.company || 'Tech Org'}</div>
                           </div>
                         ) : (
-                          <div className="text-xs text-muted">{u.title || 'Candidate'}</div>
+                          <div className="text-xs text-muted">{u.company || 'Candidate'}</div>
                         )}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
                         <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            className="btn btn-ghost p-1.5 text-primary"
+                            title="View user details"
+                            onClick={() => setSelectedUserForDetails(u)}
+                          >
+                            <Eye size={16} />
+                          </button>
                           {u.role !== 'admin' && (
                             <button
                               className="btn btn-ghost p-1.5"
@@ -1233,14 +1544,16 @@ const AdminDashboard = () => {
                               {u.isDeactivated || u.accountStatus === 'deactivated' ? <Power size={15} /> : <Ban size={15} />}
                             </button>
                           )}
-                          <button
-                            className="btn btn-ghost text-danger p-1.5"
-                            title="Delete user account"
-                            disabled={actionLoading === `del_${u._id}`}
-                            onClick={() => handleDeleteUser(u._id, u.name)}
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {u.role !== 'admin' && (
+                            <button
+                              className="btn btn-ghost text-danger p-1.5"
+                              title="Delete user account"
+                              disabled={actionLoading === `del_${u._id}`}
+                              onClick={() => handleDeleteUser(u._id, u.name)}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1249,9 +1562,37 @@ const AdminDashboard = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalUserPages > 1 && (
+            <div className="p-3 border-t flex justify-between items-center text-xs text-muted" style={{ borderColor: 'var(--border)', backgroundColor: '#fafafa' }}>
+              <div>
+                Showing {(userPage - 1) * usersPerPage + 1} to {Math.min(userPage * usersPerPage, filteredUsers.length)} of {filteredUsers.length} users
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="btn btn-outline text-xs p-1"
+                  disabled={userPage <= 1}
+                  onClick={() => setUserPage(p => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="px-2 font-semibold">Page {userPage} of {totalUserPages}</span>
+                <button
+                  type="button"
+                  className="btn btn-outline text-xs p-1"
+                  disabled={userPage >= totalUserPages}
+                  onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : currentTab === 'verify' ? (
-        /* ================= 3. VERIFY PROFESSIONALS ================= */
+        /* ================= 4. ACCREDITATION TAB ================= */
         <div className="card p-0" style={{ overflow: 'hidden' }}>
           <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
             <div>
@@ -1337,422 +1678,145 @@ const AdminDashboard = () => {
             </table>
           </div>
         </div>
-      ) : currentTab === 'settings' ? (
-        /* ================= 5. PLATFORM SETTINGS ================= */
-        <div className="flex flex-col gap-6">
-          {/* Platform Financial & Operational Settings */}
-          <div className="card p-6">
-            <div className="flex justify-between items-start mb-4 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
-              <div>
-                <h3 className="font-bold text-lg flex items-center gap-2">
-                  <Sliders size={20} className="text-primary" />
-                  <span>Platform Parameters & Economics</span>
-                </h3>
-                <p className="text-xs text-muted mt-1">
-                  Configure platform take-rate, GST, booking and cancellation policies. All calculations are executed securely on the server.
-                </p>
-              </div>
-              <span className="badge badge-primary text-xs font-semibold">Active Database Settings</span>
+      ) : currentTab === 'bookings' ? (
+        /* ================= 5. ALL BOOKINGS ================= */
+        <div className="card p-0" style={{ overflow: 'hidden' }}>
+          <div className="p-4 border-b flex flex-col md:flex-row gap-3 justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
+            <div>
+              <h3 className="font-bold text-base flex items-center gap-2">
+                <Calendar size={18} className="text-primary" />
+                <span>Global Interview Bookings ({filteredBookings.length})</span>
+              </h3>
+              <p className="text-xs text-muted">Supervise all scheduled, completed, and cancelled mock interview sessions across DevSphere.</p>
             </div>
-
-            <form onSubmit={handleSavePlatformSettings}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Fixed Session Price (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="input-field text-sm"
-                    value={platformSettings.mockSessionPricePaise !== undefined ? platformSettings.mockSessionPricePaise / 100 : 50}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, mockSessionPricePaise: Math.round(Number(e.target.value) * 100) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Total price paid by candidates for every 1-on-1 mock interview (in INR)</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Interviewer Share (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    className="input-field text-sm"
-                    value={platformSettings.interviewerSharePercent ?? 70}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, interviewerSharePercent: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Percentage of session fee earned by the interviewer (Default 70%)</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Minimum Payout (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="input-field text-sm"
-                    value={platformSettings.minPayoutPaise !== undefined ? platformSettings.minPayoutPaise / 100 : 300}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, minPayoutPaise: Math.round(Number(e.target.value) * 100) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Minimum earnings balance required for interviewer withdrawal</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Payment Hold Slot (Minutes)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    className="input-field text-sm"
-                    value={platformSettings.pendingPaymentMinutes ?? 10}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, pendingPaymentMinutes: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Minutes a slot is locked while candidate completes payment</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Room Access Opens Before (Minutes)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="60"
-                    className="input-field text-sm"
-                    value={platformSettings.joinOpensMinutesBefore ?? 10}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, joinOpensMinutesBefore: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Minutes before session startTime join button unlocks</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Room Access Grace After (Minutes)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="60"
-                    className="input-field text-sm"
-                    value={platformSettings.joinGraceMinutesAfter ?? 15}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, joinGraceMinutesAfter: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Minutes after endTime room remains active before auto-close</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Interviewer No-Show Wait (Minutes)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    className="input-field text-sm"
-                    value={platformSettings.noShowWaitMinutes ?? 10}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, noShowWaitMinutes: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">If interviewer hasn't joined within this time, auto-refund candidate</span>
-                </div>
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Platform Commission (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    className="input-field text-sm"
-                    value={platformSettings.platformCommissionPercent}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, platformCommissionPercent: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Deducted from candidate fee before interviewer payout</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">GST / Tax Rate (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    className="input-field text-sm"
-                    value={platformSettings.gstPercent}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, gstPercent: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Tax applied to platform commission service fee</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Refund Cancellation Window (Hours)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="168"
-                    className="input-field text-sm"
-                    value={platformSettings.refundWindowHours}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, refundWindowHours: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Cancellations before this window are eligible for full refund</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Payout Clearance Hold (Days)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="90"
-                    className="input-field text-sm"
-                    value={platformSettings.payoutHoldDays ?? 3}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, payoutHoldDays: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Days completed sessions are held for fraud prevention before withdrawal</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Advance Booking Horizon (Days)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="90"
-                    className="input-field text-sm"
-                    value={platformSettings.bookingWindowDays}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, bookingWindowDays: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Max days into future candidates can view & book slots</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Standard Slot Duration (Minutes)</label>
-                  <input
-                    type="number"
-                    min="15"
-                    max="180"
-                    step="5"
-                    className="input-field text-sm"
-                    value={platformSettings.slotDurationMinutes}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, slotDurationMinutes: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Duration of each mock technical interview session</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Daily AI Mock Limit per User</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    className="input-field text-sm"
-                    value={platformSettings.aiDailyLimit}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, aiDailyLimit: Number(e.target.value) }))}
-                    required
-                  />
-                  <span className="text-[11px] text-muted mt-1">Enforced daily quota per candidate account</span>
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Platform Brand Name</label>
-                  <input
-                    type="text"
-                    className="input-field text-sm"
-                    value={platformSettings.siteName}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, siteName: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="input-group mb-0">
-                  <label className="text-xs font-semibold">Support Contact Email</label>
-                  <input
-                    type="email"
-                    className="input-field text-sm"
-                    value={platformSettings.supportEmail}
-                    onChange={(e) => setPlatformSettings(p => ({ ...p, supportEmail: e.target.value }))}
-                    required
-                  />
-                </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: '8px', top: '9px', color: '#94a3b8' }} />
+                <input
+                  type="text"
+                  placeholder="Search topic, room, user..."
+                  className="input-field text-xs"
+                  style={{ paddingLeft: '1.8rem', paddingBottom: '0.35rem', paddingTop: '0.35rem', width: '180px' }}
+                  value={bookingSearchQuery}
+                  onChange={(e) => setBookingSearchQuery(e.target.value)}
+                />
               </div>
 
-              {/* Slot Presets Editor */}
-              <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)' }}>
-                <label className="text-xs font-semibold block mb-2">Default Slot Presets for Interviewers</label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {(platformSettings.slotPresets || []).map((preset, idx) => (
-                    <span 
-                      key={idx}
-                      className="badge text-xs flex items-center gap-1.5 py-1 px-3"
-                      style={{ backgroundColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px' }}
-                    >
-                      <span>{preset}</span>
-                      <button
-                        type="button"
-                        onClick={() => setPlatformSettings(p => ({ ...p, slotPresets: p.slotPresets.filter((_, i) => i !== idx) }))}
-                        className="text-muted hover:text-danger"
-                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2 max-w-md">
-                  <input
-                    type="text"
-                    placeholder="e.g. 04:00 PM - 04:45 PM"
-                    className="input-field text-xs py-1.5"
-                    value={newPresetInput}
-                    onChange={(e) => setNewPresetInput(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-outline text-xs whitespace-nowrap"
-                    onClick={() => {
-                      if (newPresetInput.trim()) {
-                        setPlatformSettings(p => ({ ...p, slotPresets: [...(p.slotPresets || []), newPresetInput.trim()] }));
-                        setNewPresetInput('');
-                      }
-                    }}
-                  >
-                    + Add Preset
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={savingSettings}
-                  className="btn btn-primary text-xs flex items-center gap-1.5 px-6 py-2.5 font-bold"
-                >
-                  <Save size={15} />
-                  <span>{savingSettings ? 'Saving Settings...' : 'Save Platform Settings'}</span>
-                </button>
-              </div>
-            </form>
+              <select 
+                className="input-field" 
+                style={{ width: 'auto', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                value={bookingStatusFilter}
+                onChange={(e) => setBookingStatusFilter(e.target.value)}
+              >
+                <option value="all">All Bookings</option>
+                <option value="scheduled">Scheduled / Upcoming</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="unpaid">Unpaid Payment</option>
+              </select>
+            </div>
           </div>
 
-          {/* Dynamic Interview Content: Topics, Difficulties, Target Companies */}
-          <div className="card p-6">
-            <div className="flex justify-between items-start mb-4 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
-              <div>
-                <h3 className="font-bold text-lg flex items-center gap-2">
-                  <Briefcase size={20} className="text-primary" />
-                  <span>Dynamic Interview Catalog & Target Companies</span>
-                </h3>
-                <p className="text-xs text-muted mt-1">
-                  Manage the dynamic topics, seniority tiers, and companies available in AI Mock Interview and booking filters. No hardcoded lists.
-                </p>
-              </div>
-              <span className="badge badge-success text-xs font-semibold">MongoDB Catalog</span>
-            </div>
-
-            {/* Topics */}
-            <div className="mb-5">
-              <label className="text-xs font-semibold block mb-2">Technical Interview Topics</label>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {(interviewConfig.topics || []).map((t, idx) => (
-                  <span 
-                    key={idx}
-                    className="badge text-xs flex items-center gap-1.5 py-1 px-3"
-                    style={{ backgroundColor: '#e0e7ff', color: '#3730a3', borderRadius: '8px' }}
-                  >
-                    <span>{t}</span>
-                    <button
-                      type="button"
-                      onClick={() => setInterviewConfig(c => ({ ...c, topics: c.topics.filter((_, i) => i !== idx) }))}
-                      className="text-muted hover:text-danger"
-                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2 max-w-md">
-                <input
-                  type="text"
-                  placeholder="e.g. Distributed Caching & Redis"
-                  className="input-field text-xs py-1.5"
-                  value={newTopicInput}
-                  onChange={(e) => setNewTopicInput(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="btn btn-outline text-xs whitespace-nowrap"
-                  onClick={() => {
-                    if (newTopicInput.trim()) {
-                      setInterviewConfig(c => ({ ...c, topics: [...(c.topics || []), newTopicInput.trim()] }));
-                      setNewTopicInput('');
-                    }
-                  }}
-                >
-                  + Add Topic
-                </button>
-              </div>
-            </div>
-
-            {/* Target Companies */}
-            <div className="mb-5">
-              <label className="text-xs font-semibold block mb-2">Target Companies</label>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {(interviewConfig.companies || []).map((comp, idx) => (
-                  <span 
-                    key={idx}
-                    className="badge text-xs flex items-center gap-1.5 py-1 px-3"
-                    style={{ backgroundColor: '#fef3c7', color: '#92400e', borderRadius: '8px' }}
-                  >
-                    <span>{comp}</span>
-                    <button
-                      type="button"
-                      onClick={() => setInterviewConfig(c => ({ ...c, companies: c.companies.filter((_, i) => i !== idx) }))}
-                      className="text-muted hover:text-danger"
-                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2 max-w-md">
-                <input
-                  type="text"
-                  placeholder="e.g. Atlassian / Apple"
-                  className="input-field text-xs py-1.5"
-                  value={newCompanyInput}
-                  onChange={(e) => setNewCompanyInput(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="btn btn-outline text-xs whitespace-nowrap"
-                  onClick={() => {
-                    if (newCompanyInput.trim()) {
-                      setInterviewConfig(c => ({ ...c, companies: [...(c.companies || []), newCompanyInput.trim()] }));
-                      setNewCompanyInput('');
-                    }
-                  }}
-                >
-                  + Add Company
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={handleSaveInterviewConfig}
-                disabled={savingSettings}
-                className="btn btn-primary text-xs flex items-center gap-1.5 px-6 py-2.5 font-bold"
-              >
-                <Save size={15} />
-                <span>{savingSettings ? 'Updating Catalog...' : 'Save Interview Catalog'}</span>
-              </button>
-            </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
+                  <th style={{ padding: '0.75rem 1rem' }}>Session / Topic</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Candidate</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Interviewer</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Date & Slot</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Price</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Payment</th>
+                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Admin Override</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBookings.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
+                      No bookings found in this status.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBookings.map(b => (
+                    <tr key={b._id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div className="font-bold">{b.topic || 'Mock Technical Interview'}</div>
+                        <div className="text-xs text-muted font-mono">{b.meetingRoomId}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div className="font-semibold">{b.candidateId?.name || 'Candidate'}</div>
+                        <div className="text-xs text-muted">{b.candidateId?.email}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div className="font-semibold flex items-center gap-1">
+                          {b.interviewerId?.name || 'Professional'}
+                          {b.interviewerId?.isVerified && <ShieldCheck size={14} className="text-success" />}
+                        </div>
+                        <div className="text-xs text-muted">{b.interviewerId?.company || 'Expert'}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div className="font-medium">{b.date}</div>
+                        <div className="text-xs text-muted">{b.timeSlot}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <div className="font-bold text-success text-sm">
+                          ₹{b.price || (b.amountPaise ? b.amountPaise / 100 : 0)}
+                        </div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span className={`badge ${
+                          b.paymentStatus === 'paid' ? 'badge-success' : 
+                          b.paymentStatus === 'refunded' ? 'badge-danger' : 'badge-warning'
+                        } text-xs font-semibold py-0.5 px-2`}>
+                          {b.paymentStatus === 'paid' ? 'Paid ✅' : b.paymentStatus === 'refunded' ? 'Refunded ↩️' : 'Unpaid ⏳'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <span className={`badge ${
+                          b.status === 'completed' ? 'badge-success' : 
+                          b.status === 'cancelled' ? 'badge-danger' : 
+                          b.status === 'interviewer_no_show' || b.status === 'candidate_no_show' ? 'badge-danger' : 'badge-warning'
+                        } text-xs font-semibold py-1 px-2.5`}>
+                          {b.status === 'completed' ? 'Completed ✅' : 
+                           b.status === 'cancelled' ? 'Cancelled ❌' : 
+                           b.status === 'interviewer_no_show' ? 'Interviewer No-Show ⚠️' :
+                           b.status === 'candidate_no_show' ? 'Candidate No-Show ⚠️' :
+                           b.status === 'expired' ? 'Expired ⌛' : 'Scheduled 📅'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <select
+                            className="input-field"
+                            style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                            value={b.status}
+                            disabled={actionLoading === `book_${b._id}`}
+                            onChange={(e) => handleBookingStatus(b._id, e.target.value)}
+                          >
+                            <option value="scheduled">Scheduled</option>
+                            <option value="completed">Completed</option>
+                            <option value="cancelled">Cancelled</option>
+                            <option value="interviewer_no_show">Interviewer No-Show</option>
+                            <option value="candidate_no_show">Candidate No-Show</option>
+                          </select>
+                          <button
+                            type="button"
+                            className="btn btn-ghost text-danger p-1"
+                            title="Delete booking record"
+                            disabled={actionLoading === `del_book_${b._id}`}
+                            onClick={() => handleDeleteBooking(b._id)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : currentTab === 'payouts' ? (
@@ -1899,101 +1963,441 @@ const AdminDashboard = () => {
           </div>
         </div>
       ) : (
-        /* ================= 4. MANAGE BOOKINGS ================= */
-        <div className="card p-0" style={{ overflow: 'hidden' }}>
-          <div className="p-4 border-b flex justify-between items-center" style={{ borderColor: 'var(--border)', backgroundColor: '#f8fafc' }}>
-            <div>
-              <h3 className="font-bold text-base">Global Interview Bookings</h3>
-              <p className="text-xs text-muted">Supervise all scheduled, completed, and cancelled sessions across DevSphere.</p>
+        /* ================= 7. PLATFORM SETTINGS ================= */
+        <div className="flex flex-col gap-6">
+          {/* Platform Financial & Operational Settings */}
+          <div className="card p-6">
+            <div className="flex justify-between items-start mb-4 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <Sliders size={20} className="text-primary" />
+                  <span>Platform Parameters & Economics</span>
+                </h3>
+                <p className="text-xs text-muted mt-1">
+                  Configure platform take-rate, GST, booking and cancellation policies. All calculations are executed securely on the server.
+                </p>
+              </div>
+              <span className="badge badge-primary text-xs font-semibold">Active Database Settings</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted">Status:</span>
-              <select 
-                className="input-field" 
-                style={{ width: 'auto', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
-                value={bookingStatusFilter}
-                onChange={(e) => setBookingStatusFilter(e.target.value)}
-              >
-                <option value="all">All Bookings</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
+
+            <form onSubmit={handleSavePlatformSettings}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Fixed Session Price (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-field text-sm"
+                    value={platformSettings.mockSessionPricePaise !== undefined ? platformSettings.mockSessionPricePaise / 100 : 50}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, mockSessionPricePaise: Math.round(Number(e.target.value) * 100) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Total price paid by candidates for every 1-on-1 mock interview (in INR)</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Interviewer Share (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    className="input-field text-sm"
+                    value={platformSettings.interviewerSharePercent ?? 70}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, interviewerSharePercent: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Percentage of session fee earned by the interviewer (Default 70%)</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Minimum Payout (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-field text-sm"
+                    value={platformSettings.minPayoutPaise !== undefined ? platformSettings.minPayoutPaise / 100 : 300}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, minPayoutPaise: Math.round(Number(e.target.value) * 100) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minimum earnings balance required for interviewer withdrawal</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Payment Hold Slot (Minutes)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.pendingPaymentMinutes ?? 10}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, pendingPaymentMinutes: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minutes a slot is locked while candidate completes payment</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Room Access Opens Before (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.joinOpensMinutesBefore ?? 10}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, joinOpensMinutesBefore: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minutes before session startTime join button unlocks</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Room Access Grace After (Minutes)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.joinGraceMinutesAfter ?? 15}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, joinGraceMinutesAfter: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Minutes after endTime room remains active before auto-close</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Interviewer No-Show Wait (Minutes)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    className="input-field text-sm"
+                    value={platformSettings.noShowWaitMinutes ?? 10}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, noShowWaitMinutes: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">If interviewer hasn't joined within this time, auto-refund candidate</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Platform Commission (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    className="input-field text-sm"
+                    value={platformSettings.platformCommissionPercent}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, platformCommissionPercent: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Deducted from candidate fee before interviewer payout</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">GST / Tax Rate (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    className="input-field text-sm"
+                    value={platformSettings.gstPercent}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, gstPercent: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Tax applied to platform commission service fee</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Refund Cancellation Window (Hours)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="168"
+                    className="input-field text-sm"
+                    value={platformSettings.refundWindowHours}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, refundWindowHours: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Cancellations before this window are eligible for full refund</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Payout Clearance Hold (Days)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="90"
+                    className="input-field text-sm"
+                    value={platformSettings.payoutHoldDays ?? 3}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, payoutHoldDays: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Days completed sessions are held before withdrawal</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Advance Booking Horizon (Days)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    className="input-field text-sm"
+                    value={platformSettings.bookingWindowDays}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, bookingWindowDays: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Max days into future candidates can view & book slots</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Standard Slot Duration (Minutes)</label>
+                  <input
+                    type="number"
+                    min="15"
+                    max="180"
+                    step="5"
+                    className="input-field text-sm"
+                    value={platformSettings.slotDurationMinutes}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, slotDurationMinutes: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Duration of each mock technical interview session</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Daily AI Mock Limit per User</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="50"
+                    className="input-field text-sm"
+                    value={platformSettings.aiDailyLimit}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, aiDailyLimit: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Enforced daily quota per candidate account</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Professional Reapply Cooldown (Days)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="365"
+                    className="input-field text-sm"
+                    value={platformSettings.professionalReapplyAfterDays ?? 30}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, professionalReapplyAfterDays: Number(e.target.value) }))}
+                    required
+                  />
+                  <span className="text-[11px] text-muted mt-1">Days a rejected applicant must wait before reapplying</span>
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Platform Brand Name</label>
+                  <input
+                    type="text"
+                    className="input-field text-sm"
+                    value={platformSettings.siteName}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, siteName: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="input-group mb-0">
+                  <label className="text-xs font-semibold">Support Contact Email</label>
+                  <input
+                    type="email"
+                    className="input-field text-sm"
+                    value={platformSettings.supportEmail}
+                    onChange={(e) => setPlatformSettings(p => ({ ...p, supportEmail: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Slot Presets Editor */}
+              <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: '#f8fafc', border: '1px solid var(--border)' }}>
+                <label className="text-xs font-semibold block mb-2">Default Slot Presets for Interviewers</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {(platformSettings.slotPresets || []).map((preset, idx) => (
+                    <span 
+                      key={idx}
+                      className="badge text-xs flex items-center gap-1.5 py-1 px-3"
+                      style={{ backgroundColor: '#e2e8f0', color: '#1e293b', borderRadius: '8px' }}
+                    >
+                      <span>{preset}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPlatformSettings(p => ({ ...p, slotPresets: p.slotPresets.filter((_, i) => i !== idx) }))}
+                        className="text-muted hover:text-danger"
+                        style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2 max-w-md">
+                  <input
+                    type="text"
+                    placeholder="e.g. 04:00 PM - 04:45 PM"
+                    className="input-field text-xs py-1.5"
+                    value={newPresetInput}
+                    onChange={(e) => setNewPresetInput(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline text-xs whitespace-nowrap"
+                    onClick={() => {
+                      if (newPresetInput.trim()) {
+                        setPlatformSettings(p => ({ ...p, slotPresets: [...(p.slotPresets || []), newPresetInput.trim()] }));
+                        setNewPresetInput('');
+                      }
+                    }}
+                  >
+                    + Add Preset
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="btn btn-primary text-xs flex items-center gap-1.5 px-6 py-2.5 font-bold"
+                >
+                  <Save size={15} />
+                  <span>{savingSettings ? 'Saving Settings...' : 'Save Platform Settings'}</span>
+                </button>
+              </div>
+            </form>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', backgroundColor: '#fafafa', color: '#64748b', textAlign: 'left' }}>
-                  <th style={{ padding: '0.75rem 1rem' }}>Session / Topic</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Candidate</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Interviewer</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Date & Slot</th>
-                  <th style={{ padding: '0.75rem 1rem' }}>Status</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Admin Override</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredBookings.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                      No bookings found in this status.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredBookings.map(b => (
-                    <tr key={b._id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div className="font-bold">{b.topic || 'Mock Technical Interview'}</div>
-                        <div className="text-xs text-muted font-mono">{b.meetingRoomId}</div>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div className="font-semibold">{b.candidateId?.name || 'Candidate'}</div>
-                        <div className="text-xs text-muted">{b.candidateId?.email}</div>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div className="font-semibold flex items-center gap-1">
-                          {b.interviewerId?.name || 'Professional'}
-                          {b.interviewerId?.isVerified && <ShieldCheck size={14} className="text-success" />}
-                        </div>
-                        <div className="text-xs text-muted">{b.interviewerId?.company || 'Expert'}</div>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <div className="font-medium">{b.date}</div>
-                        <div className="text-xs text-muted">{b.timeSlot}</div>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem' }}>
-                        <span className={`badge ${
-                          b.status === 'completed' ? 'badge-success' : 
-                          b.status === 'cancelled' ? 'badge-danger' : 'badge-warning'
-                        } text-xs font-semibold py-1 px-2.5`}>
-                          {b.status === 'completed' ? 'Completed ✅' : b.status === 'cancelled' ? 'Cancelled ❌' : 'Scheduled 📅'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                        <select
-                          className="input-field"
-                          style={{ width: 'auto', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
-                          value={b.status}
-                          disabled={actionLoading === `book_${b._id}`}
-                          onChange={(e) => handleBookingStatus(b._id, e.target.value)}
-                        >
-                          <option value="scheduled">Scheduled</option>
-                          <option value="completed">Completed</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          {/* Dynamic Interview Content */}
+          <div className="card p-6">
+            <div className="flex justify-between items-start mb-4 border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+              <div>
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <Briefcase size={20} className="text-primary" />
+                  <span>Dynamic Interview Catalog & Target Companies</span>
+                </h3>
+                <p className="text-xs text-muted mt-1">
+                  Manage the dynamic topics, seniority tiers, and companies available in AI Mock Interview and booking filters.
+                </p>
+              </div>
+              <span className="badge badge-success text-xs font-semibold">MongoDB Catalog</span>
+            </div>
+
+            {/* Topics */}
+            <div className="mb-5">
+              <label className="text-xs font-semibold block mb-2">Technical Interview Topics</label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(interviewConfig.topics || []).map((t, idx) => (
+                  <span 
+                    key={idx}
+                    className="badge badge-primary text-xs flex items-center gap-1.5 py-1 px-3"
+                    style={{ borderRadius: '8px' }}
+                  >
+                    <span>{t}</span>
+                    <button
+                      type="button"
+                      onClick={() => setInterviewConfig(c => ({ ...c, topics: c.topics.filter((_, i) => i !== idx) }))}
+                      className="text-white hover:text-danger"
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2 max-w-md">
+                <input
+                  type="text"
+                  placeholder="e.g. Next.js & Server Components"
+                  className="input-field text-xs py-1.5"
+                  value={newTopicInput}
+                  onChange={(e) => setNewTopicInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline text-xs whitespace-nowrap"
+                  onClick={() => {
+                    if (newTopicInput.trim()) {
+                      setInterviewConfig(c => ({ ...c, topics: [...(c.topics || []), newTopicInput.trim()] }));
+                      setNewTopicInput('');
+                    }
+                  }}
+                >
+                  + Add Topic
+                </button>
+              </div>
+            </div>
+
+            {/* Target Companies */}
+            <div className="mb-6">
+              <label className="text-xs font-semibold block mb-2">Target Tech Companies</label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {(interviewConfig.companies || []).map((comp, idx) => (
+                  <span 
+                    key={idx}
+                    className="badge text-xs flex items-center gap-1.5 py-1 px-3"
+                    style={{ backgroundColor: '#e2e8f0', color: '#0f172a', borderRadius: '8px' }}
+                  >
+                    <span>{comp}</span>
+                    <button
+                      type="button"
+                      onClick={() => setInterviewConfig(c => ({ ...c, companies: c.companies.filter((_, i) => i !== idx) }))}
+                      className="text-muted hover:text-danger"
+                      style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2 max-w-md">
+                <input
+                  type="text"
+                  placeholder="e.g. Stripe, OpenAI, Uber"
+                  className="input-field text-xs py-1.5"
+                  value={newCompanyInput}
+                  onChange={(e) => setNewCompanyInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline text-xs whitespace-nowrap"
+                  onClick={() => {
+                    if (newCompanyInput.trim()) {
+                      setInterviewConfig(c => ({ ...c, companies: [...(c.companies || []), newCompanyInput.trim()] }));
+                      setNewCompanyInput('');
+                    }
+                  }}
+                >
+                  + Add Company
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveInterviewConfig}
+                disabled={savingSettings}
+                className="btn btn-primary text-xs flex items-center gap-1.5 px-6 py-2.5 font-bold"
+              >
+                <Save size={15} />
+                <span>{savingSettings ? 'Saving Catalog...' : 'Save Catalog & Companies'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ================= MODAL: INVITE PROFESSIONAL (Requirement 1, 2, 3, 12) ================= */}
+      {/* ================= MODAL: INVITE PROFESSIONAL ================= */}
       {showInviteModal && (
         <div className="modal-overlay" onClick={() => !inviting && setShowInviteModal(false)}>
           <div 
@@ -2016,7 +2420,7 @@ const AdminDashboard = () => {
                 </div>
                 <h3 className="text-xl font-bold">Invite Professional Interviewer</h3>
                 <p className="text-xs text-muted mt-0.5">
-                  Enter professional details. An invitation email will be sent with a secure link to set their own password.
+                  Enter professional email. An invitation email will be sent with a secure link to set their own password.
                 </p>
               </div>
               <button 
@@ -2052,41 +2456,43 @@ const AdminDashboard = () => {
                 </p>
 
                 {/* Invitation Link Box */}
-                <div style={{
-                  background: '#f8fafc',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  textAlign: 'left',
-                  marginBottom: '1.5rem'
-                }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    Generated Secure Invitation Link:
+                {inviteSuccessData.invitationLink && (
+                  <div style={{
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '12px',
+                    padding: '12px',
+                    textAlign: 'left',
+                    marginBottom: '1.5rem'
+                  }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>
+                      Generated Secure Invitation Link:
+                    </div>
+                    <div style={{ wordBreak: 'break-all', fontSize: '0.8rem', fontFamily: 'monospace', color: '#0f172a', marginBottom: '10px' }}>
+                      {inviteSuccessData.invitationLink}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline text-xs py-1.5 px-3 flex-1 flex items-center justify-center gap-1.5 font-semibold"
+                        onClick={() => copyToClipboard(inviteSuccessData.invitationLink, 'modal_link')}
+                      >
+                        {copiedTokenId === 'modal_link' ? <Check size={14} className="text-success" /> : <Copy size={14} />}
+                        <span>{copiedTokenId === 'modal_link' ? 'Copied to Clipboard!' : 'Copy Invitation Link'}</span>
+                      </button>
+                      <a
+                        href={inviteSuccessData.invitationLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-primary text-xs py-1.5 px-3 flex items-center justify-center gap-1 font-semibold"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        <span>Open Link</span>
+                        <ExternalLink size={13} />
+                      </a>
+                    </div>
                   </div>
-                  <div style={{ wordBreak: 'break-all', fontSize: '0.8rem', fontFamily: 'monospace', color: '#0f172a', marginBottom: '10px' }}>
-                    {inviteSuccessData.invitationLink}
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-outline text-xs py-1.5 px-3 flex-1 flex items-center justify-center gap-1.5 font-semibold"
-                      onClick={() => copyToClipboard(inviteSuccessData.invitationLink, 'modal_link')}
-                    >
-                      {copiedTokenId === 'modal_link' ? <Check size={14} className="text-success" /> : <Copy size={14} />}
-                      <span>{copiedTokenId === 'modal_link' ? 'Copied to Clipboard!' : 'Copy Invitation Link'}</span>
-                    </button>
-                    <a
-                      href={inviteSuccessData.invitationLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-primary text-xs py-1.5 px-3 flex items-center justify-center gap-1 font-semibold"
-                      style={{ textDecoration: 'none' }}
-                    >
-                      <span>Open Link</span>
-                      <ExternalLink size={13} />
-                    </a>
-                  </div>
-                </div>
+                )}
 
                 <button
                   type="button"
@@ -2115,71 +2521,66 @@ const AdminDashboard = () => {
                   <strong>🔒 Security Requirement:</strong> Never send passwords through email. The professional will securely set their own password upon clicking the link.
                 </div>
 
-                {/* 1. Name & Email */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                  <div className="input-group mb-0">
-                    <label className="text-xs font-semibold">Full Name *</label>
-                    <input 
-                      type="text"
-                      className="input-field text-sm"
-                      placeholder="e.g. Ananya Iyer"
-                      value={inviteForm.name}
-                      onChange={(e) => setInviteForm(prev => ({ ...prev, name: e.target.value }))}
-                      required
-                    />
-                  </div>
-
-                  <div className="input-group mb-0">
-                    <label className="text-xs font-semibold">Email Address *</label>
-                    <input 
-                      type="email"
-                      className="input-field text-sm"
-                      placeholder="e.g. ananya.iyer@google.com"
-                      value={inviteForm.email}
-                      onChange={(e) => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
-                      required
-                    />
-                  </div>
+                {/* Email Address */}
+                <div className="input-group mb-3">
+                  <label className="text-xs font-semibold">Professional Email Address *</label>
+                  <input 
+                    type="email"
+                    className="input-field text-sm"
+                    placeholder="e.g. professional.interviewer@example.com"
+                    value={inviteForm.email}
+                    onChange={(e) => setInviteForm(prev => ({ ...prev, email: e.target.value }))}
+                    required
+                  />
                 </div>
 
-                {/* 2. Company & Designation */}
+                {/* Name */}
+                <div className="input-group mb-3">
+                  <label className="text-xs font-semibold">Full Name (Optional)</label>
+                  <input 
+                    type="text"
+                    className="input-field text-sm"
+                    placeholder="e.g. Ananya Iyer"
+                    value={inviteForm.name}
+                    onChange={(e) => setInviteForm(prev => ({ ...prev, name: e.target.value }))}
+                  />
+                </div>
+
+                {/* Company & Designation */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
                   <div className="input-group mb-0">
-                    <label className="text-xs font-semibold">Company *</label>
+                    <label className="text-xs font-semibold">Company (Optional)</label>
                     <input 
                       type="text"
                       className="input-field text-sm"
                       placeholder="e.g. Google / Microsoft"
                       value={inviteForm.company}
                       onChange={(e) => setInviteForm(prev => ({ ...prev, company: e.target.value }))}
-                      required
                     />
                   </div>
 
                   <div className="input-group mb-0">
-                    <label className="text-xs font-semibold">Designation / Title *</label>
+                    <label className="text-xs font-semibold">Designation / Title (Optional)</label>
                     <input 
                       type="text"
                       className="input-field text-sm"
                       placeholder="e.g. Senior Staff Engineer"
                       value={inviteForm.designation}
                       onChange={(e) => setInviteForm(prev => ({ ...prev, designation: e.target.value }))}
-                      required
                     />
                   </div>
                 </div>
 
-                {/* 3. Experience & Domain */}
+                {/* Experience & Domain */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
                   <div className="input-group mb-0">
-                    <label className="text-xs font-semibold">Experience *</label>
+                    <label className="text-xs font-semibold">Experience</label>
                     <input 
                       type="text"
                       className="input-field text-sm"
-                      placeholder="e.g. 7+ Years"
+                      placeholder="e.g. 5+ Years"
                       value={inviteForm.experience}
                       onChange={(e) => setInviteForm(prev => ({ ...prev, experience: e.target.value }))}
-                      required
                     />
                   </div>
 
@@ -2227,6 +2628,253 @@ const AdminDashboard = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: VIEW USER DETAILS ================= */}
+      {selectedUserForDetails && (
+        <div className="modal-overlay" onClick={() => setSelectedUserForDetails(null)}>
+          <div 
+            className="modal-card" 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '560px', 
+              padding: '2rem', 
+              borderRadius: '24px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center gap-3">
+                <Avatar 
+                  name={selectedUserForDetails.name} 
+                  avatar={selectedUserForDetails.avatar} 
+                  size={52} 
+                />
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-1.5">
+                    {selectedUserForDetails.name}
+                    {selectedUserForDetails.isVerified && <ShieldCheck size={18} className="text-success" />}
+                  </h3>
+                  <div className="text-xs text-muted">{selectedUserForDetails.email}</div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedUserForDetails(null)}
+                className="btn btn-ghost p-1 text-muted"
+                style={{ borderRadius: '50%' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div>
+                <span className="text-muted block">Role</span>
+                <span className="font-bold uppercase text-slate-800">{selectedUserForDetails.role}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Account Status</span>
+                <span className="font-bold text-slate-800">{selectedUserForDetails.accountStatus || (selectedUserForDetails.isDeactivated ? 'Deactivated' : 'Active')}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Approval Status</span>
+                <span className="font-bold text-slate-800">{selectedUserForDetails.approvalStatus || 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Verification</span>
+                <span className="font-bold text-slate-800">{selectedUserForDetails.isVerified ? 'Verified ✅' : 'Unverified ⚠️'}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Company</span>
+                <span className="font-bold text-slate-800">{selectedUserForDetails.company || 'Not Specified'}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Designation</span>
+                <span className="font-bold text-slate-800">{selectedUserForDetails.title || selectedUserForDetails.designation || 'Not Specified'}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Experience</span>
+                <span className="font-bold text-slate-800">{selectedUserForDetails.experience || 'Not Specified'}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Member Since</span>
+                <span className="font-bold text-slate-800">{new Date(selectedUserForDetails.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+
+            {selectedUserForDetails.bio && (
+              <div className="mb-4">
+                <span className="text-xs font-semibold block text-slate-600 mb-1">Bio / Profile Statement:</span>
+                <p className="text-xs text-slate-700 p-2.5 rounded-lg bg-slate-50 border border-slate-200 leading-relaxed">
+                  "{selectedUserForDetails.bio}"
+                </p>
+              </div>
+            )}
+
+            {selectedUserForDetails.skills && selectedUserForDetails.skills.length > 0 && (
+              <div className="mb-4">
+                <span className="text-xs font-semibold block text-slate-600 mb-1">Key Skills:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedUserForDetails.skills.map((s, idx) => (
+                    <span key={idx} className="badge badge-secondary text-xs">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
+              <button
+                type="button"
+                className="btn btn-outline text-xs px-4 py-2"
+                onClick={() => setSelectedUserForDetails(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: VIEW REQUEST DETAILS ================= */}
+      {selectedRequestForDetails && (
+        <div className="modal-overlay" onClick={() => setSelectedRequestForDetails(null)}>
+          <div 
+            className="modal-card" 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '620px', 
+              padding: '2rem', 
+              borderRadius: '24px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center gap-3">
+                <Avatar 
+                  name={selectedRequestForDetails.name} 
+                  avatar={selectedRequestForDetails.avatar} 
+                  size={56} 
+                />
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-1.5">
+                    {selectedRequestForDetails.name}
+                    {selectedRequestForDetails.isVerified && <ShieldCheck size={18} className="text-success" />}
+                  </h3>
+                  <div className="text-xs text-muted">{selectedRequestForDetails.email}</div>
+                  <div className="text-xs text-primary font-semibold mt-0.5">
+                    {selectedRequestForDetails.title || selectedRequestForDetails.designation || 'Applicant'} • {selectedRequestForDetails.company || 'Tech Org'}
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedRequestForDetails(null)}
+                className="btn btn-ghost p-1 text-muted"
+                style={{ borderRadius: '50%' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div>
+                <span className="text-muted block">Approval Status</span>
+                <span className="font-bold uppercase text-slate-800">{selectedRequestForDetails.approvalStatus}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Applied On</span>
+                <span className="font-bold text-slate-800">{new Date(selectedRequestForDetails.appliedAt || selectedRequestForDetails.createdAt).toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Years of Experience</span>
+                <span className="font-bold text-slate-800">{selectedRequestForDetails.experience || 'Not Specified'}</span>
+              </div>
+              <div>
+                <span className="text-muted block">Track / Domain</span>
+                <span className="font-bold text-slate-800">{selectedRequestForDetails.domain || 'Software Engineering'}</span>
+              </div>
+            </div>
+
+            {selectedRequestForDetails.bio && (
+              <div className="mb-4">
+                <span className="text-xs font-semibold block text-slate-600 mb-1">Applicant Statement / Bio:</span>
+                <p className="text-xs text-slate-700 p-2.5 rounded-lg bg-slate-50 border border-slate-200 leading-relaxed">
+                  "{selectedRequestForDetails.bio}"
+                </p>
+              </div>
+            )}
+
+            {selectedRequestForDetails.linkedin && (
+              <div className="mb-4">
+                <a 
+                  href={selectedRequestForDetails.linkedin.startsWith('http') ? selectedRequestForDetails.linkedin : `https://${selectedRequestForDetails.linkedin}`}
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="text-xs text-primary inline-flex items-center gap-1 font-semibold hover:underline"
+                >
+                  <ExternalLink size={13} />
+                  <span>Open Applicant LinkedIn Profile</span>
+                </a>
+              </div>
+            )}
+
+            {selectedRequestForDetails.skills && selectedRequestForDetails.skills.length > 0 && (
+              <div className="mb-4">
+                <span className="text-xs font-semibold block text-slate-600 mb-1">Stated Skills:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedRequestForDetails.skills.map((s, idx) => (
+                    <span key={idx} className="badge badge-secondary text-xs">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Decision Controls */}
+            <div className="flex flex-wrap gap-2 justify-end pt-3 border-t mt-4">
+              <button
+                type="button"
+                className="btn btn-outline text-xs px-3 py-2"
+                onClick={() => setSelectedRequestForDetails(null)}
+              >
+                Close
+              </button>
+              {selectedRequestForDetails.approvalStatus === 'pending' && (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-primary text-xs px-4 py-2 font-semibold"
+                    style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}
+                    onClick={() => handleRequestDecision(selectedRequestForDetails._id, 'approve')}
+                  >
+                    ✓ Approve as Professional
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline text-xs px-3 py-2"
+                    style={{ borderColor: '#3b82f6', color: '#1d4ed8' }}
+                    onClick={() => handleRequestDecision(selectedRequestForDetails._id, 'make_candidate')}
+                  >
+                    Convert to Candidate
+                  </button>
+                  <button
+                    type="button"
+                    className="btn text-xs px-3 py-2 text-danger"
+                    style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)' }}
+                    onClick={() => {
+                      const reason = prompt(`Enter rejection reason for ${selectedRequestForDetails.name}:`, 'Experience criteria not matching current requirements');
+                      if (reason !== null) {
+                        handleRequestDecision(selectedRequestForDetails._id, 'reject', reason);
+                      }
+                    }}
+                  >
+                    ✕ Reject
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

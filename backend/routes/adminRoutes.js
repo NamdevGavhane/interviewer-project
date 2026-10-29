@@ -147,7 +147,8 @@ router.get('/invitations', async (req, res) => {
       $or: [
         { accountStatus: 'invited' },
         { invitationToken: { $exists: true, $ne: null } },
-        { acceptedAt: { $exists: true, $ne: null } }
+        { acceptedAt: { $exists: true, $ne: null } },
+        { invitedAt: { $exists: true, $ne: null } }
       ]
     })
     .select('-password')
@@ -204,6 +205,39 @@ router.post('/invitations/:id/resend', validateObjectId('id'), async (req, res) 
         : `Fresh invitation created for ${user.email}.`,
       data: { user, mailSent: !!(mailResult && mailResult.sent) }
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   POST /api/admin/invitations/:id/revoke
+// @desc    Admin revokes an invitation
+router.post('/invitations/:id/revoke', validateObjectId('id'), async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'Invited user not found.' });
+
+    if (user.role !== 'professional' || user.accountStatus !== 'invited') {
+      return res.status(400).json({ success: false, message: 'Can only revoke pending invitations.' });
+    }
+
+    if (!user.password) {
+      await User.findByIdAndDelete(user._id);
+      return res.json({
+        success: true,
+        message: `Invitation for ${user.email} has been revoked and removed.`
+      });
+    } else {
+      user.invitationToken = null;
+      user.invitationExpires = new Date(0);
+      user.accountStatus = 'deactivated';
+      user.isDeactivated = true;
+      await user.save();
+      return res.json({
+        success: true,
+        message: `Invitation for ${user.email} has been revoked.`
+      });
+    }
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -266,7 +300,7 @@ router.get('/stats', async (req, res) => {
       User.countDocuments({ role: 'candidate' }),
       User.countDocuments({ role: 'professional' }),
       User.countDocuments({ role: 'professional', isVerified: true }),
-      User.countDocuments({ role: 'professional', accountStatus: 'invited' }),
+      User.countDocuments({ role: 'professional', $or: [{ accountStatus: 'invited' }, { invitationToken: { $exists: true, $ne: null } }, { acceptedAt: { $exists: true, $ne: null } }, { invitedAt: { $exists: true, $ne: null } }] }),
       User.countDocuments({ $or: [{ isDeactivated: true }, { accountStatus: 'deactivated' }] }),
       User.countDocuments({ $or: [{ role: 'professional', approvalStatus: 'pending' }, { approvalStatus: 'pending' }] }),
       User.countDocuments({ role: 'professional', approvalStatus: 'approved' }),
@@ -503,6 +537,10 @@ router.patch('/users/:id/role', validateObjectId('id'), async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
+    if (user.role === 'admin') {
+      return res.status(400).json({ success: false, message: 'Cannot change the role of an administrator account.' });
+    }
+
     user.role = role;
     if (role === 'professional') {
       user.approvalStatus = 'approved';
@@ -568,13 +606,34 @@ router.get('/bookings', async (req, res) => {
     const { status, search } = req.query;
     let query = {};
 
+    if (status && status !== 'all') {
+      if (status === 'upcoming' || status === 'scheduled') {
+        query.status = 'scheduled';
+      } else if (status === 'completed') {
+        query.status = 'completed';
+      } else if (status === 'cancelled') {
+        query.status = 'cancelled';
+      } else if (status === 'unpaid') {
+        query.paymentStatus = 'unpaid';
+      } else if (status === 'no_show') {
+        query.status = { $in: ['interviewer_no_show', 'candidate_no_show', 'expired'] };
+      } else {
+        query.status = status;
+      }
+    }
+
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
+      query.$or = [{ topic: regex }, { meetingRoomId: regex }];
+    }
+
     const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
     const [total, bookings] = await Promise.all([
       Interview.countDocuments(query),
       Interview.find(query)
         .populate('candidateId', 'name email avatar')
-        .populate('interviewerId', 'name email avatar title company')
+        .populate('interviewerId', 'name email avatar title company isVerified')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -584,6 +643,41 @@ router.get('/bookings', async (req, res) => {
       success: true,
       data: bookings,
       pagination: formatMeta(total)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   PATCH /api/admin/bookings/:id/status
+// @desc    Admin override booking status
+router.patch('/bookings/:id/status', validateObjectId('id'), async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowedStatuses = ['scheduled', 'completed', 'cancelled', 'rescheduled', 'interviewer_no_show', 'candidate_no_show', 'expired'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid booking status.' });
+    }
+
+    const booking = await Interview.findById(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    booking.status = status;
+    if (status === 'completed' && !booking.completedAt) {
+      booking.completedAt = new Date();
+    } else if (status === 'cancelled' && !booking.cancelledAt) {
+      booking.cancelledAt = new Date();
+    }
+    await booking.save();
+
+    const populated = await Interview.findById(booking._id)
+      .populate('candidateId', 'name email avatar')
+      .populate('interviewerId', 'name email avatar title company isVerified');
+
+    res.json({
+      success: true,
+      message: `Booking status updated to ${status}.`,
+      data: populated
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -612,6 +706,10 @@ router.get('/payouts', async (req, res) => {
   try {
     const { status } = req.query;
     let query = {};
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+
     const { page, limit, skip, formatMeta } = getPagination(req.query, 20);
 
     const [total, payouts] = await Promise.all([

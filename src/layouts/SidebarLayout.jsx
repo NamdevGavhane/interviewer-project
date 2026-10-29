@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../utils/apiClient';
@@ -19,12 +19,15 @@ import {
   Clock,
   Sparkles,
   Briefcase,
-  Sliders
+  Sliders,
+  DollarSign
 } from 'lucide-react';
 
 const SidebarLayout = () => {
   const { user: userData, role: currentRole, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const adminTab = new URLSearchParams(location.search).get('tab') || 'overview';
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   // Notifications state
@@ -125,12 +128,18 @@ const SidebarLayout = () => {
           {currentRole === 'admin' ? (
             /* ================= ADMIN EXCLUSIVE NAVIGATION ================= */
             <>
-              <NavLink to="/admin" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} end>
+              <NavLink 
+                to="/admin?tab=overview" 
+                className={location.pathname === '/admin' && adminTab === 'overview' ? 'nav-item active' : 'nav-item'}
+              >
                 <LayoutDashboard size={18} />
                 <span>Admin Console</span>
               </NavLink>
 
-              <NavLink to="/admin?tab=requests" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink 
+                to="/admin?tab=requests" 
+                className={location.pathname === '/admin' && adminTab === 'requests' ? 'nav-item active' : 'nav-item'}
+              >
                 <Briefcase size={18} />
                 <span>Interviewer Requests</span>
                 {pendingRequestsCount > 0 && (
@@ -140,27 +149,50 @@ const SidebarLayout = () => {
                 )}
               </NavLink>
 
-              <NavLink to="/admin?tab=invitations" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink 
+                to="/admin?tab=invitations" 
+                className={location.pathname === '/admin' && adminTab === 'invitations' ? 'nav-item active' : 'nav-item'}
+              >
                 <Users size={18} />
                 <span>Invited Professionals</span>
               </NavLink>
 
-              <NavLink to="/admin?tab=users" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink 
+                to="/admin?tab=users" 
+                className={location.pathname === '/admin' && adminTab === 'users' ? 'nav-item active' : 'nav-item'}
+              >
                 <ShieldCheck size={18} />
                 <span>User Management</span>
               </NavLink>
 
-              <NavLink to="/admin?tab=bookings" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink 
+                to="/admin?tab=bookings" 
+                className={location.pathname === '/admin' && adminTab === 'bookings' ? 'nav-item active' : 'nav-item'}
+              >
                 <Calendar size={18} />
                 <span>All Bookings</span>
               </NavLink>
 
-              <NavLink to="/admin?tab=settings" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink 
+                to="/admin?tab=payouts" 
+                className={location.pathname === '/admin' && adminTab === 'payouts' ? 'nav-item active' : 'nav-item'}
+              >
+                <DollarSign size={18} />
+                <span>Payout Requests</span>
+              </NavLink>
+
+              <NavLink 
+                to="/admin?tab=settings" 
+                className={location.pathname === '/admin' && adminTab === 'settings' ? 'nav-item active' : 'nav-item'}
+              >
                 <FileText size={18} />
                 <span>Platform Settings</span>
               </NavLink>
 
-              <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink 
+                to="/profile" 
+                className={location.pathname === '/profile' ? 'nav-item active' : 'nav-item'}
+              >
                 <User size={18} />
                 <span>My Profile</span>
               </NavLink>

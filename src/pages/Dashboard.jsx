@@ -60,8 +60,12 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
+    if (authUser?.role === 'admin') {
+      navigate('/admin', { replace: true });
+      return;
+    }
     loadData();
-  }, [userId]);
+  }, [userId, authUser?.role]);
 
 
   // Handle saving availability slots
