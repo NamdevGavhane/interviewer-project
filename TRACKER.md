@@ -64,6 +64,8 @@
 | [x] | F1 | Done | src/pages/ProfessionalSignup.jsx, src/App.jsx | Built ProfessionalSignup page with external Field component, client-side validation, bio counter, and post-submission review instructions. Added /professional/signup route in App.jsx. |
 | [x] | F2 | Done | src/pages/ProfessionalLogin.jsx | Added link to /professional/signup ("Want to become an interviewer? Apply here") and cleaned up unused imports (Lock, UserCheck, API_BASE_URL). |
 | [x] | F3 | Done | src/pages/admin/AdminDashboard.jsx | Updated "Applied on" timestamp in Requests tab to use req.appliedAt || req.createdAt. |
+| [x] | TESTS | Done | backend/tests/r_series_professional_signup.test.js | Comprehensive suite covering all 20 professional signup, validation, rate limiting, token safety, decision, mailer resilience, and re-application specifications (20/20 passed, 101/101 total). |
+
 
 
 
