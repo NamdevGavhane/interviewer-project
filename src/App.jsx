@@ -18,6 +18,7 @@ const Interviews = lazy(() => import('./pages/Interviews'));
 const AIInterview = lazy(() => import('./pages/AIInterview'));
 const AcceptInvitation = lazy(() => import('./pages/AcceptInvitation'));
 const ProfessionalLogin = lazy(() => import('./pages/ProfessionalLogin'));
+const ProfessionalSignup = lazy(() => import('./pages/ProfessionalSignup'));
 const Availability = lazy(() => import('./pages/professional/Availability'));
 const Earnings = lazy(() => import('./pages/professional/Earnings'));
 const PaymentHistory = lazy(() => import('./pages/payment/PaymentHistory'));
@@ -49,6 +50,7 @@ function App() {
               {/* Public Authentication Routes */}
               <Route path="/login" element={<Login />} />
               <Route path="/professional/login" element={<ProfessionalLogin />} />
+              <Route path="/professional/signup" element={<ProfessionalSignup />} />
               <Route path="/accept-invite" element={<AcceptInvitation />} />
               <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/reset-password" element={<ResetPassword />} />
