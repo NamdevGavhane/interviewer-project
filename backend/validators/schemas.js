@@ -63,6 +63,27 @@ const requestDecisionSchema = z.object({
   rejectionReason: z.string().optional()
 });
 
+const registerProfessionalSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100, 'Name must be at most 100 characters'),
+  email: z.string().trim().email('Invalid email address').toLowerCase().max(254, 'Email must be at most 254 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password must be at most 128 characters'),
+  company: z.string().trim().min(1, 'Company is required').max(100, 'Company must be at most 100 characters'),
+  designation: z.string().trim().min(1, 'Designation is required').max(100, 'Designation must be at most 100 characters'),
+  experience: z.string().trim().min(1, 'Experience is required').max(50, 'Experience must be at most 50 characters'),
+  domain: z.string().trim().max(100, 'Domain must be at most 100 characters').optional(),
+  linkedin: z.string().trim().refine((val) => {
+    try {
+      const url = new URL(val);
+      if (url.protocol !== 'https:') return false;
+      const host = url.hostname.toLowerCase();
+      return host === 'linkedin.com' || host.endsWith('.linkedin.com');
+    } catch {
+      return false;
+    }
+  }, 'Valid LinkedIn URL is required (must start with https:// and be on linkedin.com)'),
+  bio: z.string().trim().max(500, 'Bio must be at most 500 characters').optional(),
+}).strict();
+
 module.exports = {
   registerSchema,
   loginSchema,
@@ -72,5 +93,7 @@ module.exports = {
   acceptInviteSchema,
   updateUserSchema,
   inviteProfessionalSchema,
-  requestDecisionSchema
+  requestDecisionSchema,
+  registerProfessionalSchema
 };
+
