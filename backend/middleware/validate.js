@@ -5,12 +5,13 @@ const validate = (schema, source = 'body') => {
       req[source] = parsed;
       next();
     } catch (err) {
-      if (err.errors) {
-        const errorDetails = err.errors.map(e => `${e.path.join('.') || 'field'}: ${e.message}`).join(', ');
+      const issues = err.issues || err.errors;
+      if (issues && Array.isArray(issues)) {
+        const errorDetails = issues.map(e => `${(e.path && e.path.join('.')) || 'field'}: ${e.message}`).join(', ');
         return res.status(400).json({
           success: false,
           message: `Validation error: ${errorDetails}`,
-          errors: err.errors
+          errors: issues
         });
       }
       return res.status(400).json({

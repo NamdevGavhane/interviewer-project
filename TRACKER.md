@@ -54,4 +54,6 @@
 | [x] | PH4-5 | Done | backend/server.js | Hardened `/health` endpoint to check `mongoose.connection.readyState === 1`, returning HTTP 200 when healthy and HTTP 503 when disconnected for Render health checks. |
 | [x] | B1 | Done | backend/models/User.js, backend/models/Settings.js | Added appliedAt (Date), decidedBy (ObjectId ref User), decidedAt (Date) to User schema. Added professionalReapplyAfterDays (Number, default 30, min 0) to Settings schema and backfill in getSettings(). |
 | [x] | B2 | Done | backend/validators/schemas.js | Added strict registerProfessionalSchema with name, email, password, company, designation, experience, domain, linkedin (strict https + linkedin hostname), bio constraints. Exported registerProfessionalSchema. |
+| [x] | B3 | Done | backend/middleware/validate.js | Added support for Zod v4 err.issues alongside err.errors so response message formats as "Validation error: field: message". |
+
 
