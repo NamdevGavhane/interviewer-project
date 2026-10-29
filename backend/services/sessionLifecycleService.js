@@ -7,6 +7,7 @@ const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
 const JobLock = require('../models/JobLock');
 const { sendCancellationEmail } = require('../utils/mailer');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { releaseSlotForInterview, releaseExpiredReservations } = require('./availabilityService');
 
 const getRazorpayInstance = () => {
@@ -43,7 +44,7 @@ const runLifecycleJob = async (options = {}) => {
     const settings = await Settings.getSettings();
     const now = new Date();
     const nowMs = now.getTime();
-    const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+    const frontendBaseUrl = getFrontendBaseUrl();
 
     const noShowWaitMs = (settings.noShowWaitMinutes || 10) * 60 * 1000;
     const slotDurationMs = (settings.slotDurationMinutes || 45) * 60 * 1000;

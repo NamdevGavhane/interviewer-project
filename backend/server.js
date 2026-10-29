@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 
 // Load environment variables
 require('dotenv').config();
@@ -27,12 +28,14 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: [
-        "'self'",
-        "'unsafe-inline'",
-        'https://checkout.razorpay.com',
-        'https://accounts.google.com'
-      ],
+      scriptSrc: isProd
+        ? ["'self'", 'https://checkout.razorpay.com', 'https://accounts.google.com']
+        : [
+            "'self'",
+            "'unsafe-inline'",
+            'https://checkout.razorpay.com',
+            'https://accounts.google.com'
+          ],
       frameSrc: [
         "'self'",
         'https://api.razorpay.com',
@@ -55,16 +58,22 @@ app.use(helmet({
   }
 }));
 
-// S3: CORS Configuration - Allow origins from FRONTEND_URL and Render production frontend
-const defaultAllowedOrigins = [
-  'https://interviewpro-frontend-4c78.onrender.com',
-  'http://localhost:5173'
-];
+// S3: CORS Configuration - strictly FRONTEND_URL in production, localhost allowed only in dev
 const configuredOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map(o => o.trim().replace(/\/+$/, ''))
   .filter(Boolean);
-const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...configuredOrigins]));
+
+const devOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://localhost:5000'
+];
+
+const allowedOrigins = Array.from(
+  new Set(isProd ? configuredOrigins : [...configuredOrigins, ...devOrigins])
+);
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -76,17 +85,28 @@ app.use(cors({
     if (allowedOrigins.includes(cleanOrigin)) {
       return callback(null, true);
     }
+    if (!isProd && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) {
+      return callback(null, true);
+    }
     return callback(new Error(`CORS policy violation: Origin "${origin}" is not authorized.`));
   },
   credentials: true
 }));
+
+// Request ID tracking for structured logging
+app.use((req, res, next) => {
+  const reqId = req.headers['x-request-id'] || crypto.randomUUID();
+  req.id = reqId;
+  res.setHeader('X-Request-Id', reqId);
+  next();
+});
 
 app.use(cookieParser());
 
 // S7: Global body limits - 1MB limit globally; raw parser strictly for webhooks
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/payment/webhook') {
-    express.raw({ type: 'application/json' })(req, res, next);
+    express.raw({ type: '*/*' })(req, res, next);
   } else {
     express.json({ limit: '1mb' })(req, res, next);
   }
@@ -109,10 +129,14 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   const isDbConnected = mongoose.connection.readyState === 1;
-  res.status(200).json({
+  const status = isDbConnected ? 'healthy' : 'unhealthy';
+  const statusCode = isDbConnected ? 200 : 503;
+
+  res.status(statusCode).json({
     success: isDbConnected,
-    status: isDbConnected ? 'healthy' : 'connecting',
-    database: isDbConnected ? 'connected' : 'connecting',
+    status,
+    database: isDbConnected ? 'connected' : 'disconnected',
+    uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString()
   });
 });
@@ -129,8 +153,8 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const configRoutes = require('./routes/configRoutes');
-const { startReminderWorker } = require('./services/reminderService');
-const { startLifecycleWorker } = require('./services/sessionLifecycleService');
+const { startReminderWorker, stopReminderWorker } = require('./services/reminderService');
+const { startLifecycleWorker, stopLifecycleWorker } = require('./services/sessionLifecycleService');
 
 // Mount Routes
 app.use('/api/config', configRoutes);
@@ -153,12 +177,15 @@ app.use((req, res) => {
   });
 });
 
-// Centralized Error Handling Middleware
+// Centralized Error Handling Middleware (Phase 1f)
 app.use((err, req, res, next) => {
+  const requestId = req.id || req.headers['x-request-id'] || crypto.randomUUID();
+
   if (err.message && err.message.includes('CORS policy violation')) {
     return res.status(403).json({
       success: false,
-      message: err.message
+      message: err.message,
+      requestId
     });
   }
 
@@ -166,15 +193,28 @@ app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') {
     return res.status(413).json({
       success: false,
-      message: 'Request entity too large: Maximum payload allowed is 1MB.'
+      message: 'Request entity too large: Maximum payload allowed is 1MB.',
+      requestId
     });
   }
 
   const status = err.status || err.statusCode || 500;
-  res.status(status).json({
+
+  if (status >= 500) {
+    console.error(`[ERROR] [${requestId}] ${req.method} ${req.originalUrl}:`, err);
+    return res.status(status).json({
+      success: false,
+      message: isProd ? 'Internal Server Error. Please contact support.' : (err.message || 'Internal Server Error'),
+      requestId,
+      ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+    });
+  }
+
+  return res.status(status).json({
     success: false,
-    message: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+    message: err.message || 'Bad Request',
+    requestId,
+    ...(err.errors ? { errors: err.errors } : {})
   });
 });
 
@@ -183,6 +223,17 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/interviewpro';
 
 let isConnecting = false;
+let reconnectTimer = null;
+let workersStarted = false;
+
+const scheduleReconnect = (delayMs = 2000) => {
+  if (process.env.NODE_ENV === 'test') return;
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    await connectDB();
+  }, delayMs);
+};
 
 const connectDB = async () => {
   if (mongoose.connection.readyState === 1 || isConnecting) return;
@@ -195,21 +246,27 @@ const connectDB = async () => {
     });
     console.log('Connected to MongoDB successfully');
     isConnecting = false;
-    startReminderWorker();
-    startLifecycleWorker();
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    // Prevent duplicate worker intervals across reconnects (2c, 2d)
+    if (!workersStarted && process.env.NODE_ENV !== 'test') {
+      workersStarted = true;
+      startReminderWorker();
+      startLifecycleWorker();
+    }
   } catch (err) {
     isConnecting = false;
     console.error('Failed to connect to MongoDB:', err.message);
-    if (process.env.NODE_ENV !== 'test') {
-      setTimeout(connectDB, 3000);
-    }
+    scheduleReconnect(3000);
   }
 };
 
 mongoose.connection.on('disconnected', () => {
   if (process.env.NODE_ENV !== 'test') {
-    console.warn('MongoDB connection lost. Reconnecting in 2 seconds...');
-    setTimeout(connectDB, 2000);
+    console.warn('MongoDB connection lost. Scheduling reconnect in 2 seconds...');
+    scheduleReconnect(2000);
   }
 });
 
@@ -221,7 +278,7 @@ let server = null;
 if (process.env.NODE_ENV !== 'test') {
   app.use('/api', (req, res, next) => {
     if (mongoose.connection.readyState !== 1 && !isConnecting) {
-      connectDB();
+      scheduleReconnect(500);
     }
     next();
   });
@@ -232,4 +289,52 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-module.exports = { app, server, connectDB };
+// ==========================================
+// Process Error Handlers & Graceful Shutdown (2c)
+// ==========================================
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL REJECTION] Unhandled Promise Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL EXCEPTION] Uncaught Exception:', err);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+});
+
+const gracefulShutdown = async (signal) => {
+  console.log(`[SHUTDOWN] Received ${signal}. Closing server, workers, and database connection gracefully...`);
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  stopReminderWorker();
+  stopLifecycleWorker();
+
+  if (server) {
+    server.close(async () => {
+      console.log('[SHUTDOWN] HTTP server closed.');
+      try {
+        await mongoose.connection.close(false);
+        console.log('[SHUTDOWN] MongoDB connection closed.');
+      } catch (dbErr) {
+        console.warn('[SHUTDOWN] Error closing MongoDB connection:', dbErr.message);
+      }
+      process.exit(0);
+    });
+
+    // Enforce 10s timeout to force exit if pending sockets hang
+    setTimeout(() => {
+      console.error('[SHUTDOWN] Force exiting after 10s shutdown timeout.');
+      process.exit(1);
+    }, 10000).unref();
+  } else {
+    process.exit(0);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+module.exports = { app, server, connectDB, gracefulShutdown };

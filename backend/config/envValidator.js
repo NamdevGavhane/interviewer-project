@@ -8,28 +8,15 @@ const productionEnvSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters in production to resist brute-force attacks.'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters in production.'),
   FRONTEND_URL: z.string().min(1, 'FRONTEND_URL (allowed CORS origin) is required in production.')
+}).refine(data => data.JWT_SECRET !== data.JWT_REFRESH_SECRET, {
+  message: 'JWT_SECRET and JWT_REFRESH_SECRET must be distinct secrets.',
+  path: ['JWT_REFRESH_SECRET']
 });
 
 const validateEnv = () => {
   const isProduction = process.env.NODE_ENV === 'production';
 
   console.log(`[ENV VALIDATOR] Checking environment variables (Mode: ${process.env.NODE_ENV || 'development'})...`);
-
-  // Cloud deployment resilience: ensure secure defaults for JWT & CORS if omitted in hosting dashboard
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-    console.warn('[ENV] Notice: Auto-assigning secure production JWT_SECRET (32+ chars).');
-    process.env.JWT_SECRET = 'devsphere_jwt_secure_auth_production_secret_key_32chars_min_2026';
-  }
-
-  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
-    console.warn('[ENV] Notice: Auto-assigning secure production JWT_REFRESH_SECRET (32+ chars).');
-    process.env.JWT_REFRESH_SECRET = 'devsphere_jwt_refresh_secure_auth_production_secret_key_32chars_min_2026';
-  }
-
-  if (!process.env.FRONTEND_URL) {
-    console.warn('[ENV] Notice: Auto-assigning production FRONTEND_URL.');
-    process.env.FRONTEND_URL = 'https://interviewpro-frontend-4c78.onrender.com,http://localhost:5173';
-  }
 
   if (isProduction) {
     const result = productionEnvSchema.safeParse(process.env);
@@ -53,6 +40,9 @@ const validateEnv = () => {
     }
     if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 16) {
       missingCritical.push('JWT_REFRESH_SECRET (min 16 chars required in dev, 32 in prod)');
+    }
+    if (process.env.JWT_SECRET && process.env.JWT_REFRESH_SECRET && process.env.JWT_SECRET === process.env.JWT_REFRESH_SECRET) {
+      missingCritical.push('JWT_SECRET and JWT_REFRESH_SECRET must not be identical');
     }
 
     if (missingCritical.length > 0) {

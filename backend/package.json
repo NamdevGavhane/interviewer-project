@@ -8,7 +8,7 @@
     "start": "node server.js",
     "build": "node -e \"console.log('Backend build completed')\"",
     "dev": "nodemon server.js",
-    "test": "jest --runInBand --detectOpenHandles --forceExit"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand --detectOpenHandles --forceExit"
   },
   "keywords": [],
   "author": "",

@@ -108,5 +108,6 @@ const paymentSchema = new mongoose.Schema({
 paymentSchema.index({ candidateId: 1, createdAt: -1 });
 paymentSchema.index({ interviewerId: 1, createdAt: -1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
+paymentSchema.index({ interviewId: 1 });
 
 module.exports = mongoose.model('Payment', paymentSchema);

@@ -15,12 +15,50 @@ const processQueue = (error, token = null) => {
 };
 
 /**
+ * Safely parse response body and validate HTTP status.
+ * Throws a consistent Error with .status and .data on failure.
+ */
+const parseAndValidateResponse = async (response) => {
+  const contentType = response.headers.get('content-type') || '';
+  let data;
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+  } else {
+    try {
+      data = await response.text();
+    } catch {
+      data = null;
+    }
+  }
+
+  if (!response.ok) {
+    const errorMsg = 
+      (data && typeof data === 'object' && (data.message || data.error)) ||
+      (typeof data === 'string' && data.trim().length > 0 ? data : null) ||
+      `Request failed with status ${response.status}`;
+
+    const err = new Error(errorMsg);
+    err.status = response.status;
+    err.data = data;
+    throw err;
+  }
+
+  return data;
+};
+
+/**
  * Central API Client (Fetch wrapper)
- * - Automatically attaches Bearer token from localStorage/session
- * - Includes credentials (for httpOnly refresh token cookie)
- * - Automatically handles 401 by requesting /api/users/refresh
- * - Retries failed requests transparently
- * - Redirects to /login if refresh fails
+ * - Automatically attaches Bearer token from localStorage
+ * - Includes credentials (for httpOnly refresh cookies)
+ * - AbortController timeout handling (default 30s)
+ * - Handles 401 by refreshing tokens via /api/users/refresh
+ * - Retries queued and initial requests with full validation
+ * - Prevents refresh loops and unhandled response crashes
  */
 export const apiClient = async (endpoint, options = {}) => {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
@@ -31,36 +69,67 @@ export const apiClient = async (endpoint, options = {}) => {
     ...(config.headers || {})
   };
 
-  // If body is FormData, delete Content-Type so browser sets boundary
+  // If body is FormData, delete Content-Type so the browser sets multipart boundary
   if (config.body instanceof FormData) {
     delete config.headers['Content-Type'];
   }
 
-  // Include credentials for cookies across origins
   config.credentials = 'include';
 
-  // Attach access token if available
+  // Attach access token if present
   const token = localStorage.getItem('token');
   if (token && !config.headers['Authorization']) {
     config.headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  // Network Timeout via AbortController
+  const timeoutMs = typeof config.timeout === 'number' ? config.timeout : 30000;
+  let timeoutId = null;
+  let clientSignal = config.signal;
+
+  if (!clientSignal && timeoutMs > 0) {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    config.signal = controller.signal;
   }
 
   let response;
   try {
     response = await fetch(url, config);
   } catch (networkErr) {
-    throw new Error('Network error: Unable to reach the server. Please verify backend is running.');
+    if (networkErr.name === 'AbortError') {
+      const err = new Error(`Request timed out after ${timeoutMs / 1000} seconds.`);
+      err.status = 504;
+      throw err;
+    }
+    const err = new Error('Network error: Unable to reach the server. Please check your internet connection.');
+    err.status = 503;
+    err.originalError = networkErr;
+    throw err;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 
+  const isAuthEndpoint = 
+    endpoint.includes('/api/users/login') ||
+    endpoint.includes('/api/users/register') ||
+    endpoint.includes('/api/users/refresh');
+
   // Handle 401 Unauthorized (Expired access token)
-  if (response.status === 401 && !endpoint.includes('/api/users/login') && !endpoint.includes('/api/users/register') && !endpoint.includes('/api/users/refresh')) {
+  if (response.status === 401 && !isAuthEndpoint && !config._isRetry) {
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });
       })
         .then(newToken => {
-          config.headers['Authorization'] = `Bearer ${newToken}`;
-          return fetch(url, config).then(res => res.json());
+          const retryConfig = { ...config, _isRetry: true };
+          retryConfig.headers = {
+            ...retryConfig.headers,
+            'Authorization': `Bearer ${newToken}`
+          };
+          return fetch(url, retryConfig).then(parseAndValidateResponse);
         })
         .catch(err => Promise.reject(err));
     }
@@ -82,18 +151,24 @@ export const apiClient = async (endpoint, options = {}) => {
         processQueue(null, newToken);
         isRefreshing = false;
 
-        // Retry original request with new token
-        config.headers['Authorization'] = `Bearer ${newToken}`;
-        const retryRes = await fetch(url, config);
-        return retryRes.json();
+        // Retry original request with new token and parse response safely
+        const retryConfig = { ...config, _isRetry: true };
+        retryConfig.headers = {
+          ...retryConfig.headers,
+          'Authorization': `Bearer ${newToken}`
+        };
+        const retryRes = await fetch(url, retryConfig);
+        return await parseAndValidateResponse(retryRes);
       } else {
         throw new Error(refreshData.message || 'Session expired');
       }
     } catch (refreshErr) {
-      processQueue(refreshErr, null);
+      const sessionErr = new Error('Your session has expired. Please log in again.');
+      sessionErr.status = 401;
+      processQueue(sessionErr, null);
       isRefreshing = false;
 
-      // Invalidate frontend auth and redirect
+      // Invalidate frontend auth state
       localStorage.removeItem('token');
       localStorage.removeItem('userId');
       localStorage.removeItem('userRole');
@@ -102,27 +177,11 @@ export const apiClient = async (endpoint, options = {}) => {
         window.location.href = '/login?expired=1';
       }
 
-      throw new Error('Your session has expired. Please log in again.');
+      throw sessionErr;
     }
   }
 
-  const contentType = response.headers.get('content-type');
-  let data;
-  if (contentType && contentType.includes('application/json')) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
-
-  if (!response.ok) {
-    const errorMsg = data?.message || data?.error || (typeof data === 'string' ? data : `Request failed with status ${response.status}`);
-    const err = new Error(errorMsg);
-    err.status = response.status;
-    err.data = data;
-    throw err;
-  }
-
-  return data;
+  return await parseAndValidateResponse(response);
 };
 
 // Convenience HTTP Methods

@@ -11,6 +11,7 @@ const Settings = require('../models/Settings');
 const InterviewConfig = require('../models/InterviewConfig');
 const AIInterviewSession = require('../models/AIInterviewSession');
 const { authenticate } = require('../middleware/auth');
+const { aiLimiter } = require('../middleware/rateLimiter');
 
 router.use(authenticate);
 
@@ -64,22 +65,27 @@ const wrapUntrustedCandidateInput = (label, data) => {
 };
 
 // ==========================================
-// 3. Reliable External AI Caller with Retries (O5)
+// 3. Reliable External AI Caller with Retries (O5 & 2a)
 // ==========================================
 const callExternalAI = async (prompt, systemInstruction = '', jsonMode = false) => {
   const geminiKey = process.env.GEMINI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS, 10) || 25000;
 
   if (!geminiKey && !openaiKey) {
-    const err = new Error('AI Service Unconfigured: Neither GEMINI_API_KEY nor OPENAI_API_KEY is defined in environment.');
+    const err = new Error('AI Service Unconfigured: Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in backend environment.');
     err.statusCode = 503;
     throw err;
   }
 
-  // 1. Try Google Gemini API
+  // 1. Try Google Gemini API (Key passed via header x-goog-api-key)
   if (geminiKey) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
       const payload = {
         contents: [
           {
@@ -96,8 +102,12 @@ const callExternalAI = async (prompt, systemInstruction = '', jsonMode = false) 
 
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': geminiKey
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
       if (res.ok) {
@@ -106,18 +116,26 @@ const callExternalAI = async (prompt, systemInstruction = '', jsonMode = false) 
         if (text) return text;
       } else {
         const errText = await res.text();
-        console.warn('Gemini API notice:', res.status, errText);
+        console.warn(`Gemini API notice [${res.status}]:`, errText);
       }
     } catch (err) {
-      console.warn('Gemini API call warning:', err.message);
+      if (err.name === 'AbortError') {
+        console.warn(`Gemini API call timed out after ${timeoutMs}ms`);
+      } else {
+        console.warn('Gemini API call warning:', err.message);
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   // 2. Try OpenAI API
   if (openaiKey) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const bodyPayload = {
-        model: 'gpt-4o-mini',
+        model: openaiModel,
         messages: [
           { role: 'system', content: systemInstruction },
           { role: 'user', content: prompt }
@@ -134,7 +152,8 @@ const callExternalAI = async (prompt, systemInstruction = '', jsonMode = false) 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openaiKey}`
         },
-        body: JSON.stringify(bodyPayload)
+        body: JSON.stringify(bodyPayload),
+        signal: controller.signal
       });
 
       if (res.ok) {
@@ -143,14 +162,20 @@ const callExternalAI = async (prompt, systemInstruction = '', jsonMode = false) 
         if (text) return text;
       } else {
         const errText = await res.text();
-        console.warn('OpenAI API notice:', res.status, errText);
+        console.warn(`OpenAI API notice [${res.status}]:`, errText);
       }
     } catch (err) {
-      console.warn('OpenAI API call warning:', err.message);
+      if (err.name === 'AbortError') {
+        console.warn(`OpenAI API call timed out after ${timeoutMs}ms`);
+      } else {
+        console.warn('OpenAI API call warning:', err.message);
+      }
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
-  const err = new Error('AI providers failed to generate response. Please verify your GEMINI_API_KEY or OPENAI_API_KEY.');
+  const err = new Error('AI upstream service failed or timed out. Please try again.');
   err.statusCode = 502;
   throw err;
 };
@@ -305,7 +330,7 @@ router.post('/parse-resume', upload.single('resume'), async (req, res) => {
 // @route   POST /api/ai/start
 // @desc    Start an AI mock interview session with real LLM generation & session limits (O5)
 // @access  Protected
-router.post('/start', async (req, res) => {
+router.post('/start', aiLimiter, async (req, res) => {
   try {
     const candidateId = req.user._id;
     const { topic = 'Frontend', difficulty = 'Mid-Level', company = 'Google', resumeText = '' } = req.body;
@@ -402,7 +427,7 @@ Output STRICT JSON adhering to this schema:
 // @route   POST /api/ai/chat
 // @desc    Candidate submits answer; AI evaluates answer and asks next question (O5)
 // @access  Protected
-router.post('/chat', async (req, res) => {
+router.post('/chat', aiLimiter, async (req, res) => {
   try {
     const { sessionId, userAnswer } = req.body;
 
@@ -477,7 +502,7 @@ Output STRICT JSON adhering to this schema:
 // @route   POST /api/ai/evaluate
 // @desc    Generate full AI evaluation scorecard from transcript and persist to Interview & Feedback (O5 & X1)
 // @access  Protected
-router.post('/evaluate', async (req, res) => {
+router.post('/evaluate', aiLimiter, async (req, res) => {
   try {
     const { sessionId } = req.body;
 

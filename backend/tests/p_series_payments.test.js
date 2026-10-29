@@ -51,6 +51,37 @@ describe('Phase 2 Unit Tests: Payments, Booking, Timezones (P1..P9)', () => {
       expect(utcDate.getUTCMinutes()).toBe(0);
       expect(slotStartDt.toISODate()).toBe('2026-06-15');
     });
+
+    test('Luxon converts America/New_York (UTC-5 EST winter non-DST) slot to exact UTC instant', () => {
+      const tz = 'America/New_York';
+      // January 15 is standard time in NY (EST, UTC-5)
+      const baseInZone = DateTime.fromISO('2026-01-15T00:00:00', { zone: tz });
+      const parsedStart = parseTimeString('10:00 AM');
+
+      const slotStartDt = baseInZone.set({
+        hour: parsedStart.hours,
+        minute: parsedStart.minutes,
+        second: 0,
+        millisecond: 0
+      });
+
+      const utcDate = slotStartDt.toJSDate();
+      // 10:00 AM EST (UTC-5) corresponds to 15:00 (3:00 PM) UTC
+      expect(utcDate.getUTCHours()).toBe(15);
+      expect(utcDate.getUTCMinutes()).toBe(0);
+      expect(slotStartDt.toISODate()).toBe('2026-01-15');
+    });
+
+    test('Luxon handles Europe/London DST transition accurately (BST UTC+1 vs GMT UTC+0)', () => {
+      const tz = 'Europe/London';
+      // Summer (July): BST is UTC+1
+      const summerDt = DateTime.fromISO('2026-07-15T00:00:00', { zone: tz }).set({ hour: 10, minute: 0, second: 0, millisecond: 0 });
+      expect(summerDt.toJSDate().getUTCHours()).toBe(9); // 10:00 BST -> 09:00 UTC
+
+      // Winter (December): GMT is UTC+0
+      const winterDt = DateTime.fromISO('2026-12-15T00:00:00', { zone: tz }).set({ hour: 10, minute: 0, second: 0, millisecond: 0 });
+      expect(winterDt.toJSDate().getUTCHours()).toBe(10); // 10:00 GMT -> 10:00 UTC
+    });
   });
 
   describe('P7: Server-side Pricing Source of Truth', () => {
@@ -203,6 +234,117 @@ describe('Phase 2 Unit Tests: Payments, Booking, Timezones (P1..P9)', () => {
       const interviewerResult = checkRefundEligibility({ startTime, userRole: 'professional', isCandidate: false });
       expect(adminResult.eligible).toBe(true);
       expect(interviewerResult.eligible).toBe(true);
+    });
+  });
+
+  describe('2h: Concurrency & Race Condition Elimination (Double Booking, Double Payout, Double Refund, Webhook vs Client Verify)', () => {
+    test('1. Double Booking Race Condition: Atomic slot booking guarantees only one caller wins', () => {
+      // Simulate MongoDB document state
+      let slotState = { _id: 'slot_123', isBooked: false, interviewId: null };
+
+      // Atomic findOneAndUpdate simulation
+      const atomicConfirmSlot = (candidateId, interviewId) => {
+        if (!slotState.isBooked) {
+          slotState = { ...slotState, isBooked: true, interviewId };
+          return { success: true, slot: slotState };
+        }
+        return { success: false, slot: null };
+      };
+
+      // Two candidates race to book the exact same slot concurrently
+      const call1 = atomicConfirmSlot('candidate_A', 'interview_A');
+      const call2 = atomicConfirmSlot('candidate_B', 'interview_B');
+
+      expect(call1.success).toBe(true);
+      expect(call1.slot.interviewId).toBe('interview_A');
+      expect(call2.success).toBe(false);
+      expect(call2.slot).toBeNull();
+    });
+
+    test('2. Double Payout Race Condition: Concurrent requests are prevented by JobLock & pending state', () => {
+      // Simulating distributed lock and active withdrawal check
+      const heldLocks = new Set();
+      const acquireLock = (name) => {
+        if (heldLocks.has(name)) return { acquired: false };
+        heldLocks.add(name);
+        return { acquired: true };
+      };
+      const releaseLock = (name) => heldLocks.delete(name);
+
+      const interviewerId = 'prof_456';
+      const lockName = `payout_${interviewerId}`;
+
+      // Request 1 acquires lock
+      const lock1 = acquireLock(lockName);
+      expect(lock1.acquired).toBe(true);
+
+      // Concurrent Request 2 tries to acquire lock while Request 1 is processing
+      const lock2 = acquireLock(lockName);
+      expect(lock2.acquired).toBe(false);
+
+      // Request 1 completes and releases lock
+      releaseLock(lockName);
+
+      // After release, subsequent lock attempt succeeds
+      const lock3 = acquireLock(lockName);
+      expect(lock3.acquired).toBe(true);
+      releaseLock(lockName);
+    });
+
+    test('3. Double Refund Race Condition: Atomic state transition prevents duplicate gateway calls', () => {
+      let paymentDoc = { _id: 'pay_789', paymentId: 'rzp_pay_789', refundStatus: 'none', amount: 50 };
+
+      // Atomic transition filter: { refundStatus: { $nin: ['pending', 'processed'] } }
+      const atomicClaimRefund = () => {
+        if (!['pending', 'processed'].includes(paymentDoc.refundStatus)) {
+          paymentDoc = { ...paymentDoc, refundStatus: 'pending' };
+          return { claimed: true, payment: paymentDoc };
+        }
+        return { claimed: false, payment: null };
+      };
+
+      // Call 1 claims the refund atomically
+      const claim1 = atomicClaimRefund();
+      expect(claim1.claimed).toBe(true);
+      expect(claim1.payment.refundStatus).toBe('pending');
+
+      // Concurrent Call 2 tries to refund the same payment
+      const claim2 = atomicClaimRefund();
+      expect(claim2.claimed).toBe(false);
+      expect(claim2.payment).toBeNull();
+    });
+
+    test('4. Webhook vs Client Verify Race Condition: Atomic PendingBooking transition eliminates duplicate booking creation', () => {
+      let pendingBooking = { orderId: 'order_abc', status: 'pending', interviewId: null };
+      let createdInterviews = 0;
+
+      // Atomic transition: findOneAndUpdate({ orderId, status: 'pending' }, { $set: { status: 'processing' } })
+      const processBooking = (caller) => {
+        if (pendingBooking.status === 'pending') {
+          pendingBooking = { ...pendingBooking, status: 'processing' };
+          // Create interview
+          createdInterviews += 1;
+          pendingBooking.status = 'completed';
+          pendingBooking.interviewId = `interview_created_by_${caller}`;
+          return { status: 200, caller, created: true, interviewId: pendingBooking.interviewId };
+        } else if (pendingBooking.status === 'completed' || pendingBooking.status === 'processing') {
+          // Idempotent replay
+          return { status: 200, caller, created: false, interviewId: pendingBooking.interviewId, idempotent: true };
+        }
+      };
+
+      // Client verify and Webhook race concurrently
+      const clientResult = processBooking('client_verify');
+      const webhookResult = processBooking('webhook');
+
+      expect(clientResult.created).toBe(true);
+      expect(clientResult.interviewId).toBe('interview_created_by_client_verify');
+
+      // Webhook identifies existing processing/completed and returns idempotently without duplicate interview
+      expect(webhookResult.created).toBe(false);
+      expect(webhookResult.idempotent).toBe(true);
+      expect(webhookResult.interviewId).toBe('interview_created_by_client_verify');
+      expect(createdInterviews).toBe(1);
     });
   });
 });

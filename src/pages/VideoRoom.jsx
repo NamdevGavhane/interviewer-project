@@ -24,7 +24,6 @@ import {
   User
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import Peer from 'peerjs';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../utils/apiClient';
 import Avatar from '../components/Avatar';
@@ -249,9 +248,19 @@ const VideoRoom = () => {
       return stream;
     } catch (err) {
       console.warn('Camera error:', err);
-      setMediaError('Camera/microphone permission blocked or no mic found. Click "Enable Camera" or allow access in browser URL bar.');
+      let userMsg = 'Unable to access camera or microphone.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        userMsg = 'Camera and microphone permissions were denied. Please click the lock/camera icon in your browser URL address bar to allow access and refresh.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        userMsg = 'No camera or microphone found on this device. Please connect an audio/video device and try again.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        userMsg = 'Camera or microphone is already in use by another app (e.g. Zoom, Teams) or another browser tab. Please close conflicting apps and retry.';
+      } else if (err.name === 'OverconstrainedError') {
+        userMsg = 'Video hardware does not support requested resolution. Please try default camera.';
+      }
+      setMediaError(userMsg);
       setCameraActive(false);
-      setConnectionStatus('Camera permission required.');
+      setConnectionStatus('Camera permission or device required.');
       return null;
     }
   };
@@ -357,10 +366,11 @@ const VideoRoom = () => {
     });
   };
 
-  // 4. WebRTC PeerJS Setup
+  // 4. WebRTC PeerJS Setup (Dynamically loaded)
   useEffect(() => {
     let peerInstance = null;
     let callRetryInterval = null;
+    let isMounted = true;
 
     // Reset connection refs on role or room change
     isCallConnectedRef.current = false;
@@ -368,25 +378,39 @@ const VideoRoom = () => {
     setIsCallConnected(false);
     setRemoteStream(null);
 
-    try {
-      setConnectionStatus(`Connecting as ${currentRole}...`);
-      peerInstance = new Peer(myPeerId, {
-        config: {
-          iceServers: iceServers && iceServers.length > 0 ? iceServers : [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-          ]
+    const initPeer = async () => {
+      try {
+        setConnectionStatus(`Connecting as ${currentRole}...`);
+        const { default: Peer } = await import('peerjs');
+        if (!isMounted) return;
+
+        const peerOptions = {
+          config: {
+            iceServers: iceServers && iceServers.length > 0 ? iceServers : [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+          },
+          debug: import.meta.env.DEV ? 1 : 0
+        };
+
+        if (import.meta.env.VITE_PEER_HOST) {
+          peerOptions.host = import.meta.env.VITE_PEER_HOST;
+          peerOptions.port = Number(import.meta.env.VITE_PEER_PORT) || 443;
+          peerOptions.path = import.meta.env.VITE_PEER_PATH || '/';
+          peerOptions.secure = import.meta.env.VITE_PEER_SECURE !== 'false';
         }
-      });
 
-      peerRef.current = peerInstance;
+        peerInstance = new Peer(myPeerId, peerOptions);
+        peerRef.current = peerInstance;
 
-      peerInstance.on('open', (id) => {
-        console.log('PeerJS connection opened with ID:', id);
-        setPeerReady(true);
-        setConnectionStatus(`Online as ${currentRole}. Waiting for ${partnerRole}...`);
-      });
+        peerInstance.on('open', (id) => {
+          if (!isMounted) return;
+          console.log('PeerJS connection opened with ID:', id);
+          setPeerReady(true);
+          setConnectionStatus(`Online as ${currentRole}. Waiting for ${partnerRole}...`);
+        });
 
       // Handle Incoming Call with robust audio & video answering
       peerInstance.on('call', async (incomingCall) => {
@@ -490,9 +514,16 @@ const VideoRoom = () => {
     } catch (e) {
       console.error('PeerJS init failed:', e);
     }
+  };
+
+  initPeer();
+
+    window.addEventListener('beforeunload', teardownMediaTracks);
 
     return () => {
-      clearInterval(callRetryInterval);
+      isMounted = false;
+      window.removeEventListener('beforeunload', teardownMediaTracks);
+      if (callRetryInterval) clearInterval(callRetryInterval);
       if (currentCallRef.current) {
         currentCallRef.current.close();
       }

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Interview = require('../models/Interview');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
@@ -30,6 +31,10 @@ router.post('/', async (req, res) => {
 
     if (!interviewerId || !slotId) {
       return res.status(400).json({ success: false, message: 'Missing required booking fields (interviewerId and slotId).' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(interviewerId) || !mongoose.Types.ObjectId.isValid(slotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid interviewerId or slotId format.' });
     }
 
     // Ensure interviewer is an active, verified professional
@@ -453,6 +458,14 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
         username: process.env.TURN_USERNAME || '',
         credential: process.env.TURN_CREDENTIAL || ''
       });
+    } else if (process.env.NODE_ENV === 'production') {
+      const hasTurn = Array.isArray(iceServers) && iceServers.some(s => {
+        const u = s.urls;
+        return typeof u === 'string' ? u.startsWith('turn:') : (Array.isArray(u) && u.some(entry => entry.startsWith('turn:')));
+      });
+      if (!hasTurn) {
+        console.warn('[WEBRTC WARNING] No TURN relay server configured in production. P2P WebRTC calls behind symmetric NAT/cellular networks will fail. Please configure TURN_URL, TURN_USERNAME, and TURN_CREDENTIAL in production environment.');
+      }
     }
 
     res.json({

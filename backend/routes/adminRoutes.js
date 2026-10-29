@@ -9,8 +9,10 @@ const Notification = require('../models/Notification');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { sendProfessionalInvitationEmail, sendPayoutProcessedEmail } = require('../utils/mailer');
 const { validate } = require('../middleware/validate');
-const { inviteProfessionalSchema, requestDecisionSchema } = require('../validators/schemas');
+const { validateObjectId } = require('../middleware/validateObjectId');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { getPagination } = require('../utils/pagination');
+const { inviteProfessionalSchema, requestDecisionSchema } = require('../validators/schemas');
 
 // Enforce Admin Authentication on ALL admin routes
 router.use(authenticate, requireRole('admin'));
@@ -37,7 +39,7 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
         existingUser.invitedBy = req.user._id;
         await existingUser.save();
 
-        const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+        const frontendBaseUrl = getFrontendBaseUrl();
         const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
 
         let mailResult = { sent: false };
@@ -60,11 +62,9 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
           success: true,
           message: mailResult && mailResult.sent
             ? `Re-sent invitation email to ${cleanEmail}.`
-            : `Invitation refreshed for ${cleanEmail}! (SMTP not configured — copy and share the invitation link below).`,
+            : `Invitation refreshed for ${cleanEmail}!`,
           data: {
             user: existingUser,
-            token,
-            invitationLink,
             mailSent: !!(mailResult && mailResult.sent)
           }
         });
@@ -99,7 +99,7 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
 
     await newProfessional.save();
 
-    const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendBaseUrl = getFrontendBaseUrl();
     const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
 
     let mailResult = { sent: false };
@@ -122,11 +122,9 @@ router.post('/invite-professional', validate(inviteProfessionalSchema), async (r
       success: true,
       message: mailResult && mailResult.sent 
         ? `Official invitation email successfully delivered to ${cleanEmail}.`
-        : `Invitation created for ${cleanEmail}! (SMTP not configured — copy and share the invitation link below).`,
+        : `Invitation created for ${cleanEmail}!`,
       data: {
         user: newProfessional,
-        token,
-        invitationLink,
         mailSent: !!(mailResult && mailResult.sent)
       }
     });
@@ -158,7 +156,7 @@ router.get('/invitations', async (req, res) => {
 
 // @route   POST /api/admin/invitations/:id/resend
 // @desc    Resend invitation email with a fresh token
-router.post('/invitations/:id/resend', async (req, res) => {
+router.post('/invitations/:id/resend', validateObjectId('id'), async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -175,7 +173,7 @@ router.post('/invitations/:id/resend', async (req, res) => {
     user.invitedBy = req.user._id;
     await user.save();
 
-    const frontendBaseUrl = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontendBaseUrl = getFrontendBaseUrl();
     const invitationLink = `${frontendBaseUrl.replace(/\/+$/, '')}/accept-invite?token=${encodeURIComponent(token)}`;
 
     let mailResult = { sent: false };
@@ -198,8 +196,8 @@ router.post('/invitations/:id/resend', async (req, res) => {
       success: true,
       message: mailResult && mailResult.sent 
         ? `Fresh invitation email dispatched to ${user.email}`
-        : `Fresh invitation link generated for ${user.email} (SMTP not configured).`,
-      data: { user, token, invitationLink, mailSent: !!(mailResult && mailResult.sent) }
+        : `Fresh invitation created for ${user.email}.`,
+      data: { user, mailSent: !!(mailResult && mailResult.sent) }
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -208,7 +206,7 @@ router.post('/invitations/:id/resend', async (req, res) => {
 
 // @route   PATCH /api/admin/users/:id/toggle-status
 // @desc    Admin deactivates or reactivates an account
-router.patch('/users/:id/toggle-status', async (req, res) => {
+router.patch('/users/:id/toggle-status', validateObjectId('id'), async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -344,7 +342,7 @@ router.get('/requests', async (req, res) => {
 
 // @route   PATCH /api/admin/requests/:id/decision
 // @desc    Admin decision: approve, reject, or make candidate
-router.patch('/requests/:id/decision', validate(requestDecisionSchema), async (req, res) => {
+router.patch('/requests/:id/decision', validateObjectId('id'), validate(requestDecisionSchema), async (req, res) => {
   try {
     const { decision, rejectionReason } = req.body;
     const user = await User.findById(req.params.id);
@@ -444,7 +442,7 @@ router.get('/users', async (req, res) => {
 
 // @route   PATCH /api/admin/users/:id/role
 // @desc    Change user role
-router.patch('/users/:id/role', async (req, res) => {
+router.patch('/users/:id/role', validateObjectId('id'), async (req, res) => {
   try {
     const { role } = req.body;
     if (!['candidate', 'professional', 'admin'].includes(role)) {
@@ -473,7 +471,7 @@ router.patch('/users/:id/role', async (req, res) => {
 
 // @route   PATCH /api/admin/users/:id/verify
 // @desc    Toggle user verified status
-router.patch('/users/:id/verify', async (req, res) => {
+router.patch('/users/:id/verify', validateObjectId('id'), async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -493,7 +491,7 @@ router.patch('/users/:id/verify', async (req, res) => {
 
 // @route   DELETE /api/admin/users/:id
 // @desc    Delete user account and cascade cleanups
-router.delete('/users/:id', async (req, res) => {
+router.delete('/users/:id', validateObjectId('id'), async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -543,7 +541,7 @@ router.get('/bookings', async (req, res) => {
 
 // @route   DELETE /api/admin/bookings/:id
 // @desc    Delete or cancel booking
-router.delete('/bookings/:id', async (req, res) => {
+router.delete('/bookings/:id', validateObjectId('id'), async (req, res) => {
   try {
     const booking = await Interview.findByIdAndDelete(req.params.id);
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -586,7 +584,7 @@ router.get('/payouts', async (req, res) => {
 
 // @route   PUT /api/admin/payouts/:id/status
 // @desc    Approve, process, complete, or reject a payout request
-router.put('/payouts/:id/status', async (req, res) => {
+router.put('/payouts/:id/status', validateObjectId('id'), async (req, res) => {
   try {
     const { status, referenceId, notes } = req.body;
     if (!['pending', 'processing', 'completed', 'rejected', 'failed'].includes(status)) {
@@ -621,7 +619,7 @@ router.put('/payouts/:id/status', async (req, res) => {
           link: '/earnings'
         });
 
-        const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+        const frontendBaseUrl = getFrontendBaseUrl();
         await sendPayoutProcessedEmail({
           professionalName: populated.interviewerId.name,
           professionalEmail: populated.interviewerId.email,

@@ -159,6 +159,9 @@ interviewSchema.index({ interviewerId: 1, status: 1 });
 interviewSchema.index({ date: 1, timeSlot: 1 });
 interviewSchema.index({ status: 1, startTime: 1, reminderSent24h: 1 });
 interviewSchema.index({ status: 1, startTime: 1, reminderSent1h: 1 });
+interviewSchema.index({ meetingRoomId: 1 });
+interviewSchema.index({ orderId: 1 });
+interviewSchema.index({ paymentId: 1 });
 
 module.exports = mongoose.model('Interview', interviewSchema);
 

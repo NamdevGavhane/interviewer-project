@@ -11,7 +11,7 @@ describe('S1: Token Leak & Public Field Allow-list Tests', () => {
 
   beforeAll(async () => {
     await connectTestDB();
-  });
+  }, 120000);
 
   afterAll(async () => {
     await closeTestDB();

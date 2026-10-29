@@ -172,6 +172,8 @@ const userSchema = new mongoose.Schema({
   }
 });
 
+userSchema.index({ role: 1, accountStatus: 1, approvalStatus: 1, isVerified: 1 });
+
 // Static helper to create SHA-256 token hash
 userSchema.statics.hashToken = function(rawToken) {
   if (!rawToken || typeof rawToken !== 'string') return '';

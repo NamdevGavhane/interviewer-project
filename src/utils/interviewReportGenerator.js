@@ -1,18 +1,17 @@
-import { jsPDF } from 'jspdf';
-
 /**
  * Generates and downloads a comprehensive, executive-grade PDF Report of the Mock Interview
  * detailing questions asked by evaluator, candidate answers, score breakdown, and feedback.
  * 
  * @param {Object} reportData - Feedback object containing interviewId, candidateId, interviewerId, qaList, scores, strengths, improvements, etc.
  */
-export const downloadInterviewReportPDF = (reportData) => {
+export const downloadInterviewReportPDF = async (reportData) => {
   try {
     if (!reportData || (reportData.overallScore === undefined && reportData.overallScore === null)) {
       alert('Evaluation feedback has not been submitted yet for this session. A report can only be generated after the evaluator completes their evaluation.');
       return false;
     }
 
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'pt',

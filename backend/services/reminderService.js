@@ -2,6 +2,7 @@ const Interview = require('../models/Interview');
 const Notification = require('../models/Notification');
 const JobLock = require('../models/JobLock');
 const { sendInterviewReminderEmail } = require('../utils/mailer');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 
 const runReminderJob = async () => {
   const lockName = 'interview_reminder_worker';
@@ -16,7 +17,7 @@ const runReminderJob = async () => {
     lockInstance = lockResult.instanceId;
 
     const now = new Date();
-    const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+    const frontendBaseUrl = getFrontendBaseUrl();
 
     // 1. Check for interviews starting in ~24 hours (between 23h and 25h)
     const in25h = new Date(now.getTime() + 25 * 60 * 60 * 1000);
@@ -178,6 +179,7 @@ const runReminderJob = async () => {
 let workerInterval = null;
 
 const startReminderWorker = () => {
+  if (workerInterval) return;
   // Initial run 5s after startup
   setTimeout(runReminderJob, 5000);
   // Recurring every 5 minutes

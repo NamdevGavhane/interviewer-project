@@ -57,5 +57,7 @@ const availabilitySchema = new mongoose.Schema({
 // CRITICAL UNIQUE COMPOUND INDEX: Guarantees at database level that an interviewer can never have duplicate slots at the same startTime
 availabilitySchema.index({ interviewerId: 1, startTime: 1 }, { unique: true });
 availabilitySchema.index({ interviewerId: 1, date: 1, isBooked: 1 });
+availabilitySchema.index({ isBooked: 1, endTime: 1 });
+availabilitySchema.index({ interviewId: 1 });
 
 module.exports = mongoose.model('Availability', availabilitySchema);

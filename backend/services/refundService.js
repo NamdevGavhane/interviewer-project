@@ -5,6 +5,7 @@ const Settings = require('../models/Settings');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendCancellationEmail, sendRefundProcessedEmail } = require('../utils/mailer');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { releaseSlotForInterview } = require('./availabilityService');
 
 const getRazorpayInstance = () => {
@@ -132,13 +133,24 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
     };
   }
 
-  // Handle paid gateway refund
-  if (payment.refundStatus === 'processed') {
-    return { success: false, status: 400, message: 'This transaction has already been refunded.' };
+  // Handle paid gateway refund: Atomically claim refund lock to prevent concurrent double-refund (2h)
+  const claimedPayment = await Payment.findOneAndUpdate(
+    { _id: payment._id, refundStatus: { $nin: ['pending', 'processed'] } },
+    { $set: { refundStatus: 'pending' } },
+    { new: true }
+  );
+
+  if (!claimedPayment) {
+    return {
+      success: false,
+      status: 409,
+      message: 'A refund for this transaction is already processing or has already been completed.'
+    };
   }
 
   const rzp = getRazorpayInstance();
   if (!rzp) {
+    await Payment.findByIdAndUpdate(payment._id, { $set: { refundStatus: 'none' } });
     return {
       success: false,
       status: 503,
@@ -191,6 +203,7 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
     };
   } catch (gatewayErr) {
     console.error('Razorpay refund API call error:', gatewayErr);
+    await Payment.findByIdAndUpdate(payment._id, { $set: { refundStatus: 'failed' } });
     return {
       success: false,
       status: 502,
@@ -208,7 +221,7 @@ const dispatchCancellationAlerts = async ({ interview, reason, requestedByUserId
     ]);
 
     const cancelledByName = requester?.name || 'A participant';
-    const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+    const frontendBaseUrl = getFrontendBaseUrl();
 
     // In-app notifications
     if (candidate) {

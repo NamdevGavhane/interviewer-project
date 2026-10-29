@@ -71,7 +71,7 @@ const pendingBookingSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'completed', 'failed', 'expired'],
+    enum: ['pending', 'processing', 'completed', 'failed', 'expired'],
     default: 'pending',
     index: true
   },
@@ -90,5 +90,7 @@ const pendingBookingSchema = new mongoose.Schema({
     index: { expires: 0 } // TTL index automatically expires documents after expiresAt
   }
 }, { timestamps: true });
+
+pendingBookingSchema.index({ paymentId: 1 });
 
 module.exports = mongoose.model('PendingBooking', pendingBookingSchema);

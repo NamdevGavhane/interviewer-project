@@ -77,4 +77,7 @@ const feedbackSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+feedbackSchema.index({ candidateId: 1, createdAt: -1 });
+feedbackSchema.index({ interviewerId: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Feedback', feedbackSchema);

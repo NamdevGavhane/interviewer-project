@@ -4,8 +4,9 @@ const Notification = require('../models/Notification');
 const { authenticate } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
 const { getPagination } = require('../utils/pagination');
+const { pollingLimiter } = require('../middleware/rateLimiter');
 
-router.use(authenticate);
+router.use(authenticate, pollingLimiter);
 
 // @route   GET /api/notifications
 // @desc    Get current user's in-app notifications & unread count

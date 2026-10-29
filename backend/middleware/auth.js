@@ -4,9 +4,22 @@ const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (JWT_SECRET ? JWT_SECRET + '_refresh' : null);
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
-if (!JWT_SECRET) {
+if (process.env.NODE_ENV === 'production') {
+  if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    console.error('FATAL: JWT_SECRET environment variable is missing or shorter than 32 characters in production.');
+    process.exit(1);
+  }
+  if (!JWT_REFRESH_SECRET || JWT_REFRESH_SECRET.length < 32) {
+    console.error('FATAL: JWT_REFRESH_SECRET environment variable is missing or shorter than 32 characters in production.');
+    process.exit(1);
+  }
+  if (JWT_SECRET === JWT_REFRESH_SECRET) {
+    console.error('FATAL: JWT_SECRET and JWT_REFRESH_SECRET must be distinct secrets.');
+    process.exit(1);
+  }
+} else if (!JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is missing. Server must refuse to start.');
   process.exit(1);
 }

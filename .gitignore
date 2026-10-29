@@ -25,6 +25,8 @@ dist-ssr
 
 .env
 .env.*
+!.env.example
+!backend/.env.example
 backend/.env
 atlas-credentials*
 

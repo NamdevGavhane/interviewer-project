@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Interview = require('../models/Interview');
 const User = require('../models/User');
@@ -13,8 +14,8 @@ router.post('/', authenticate, async (req, res) => {
   try {
     const { interviewId, rating, comment } = req.body;
 
-    if (!interviewId) {
-      return res.status(400).json({ success: false, message: 'Interview ID is required.' });
+    if (!interviewId || !mongoose.Types.ObjectId.isValid(interviewId)) {
+      return res.status(400).json({ success: false, message: 'Valid Interview ID is required.' });
     }
 
     const numRating = Number(rating);

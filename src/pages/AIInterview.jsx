@@ -23,7 +23,6 @@ import {
   Play
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../utils/apiClient';
 
@@ -142,6 +141,18 @@ const AIInterview = () => {
     }
     return () => clearInterval(timer);
   }, [stage]);
+
+  // Cleanup media tracks and speech synthesis on component unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const formatTimer = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -406,11 +417,12 @@ const AIInterview = () => {
     }
   };
 
-  // PDF Generator using jsPDF
-  const handleDownloadPDF = () => {
+  // PDF Generator using jsPDF (dynamically imported)
+  const handleDownloadPDF = async () => {
     if (!reportData) return;
     try {
       setDownloadingPdf(true);
+      const { jsPDF } = await import('jspdf');
       const doc = new jsPDF({ unit: 'pt', format: 'letter' });
       const margin = 40;
       let y = 45;
@@ -606,17 +618,19 @@ const AIInterview = () => {
                       </>
                     )}
                   </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-ghost text-xs text-primary font-semibold"
-                    onClick={() => {
-                      setResumeText(SAMPLE_RESUME);
-                      setUploadedFile({ name: 'Sample Full-Stack Resume', wordCount: 180, characters: SAMPLE_RESUME.length });
-                      setResumeParseError('');
-                    }}
-                  >
-                    Load Sample Resume
-                  </button>
+                  {import.meta.env.DEV && (
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost text-xs text-primary font-semibold"
+                      onClick={() => {
+                        setResumeText(SAMPLE_RESUME);
+                        setUploadedFile({ name: 'Sample Full-Stack Resume', wordCount: 180, characters: SAMPLE_RESUME.length });
+                        setResumeParseError('');
+                      }}
+                    >
+                      Load Sample Resume (DEV)
+                    </button>
+                  )}
                   {resumeText && (
                     <button 
                       type="button" 

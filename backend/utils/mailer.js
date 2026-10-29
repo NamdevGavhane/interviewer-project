@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { getFrontendBaseUrl } = require('./urlHelper');
 
 const isSmtpConfigured = () => {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -69,7 +70,7 @@ const emailContainer = (content, header) => `
 /**
  * Send Email Verification link to new user
  */
-const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = 'http://localhost:5173' }) => {
+const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = getFrontendBaseUrl() }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const verificationLink = `${cleanBaseUrl}/verify-email?token=${encodeURIComponent(token)}`;
   const subject = 'Verify Your Email Address - DevSphere';
@@ -107,7 +108,7 @@ const sendVerificationEmail = async ({ name, email, token, frontendBaseUrl = 'ht
 /**
  * Send Password Reset link
  */
-const sendPasswordResetEmail = async ({ name, email, token, frontendBaseUrl = 'http://localhost:5173' }) => {
+const sendPasswordResetEmail = async ({ name, email, token, frontendBaseUrl = getFrontendBaseUrl() }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const resetLink = `${cleanBaseUrl}/reset-password?token=${encodeURIComponent(token)}`;
   const subject = 'Password Reset Request - DevSphere';
@@ -152,7 +153,7 @@ const sendProfessionalInvitationEmail = async ({
   designation,
   experience,
   token,
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const invitationLink = `${cleanBaseUrl}/accept-invite?token=${encodeURIComponent(token)}`;
@@ -204,7 +205,7 @@ const sendBookingConfirmationEmail = async ({
   date,
   timeSlot,
   interviewId,
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const sessionLink = `${cleanBaseUrl}/interviews`;
@@ -261,7 +262,7 @@ const sendInterviewReminderEmail = async ({
   timeSlot,
   interviewId,
   hoursNotice = '24',
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const roomRole = isCandidate ? 'candidate' : 'interviewer';
@@ -313,7 +314,7 @@ const sendCancellationEmail = async ({
   reason,
   cancelledByName,
   refundAmount = 0,
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const dashboardLink = `${cleanBaseUrl}/interviews`;
@@ -363,7 +364,7 @@ const sendRefundProcessedEmail = async ({
   topic,
   refundAmount,
   refundId,
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const historyLink = `${cleanBaseUrl}/payment-history`;
@@ -409,7 +410,7 @@ const sendFeedbackPublishedEmail = async ({
   topic,
   overallScore,
   interviewId,
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const reportLink = `${cleanBaseUrl}/feedback/${interviewId}`;
@@ -456,7 +457,7 @@ const sendPayoutProcessedEmail = async ({
   amount,
   status,
   referenceId,
-  frontendBaseUrl = 'http://localhost:5173'
+  frontendBaseUrl = getFrontendBaseUrl()
 }) => {
   const cleanBaseUrl = frontendBaseUrl.replace(/\/+$/, '');
   const earningsLink = `${cleanBaseUrl}/earnings`;

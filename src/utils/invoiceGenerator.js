@@ -1,11 +1,10 @@
-import { jsPDF } from 'jspdf';
-
 /**
  * Generates and downloads a professional PDF Tax Invoice / Payment Receipt
  * @param {Object} paymentData
  */
-export const downloadInvoicePDF = (paymentData) => {
+export const downloadInvoicePDF = async (paymentData) => {
   try {
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'pt',
@@ -43,6 +42,9 @@ export const downloadInvoicePDF = (paymentData) => {
     const totalAmount = Number(paymentData.amount ?? paymentData.paidAmount ?? 0);
     const paymentMethod = (paymentData.paymentMethod || 'Razorpay').toUpperCase();
 
+    const supportEmail = paymentData.supportEmail || 'support@devsphere.com';
+    const siteUrl = paymentData.siteUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://devsphere.com');
+
     // 1. Header Banner
     doc.setFillColor(26, 115, 232); // Primary Brand Blue
     doc.rect(0, 0, pageWidth, 90, 'F');
@@ -56,7 +58,7 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text('1-on-1 Mock Technical Preparation Platform', margin, 58);
-    doc.text('support@devsphere.com | https://interviewpro-frontend-4c78.onrender.com', margin, 72);
+    doc.text(`${supportEmail} | ${siteUrl}`, margin, 72);
 
     // Right side Header text
     doc.setFont('helvetica', 'bold');
@@ -226,7 +228,7 @@ export const downloadInvoicePDF = (paymentData) => {
     doc.text('PCI-DSS Level 1 Compliant Transaction Processing', margin, y + 30);
     doc.text('Session Guarantee: If the session is interrupted or cancelled', margin, y + 42);
     doc.text('within refund policy window, full refund is issued automatically.', margin, y + 54);
-    doc.text('Questions? Contact us 24x7 at support@devsphere.com', margin, y + 66);
+    doc.text(`Questions? Contact us 24x7 at ${supportEmail}`, margin, y + 66);
 
     y += 120;
 

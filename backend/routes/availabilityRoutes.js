@@ -7,6 +7,7 @@ const Interview = require('../models/Interview');
 const User = require('../models/User');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
+const mongoose = require('mongoose');
 const {
   generateSlotsForInterviewer,
   atomicBookSlot,
@@ -174,6 +175,10 @@ router.post('/reschedule', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'interviewId and newSlotId are required.' });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(interviewId) || !mongoose.Types.ObjectId.isValid(newSlotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid interviewId or newSlotId format.' });
+    }
+
     const interview = await Interview.findById(interviewId);
     if (!interview) {
       return res.status(404).json({ success: false, message: 'Interview session not found.' });
@@ -191,6 +196,8 @@ router.post('/reschedule', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot reschedule an interview that is already ${interview.status}.` });
     }
 
+    const oldSlotId = interview.slotId;
+
     // Atomically book the new slot
     const newSlot = await atomicBookSlot({
       interviewerId: interview.interviewerId,
@@ -205,13 +212,15 @@ router.post('/reschedule', authenticate, async (req, res) => {
       });
     }
 
-    // Release previous slot
-    await releaseSlotForInterview(interview._id);
-
-    // Re-associate new slot with interview
-    newSlot.isBooked = true;
-    newSlot.interviewId = interview._id;
-    await newSlot.save();
+    // Safely release previous slot by explicit slotId (X11)
+    if (oldSlotId && String(oldSlotId) !== String(newSlot._id)) {
+      await Availability.findByIdAndUpdate(oldSlotId, {
+        isBooked: false,
+        interviewId: null,
+        reservedBy: null,
+        reservedUntil: null
+      });
+    }
 
     // Update interview record
     interview.date = newSlot.date;

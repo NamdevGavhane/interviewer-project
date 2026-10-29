@@ -1,10 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Feedback = require('../models/Feedback');
 const Interview = require('../models/Interview');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendFeedbackPublishedEmail } = require('../utils/mailer');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
 
@@ -29,8 +31,8 @@ router.post('/', async (req, res) => {
       detailedNotes
     } = req.body;
 
-    if (!interviewId) {
-      return res.status(400).json({ success: false, message: 'interviewId is required.' });
+    if (!interviewId || !mongoose.Types.ObjectId.isValid(interviewId)) {
+      return res.status(400).json({ success: false, message: 'Valid interviewId is required.' });
     }
 
     const interview = await Interview.findById(interviewId);
@@ -124,7 +126,7 @@ router.post('/', async (req, res) => {
 
       const candidateUser = await User.findById(interview.candidateId).select('name email');
       if (candidateUser) {
-        const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+        const frontendBaseUrl = getFrontendBaseUrl();
         await sendFeedbackPublishedEmail({
           candidateName: candidateUser.name,
           candidateEmail: candidateUser.email,

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Razorpay = require('razorpay');
 const Payment = require('../models/Payment');
 const Interview = require('../models/Interview');
@@ -11,6 +12,7 @@ const Payout = require('../models/Payout');
 const Availability = require('../models/Availability');
 const PendingBooking = require('../models/PendingBooking');
 const Notification = require('../models/Notification');
+const JobLock = require('../models/JobLock');
 const { sendBookingConfirmationEmail } = require('../utils/mailer');
 const {
   reserveSlotForCandidate,
@@ -20,7 +22,9 @@ const {
 const { processInterviewRefund } = require('../services/refundService');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { getPagination } = require('../utils/pagination');
+const { paymentLimiter } = require('../middleware/rateLimiter');
 
 // Helper to initialize Razorpay if configured
 const getRazorpayInstance = () => {
@@ -53,7 +57,7 @@ router.get('/config', (req, res) => {
 // @desc    Create a payment order strictly computed from Settings (M1)
 //          with atomic slot reservation (M2)
 // @access  Protected (Candidate)
-router.post('/create-order', authenticate, async (req, res) => {
+router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
   try {
     const candidateId = req.user._id;
     const { interviewerId, slotId, topic, notes } = req.body;
@@ -63,6 +67,9 @@ router.post('/create-order', authenticate, async (req, res) => {
     }
     if (!slotId) {
       return res.status(400).json({ success: false, message: 'Availability slotId is required to reserve booking.' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(interviewerId) || !mongoose.Types.ObjectId.isValid(slotId)) {
+      return res.status(400).json({ success: false, message: 'Invalid interviewer ID or slot ID format.' });
     }
 
     const interviewer = await User.findById(interviewerId).select('name email title company role accountStatus isDeactivated isVerified');
@@ -199,6 +206,9 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
     if (!interviewerId) {
       return res.status(400).json({ success: false, message: 'Interviewer ID is required.' });
     }
+    if (!mongoose.Types.ObjectId.isValid(interviewerId) || (slotId && !mongoose.Types.ObjectId.isValid(slotId))) {
+      return res.status(400).json({ success: false, message: 'Invalid interviewer ID or slot ID format.' });
+    }
 
     // 1. Idempotency Check: If already verified, return existing booking
     if (orderId || paymentId) {
@@ -262,12 +272,39 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       });
     }
 
-    // Load frozen financial terms from PendingBooking (M1, M2)
-    const pendingBooking = await PendingBooking.findOne({ orderId });
+    // Atomically claim the PendingBooking to eliminate race condition with webhook (2h)
+    let pendingBooking = await PendingBooking.findOneAndUpdate(
+      { orderId, status: 'pending' },
+      { $set: { status: 'processing' } },
+      { new: true }
+    );
+
     if (!pendingBooking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Booking reservation order not found.'
+      const existing = await PendingBooking.findOne({ orderId });
+      if (existing && (existing.status === 'completed' || existing.interviewId)) {
+        const existingInterview = await Interview.findById(existing.interviewId)
+          .populate('candidateId', 'name email avatar')
+          .populate('interviewerId', 'name email avatar title company');
+        const existingPayment = await Payment.findOne({ orderId })
+          .populate('candidateId', 'name email')
+          .populate('interviewerId', 'name email title company');
+
+        return res.status(200).json({
+          success: true,
+          message: 'Payment already verified and interview booked (idempotent replay).',
+          interview: existingInterview,
+          payment: existingPayment
+        });
+      }
+
+      if (!existing) {
+        return res.status(404).json({ success: false, message: 'Booking reservation order not found.' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Payment verification is currently being finalized. Please check your bookings momentarily.',
+        processing: true
       });
     }
 
@@ -445,7 +482,7 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
         link: '/interviews'
       });
 
-      const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+      const frontendBaseUrl = getFrontendBaseUrl();
       await sendBookingConfirmationEmail({
         recipientName: req.user.name,
         recipientEmail: req.user.email,
@@ -522,16 +559,43 @@ router.post('/webhook', async (req, res) => {
       const orderId = paymentEntity.order_id;
       const paymentId = paymentEntity.id;
 
-      // Check if payment already exists
+      // Check if payment already exists (idempotency check)
       const existingPayment = await Payment.findOne({ orderId });
       if (existingPayment) {
+        if (existingPayment.status === 'captured') {
+          return res.status(200).json({ success: true, message: 'Payment already processed and finalized.' });
+        }
         existingPayment.status = 'captured';
         existingPayment.paymentId = paymentId;
         await existingPayment.save();
+        return res.status(200).json({ success: true, message: 'Existing payment marked captured.' });
       } else {
-        // Candidate may have dropped off after payment: Auto-finalize from PendingBooking (P4)
-        const pending = await PendingBooking.findOne({ orderId, status: 'pending' });
-        if (pending) {
+        // Candidate may have dropped off after payment: Auto-finalize from PendingBooking (P4 & 2h)
+        const pending = await PendingBooking.findOneAndUpdate(
+          { orderId, status: 'pending' },
+          { $set: { status: 'processing' } },
+          { new: true }
+        );
+
+        if (!pending) {
+          const completed = await PendingBooking.findOne({ orderId });
+          if (completed && (completed.status === 'completed' || completed.status === 'processing')) {
+            console.log(`[WEBHOOK] Order ${orderId} is already ${completed.status}. Idempotent return.`);
+            return res.status(200).json({ success: true, message: 'Order already completed or processing.' });
+          }
+          return res.status(200).json({ success: true, message: 'No actionable pending booking found.' });
+        }
+
+        // Verify amount and currency
+        const expectedPaise = pending.amountPaise ?? Math.round(pending.amount * 100);
+          const actualPaise = Number(paymentEntity.amount);
+          const expectedCurrency = (pending.currency || 'INR').toUpperCase();
+          const actualCurrency = (paymentEntity.currency || 'INR').toUpperCase();
+
+          if (actualPaise !== expectedPaise || actualCurrency !== expectedCurrency) {
+            console.error(`[SECURITY ALERT] Webhook payment amount/currency mismatch! Order: ${orderId}. Expected ${expectedPaise} ${expectedCurrency}, got ${actualPaise} ${actualCurrency}`);
+            return res.status(400).json({ success: false, message: 'Payment amount or currency mismatch.' });
+          }
           const slotDoc = await Availability.findById(pending.slotId);
           if (slotDoc && !slotDoc.isBooked) {
             const meetingRoomId = crypto.randomBytes(8).toString('hex');
@@ -615,7 +679,7 @@ router.post('/webhook', async (req, res) => {
                   link: '/interviews'
                 });
 
-                const frontendBaseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
+                const frontendBaseUrl = getFrontendBaseUrl();
                 await sendBookingConfirmationEmail({
                   recipientName: candidateUser.name,
                   recipientEmail: candidateUser.email,
@@ -642,10 +706,12 @@ router.post('/webhook', async (req, res) => {
             } catch (alertErr) {
               console.warn('Webhook booking confirmation notice:', alertErr.message);
             }
+            return res.status(200).json({ success: true, message: 'Webhook finalized booking successfully.' });
+          } else {
+            return res.status(200).json({ success: true, message: 'Slot unavailable or already booked.' });
           }
         }
-      }
-    } else if (eventName === 'payment.failed') {
+      } else if (eventName === 'payment.failed') {
       const paymentEntity = event.payload.payment.entity;
       const orderId = paymentEntity.order_id;
       await Payment.findOneAndUpdate(
@@ -839,13 +905,38 @@ router.get('/payouts', authenticate, requireRole('professional', 'admin'), async
 // @desc    Request a payout strictly checked against minPayoutPaise and hold days (M1, P6)
 // @access  Protected (Professional)
 router.post('/payouts/request', authenticate, requireRole('professional'), async (req, res) => {
+  const interviewerId = req.user._id;
+  const lockName = `payout_${interviewerId}`;
+  let lockInstance = null;
+
   try {
-    const interviewerId = req.user._id;
+    // 1. Acquire distributed lock to prevent concurrent double-payout race conditions (2h)
+    const lockResult = await JobLock.acquire(lockName, 15000);
+    if (!lockResult.acquired) {
+      return res.status(409).json({
+        success: false,
+        message: 'A payout request for your account is currently being processed. Please wait a moment.'
+      });
+    }
+    lockInstance = lockResult.instanceId;
+
     const { amount, payoutMethod = 'bank_transfer', bankDetails } = req.body;
 
     const requestedAmount = Number(amount);
     if (!requestedAmount || requestedAmount <= 0) {
       return res.status(400).json({ success: false, message: 'Valid positive payout amount is required.' });
+    }
+
+    // 2. Reject if interviewer already has a pending or processing withdrawal
+    const existingActivePayout = await Payout.findOne({
+      interviewerId,
+      status: { $in: ['pending', 'processing'] }
+    });
+    if (existingActivePayout) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have an active payout request pending or processing. Please wait for it to be processed before requesting another.'
+      });
     }
 
     const settings = await Settings.getSettings();
@@ -932,6 +1023,10 @@ router.post('/payouts/request', authenticate, requireRole('professional'), async
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    if (lockInstance) {
+      await JobLock.release(lockName, lockInstance);
+    }
   }
 });
 
@@ -940,15 +1035,18 @@ router.post('/payouts/request', authenticate, requireRole('professional'), async
 // @access  Protected
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    let payment = await Payment.findById(req.params.id)
-      .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company')
-      .populate('interviewId');
+    let payment = null;
+    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+      payment = await Payment.findById(req.params.id)
+        .populate('candidateId', 'name email avatar')
+        .populate('interviewerId', 'name email avatar title company')
+        .populate('interviewId');
+    }
 
     if (!payment) {
       payment = await Payment.findOne({
         $or: [
-          { interviewId: req.params.id },
+          ...(mongoose.Types.ObjectId.isValid(req.params.id) ? [{ interviewId: req.params.id }] : []),
           { paymentId: req.params.id },
           { invoiceNumber: req.params.id }
         ]

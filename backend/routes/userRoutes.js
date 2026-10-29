@@ -8,6 +8,7 @@ const RefreshToken = require('../models/RefreshToken');
 const Interview = require('../models/Interview');
 const Settings = require('../models/Settings');
 const Payout = require('../models/Payout');
+const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { uploadAvatar, uploadToCloudinary } = require('../utils/avatarUpload');
 const {
   generateAccessToken,
@@ -107,7 +108,7 @@ router.post('/register', authLimiter, validate(registerSchema), async (req, res)
     // Send verification email
     let verificationNotice = '';
     try {
-      const origin = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+      const origin = getFrontendBaseUrl();
       const emailResult = await sendVerificationEmail({
         name: newUser.name,
         email: newUser.email,
@@ -426,7 +427,7 @@ router.post('/refresh', async (req, res) => {
     // Verify JWT signature
     let decoded;
     try {
-      decoded = jwt.verify(rawRefreshToken, JWT_REFRESH_SECRET || JWT_SECRET);
+      decoded = jwt.verify(rawRefreshToken, JWT_REFRESH_SECRET);
     } catch (jwtErr) {
       await RefreshToken.findByIdAndUpdate(storedToken._id, { revoked: true, revokedAt: new Date() });
       clearRefreshTokenCookie(res);
@@ -518,7 +519,7 @@ router.post('/forgot-password', passwordResetLimiter, validate(forgotPasswordSch
     user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
 
-    const origin = req.headers.origin || process.env.FRONTEND_URL || 'http://localhost:5173';
+    const origin = getFrontendBaseUrl();
     await sendPasswordResetEmail({
       name: user.name,
       email: user.email,
@@ -887,11 +888,13 @@ router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSche
       avatar
     } = req.body;
 
-    if (avatar && (avatar.startsWith('data:') || avatar.length > 2000)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Base64 avatars are not allowed. Please provide an image URL.'
-      });
+    if (avatar !== undefined) {
+      if (typeof avatar !== 'string' || (!avatar.startsWith('https://') && avatar !== '')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Avatar must be a secure HTTPS URL from Cloudinary or an empty string.'
+        });
+      }
     }
 
     const updateData = {};
@@ -928,7 +931,7 @@ router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSche
 // @route   GET /api/users/:id/earnings
 // @desc    Get earnings ledger for professional
 // @access  Protected (Active Professional or Admin)
-router.get('/:id/earnings', authenticate, requireRole('professional', 'admin'), async (req, res) => {
+router.get('/:id/earnings', authenticate, validateObjectId('id'), requireRole('professional', 'admin'), async (req, res) => {
   try {
     const isSelf = req.user._id.toString() === req.params.id;
     const isAdmin = req.user.role === 'admin';
