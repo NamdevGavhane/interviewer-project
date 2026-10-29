@@ -493,6 +493,88 @@ const sendPayoutProcessedEmail = async ({
   }
 };
 
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+/**
+ * Send Professional Decision Email (Approval or Rejection)
+ */
+const sendProfessionalDecisionEmail = async ({
+  name,
+  email,
+  approved,
+  reason,
+  frontendBaseUrl = getFrontendBaseUrl()
+}) => {
+  const cleanBaseUrl = (frontendBaseUrl || '').replace(/\/+$/, '');
+  const safeName = escapeHtml(name);
+  const safeReason = escapeHtml(reason || 'Application criteria not met at this time.');
+
+  if (approved) {
+    const loginLink = `${cleanBaseUrl}/professional/login`;
+    const subject = 'Your Professional Application Has Been Approved - DevSphere';
+    const content = `
+      <p style="font-size: 16px;">Hello <strong>${safeName}</strong>,</p>
+      <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+        Congratulations! Your application to join DevSphere as an Interviewer has been approved by our administration team.
+      </p>
+      <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+        You can now sign in to your professional account, configure your availability schedule, and start conducting mock interviews.
+      </p>
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${loginLink}" style="background: #4f46e5; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; display: inline-block;">
+          Sign In as Professional
+        </a>
+      </div>
+    `;
+
+    try {
+      return await sendEmail({
+        to: email,
+        subject,
+        html: emailContainer(content, emailHeader('Application Approved', 'Welcome to DevSphere Interviewers', 'linear-gradient(135deg, #059669 0%, #10b981 100%)')),
+        text: `Congratulations! Your professional application has been approved. Sign in at: ${loginLink}`
+      });
+    } catch (err) {
+      console.warn('[MAILER] sendProfessionalDecisionEmail failed:', err.message);
+      return { sent: false, error: err.message };
+    }
+  } else {
+    const subject = 'Update Regarding Your Professional Application - DevSphere';
+    const content = `
+      <p style="font-size: 16px;">Hello <strong>${safeName}</strong>,</p>
+      <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+        Thank you for your interest in joining DevSphere as an Interviewer. After careful review, we are unable to approve your application at this time.
+      </p>
+      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 20px 0; color: #991b1b; font-size: 14px; line-height: 1.6;">
+        <strong>Reason:</strong> ${safeReason}
+      </div>
+      <p style="font-size: 14px; line-height: 1.6; color: #475569;">
+        You are welcome to reapply once the required waiting period has elapsed.
+      </p>
+    `;
+
+    try {
+      return await sendEmail({
+        to: email,
+        subject,
+        html: emailContainer(content, emailHeader('Application Status Update', 'Interviewer Application', 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)')),
+        text: `Your professional application was not approved. Reason: ${reason || 'Application criteria not met at this time.'}`
+      });
+    } catch (err) {
+      console.warn('[MAILER] sendProfessionalDecisionEmail failed:', err.message);
+      return { sent: false, error: err.message };
+    }
+  }
+};
+
 module.exports = {
   isSmtpConfigured,
   sendEmail,
@@ -504,5 +586,6 @@ module.exports = {
   sendCancellationEmail,
   sendRefundProcessedEmail,
   sendFeedbackPublishedEmail,
-  sendPayoutProcessedEmail
+  sendPayoutProcessedEmail,
+  sendProfessionalDecisionEmail
 };

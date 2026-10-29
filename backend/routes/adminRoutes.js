@@ -2,12 +2,17 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const User = require('../models/User');
+const RefreshToken = require('../models/RefreshToken');
 const Interview = require('../models/Interview');
 const Payment = require('../models/Payment');
 const Payout = require('../models/Payout');
 const Notification = require('../models/Notification');
 const { authenticate, requireRole } = require('../middleware/auth');
-const { sendProfessionalInvitationEmail, sendPayoutProcessedEmail } = require('../utils/mailer');
+const {
+  sendProfessionalInvitationEmail,
+  sendPayoutProcessedEmail,
+  sendProfessionalDecisionEmail
+} = require('../utils/mailer');
 const { validate } = require('../middleware/validate');
 const { validateObjectId } = require('../middleware/validateObjectId');
 const { getFrontendBaseUrl } = require('../utils/urlHelper');
@@ -348,6 +353,13 @@ router.patch('/requests/:id/decision', validateObjectId('id'), validate(requestD
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User request not found' });
 
+    // Set decision audit fields for all decisions
+    user.decidedBy = req.user._id;
+    user.decidedAt = new Date();
+
+    const rawFrontendUrl = process.env.FRONTEND_URL || '';
+    const frontendBaseUrl = rawFrontendUrl.split(',')[0].trim() || getFrontendBaseUrl();
+
     if (decision === 'approve') {
       user.role = 'professional';
       user.approvalStatus = 'approved';
@@ -355,10 +367,26 @@ router.patch('/requests/:id/decision', validateObjectId('id'), validate(requestD
       user.isVerified = true;
       user.rejectionReason = '';
       await user.save();
+
+      let mailSent = false;
+      try {
+        const mailResult = await sendProfessionalDecisionEmail({
+          name: user.name,
+          email: user.email,
+          approved: true,
+          reason: '',
+          frontendBaseUrl
+        });
+        mailSent = Boolean(mailResult && mailResult.sent);
+      } catch (mailErr) {
+        mailSent = false;
+      }
+
       return res.json({
         success: true,
         message: `Approved ${user.name} as a Professional Interviewer.`,
-        user
+        user,
+        mailSent
       });
     } else if (decision === 'make_candidate') {
       user.role = 'candidate';
@@ -367,6 +395,7 @@ router.patch('/requests/:id/decision', validateObjectId('id'), validate(requestD
       user.isVerified = false;
       user.rejectionReason = '';
       await user.save();
+
       return res.json({
         success: true,
         message: `Converted ${user.name} to Candidate account.`,
@@ -377,10 +406,32 @@ router.patch('/requests/:id/decision', validateObjectId('id'), validate(requestD
       user.isVerified = false;
       user.rejectionReason = rejectionReason || 'Application criteria not met at this time.';
       await user.save();
+
+      // Revoke all non-revoked refresh tokens immediately
+      await RefreshToken.updateMany(
+        { userId: user._id, revoked: false },
+        { $set: { revoked: true, revokedAt: new Date() } }
+      );
+
+      let mailSent = false;
+      try {
+        const mailResult = await sendProfessionalDecisionEmail({
+          name: user.name,
+          email: user.email,
+          approved: false,
+          reason: user.rejectionReason,
+          frontendBaseUrl
+        });
+        mailSent = Boolean(mailResult && mailResult.sent);
+      } catch (mailErr) {
+        mailSent = false;
+      }
+
       return res.json({
         success: true,
         message: `Application rejected for ${user.name}.`,
-        user
+        user,
+        mailSent
       });
     }
 

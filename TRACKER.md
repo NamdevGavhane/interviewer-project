@@ -59,6 +59,8 @@
 | [x] | B5 | Done | backend/routes/userRoutes.js | Implemented POST /api/users/register-professional with rate limiters, validation, generic 409 on existing accounts, password check & waiting period enforcement on rejected re-apply, and admin in-app notification dispatch. |
 | [x] | B6 | Done | backend/routes/userRoutes.js, backend/middleware/auth.js | Resolved rejected-before-pending order bug in login route and requireActiveProfessional middleware; formatted rejected reason with trailing full stop and re-apply guidance, and standardized pending message. |
 | [x] | B7 | Done | backend/middleware/auth.js, backend/routes/userRoutes.js | Enforced token safety by blocking pending and rejected professionals with 403 in authenticate middleware and invalidating/revoking refresh tokens with 401 in POST /api/users/refresh. |
+| [x] | B8 | Done | backend/routes/adminRoutes.js, backend/utils/mailer.js | Configured PATCH /api/admin/requests/:id/decision to set decidedBy & decidedAt, activate account on approve when password exists, revoke refresh tokens on reject, and send HTML-escaped decision emails with mailSent status. |
+
 
 
 
