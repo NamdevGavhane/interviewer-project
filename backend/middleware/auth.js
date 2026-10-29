@@ -202,19 +202,19 @@ const requireActiveProfessional = (req, res, next) => {
     });
   }
 
-  if (req.user.accountStatus === 'pending' || req.user.approvalStatus === 'pending') {
-    return res.status(403).json({
-      success: false,
-      message: 'Account pending verification: Your professional account is awaiting administrator approval.',
-      accountStatus: 'pending'
-    });
-  }
-
   if (req.user.approvalStatus === 'rejected') {
     return res.status(403).json({
       success: false,
       message: 'Application rejected: Your professional application was not approved.',
       accountStatus: 'rejected'
+    });
+  }
+
+  if (req.user.accountStatus === 'pending' || req.user.approvalStatus === 'pending') {
+    return res.status(403).json({
+      success: false,
+      message: 'Account pending verification: Your professional account is awaiting administrator approval.',
+      accountStatus: 'pending'
     });
   }
 

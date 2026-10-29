@@ -379,19 +379,23 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
         });
       }
 
-      if (user.accountStatus === 'pending' || user.approvalStatus === 'pending') {
+      if (user.approvalStatus === 'rejected') {
+        const rawReason = user.rejectionReason && user.rejectionReason.trim()
+          ? user.rejectionReason.trim()
+          : 'Application criteria not met at this time.';
+        const formattedReason = rawReason.endsWith('.') ? rawReason : `${rawReason}.`;
         return res.status(403).json({
           success: false,
-          message: 'Your professional account is awaiting administrator approval.',
-          pendingApproval: true
+          message: `Your professional application was not approved. Reason: ${formattedReason} You can apply again from the Interviewer Sign Up page.`,
+          rejected: true
         });
       }
 
-      if (user.approvalStatus === 'rejected') {
+      if (user.accountStatus === 'pending' || user.approvalStatus === 'pending') {
         return res.status(403).json({
           success: false,
-          message: `Your professional application was not approved. ${user.rejectionReason ? `Reason: ${user.rejectionReason}` : ''}`,
-          rejected: true
+          message: 'Your professional application is awaiting administrator approval. You will be able to sign in once it is approved.',
+          pendingApproval: true
         });
       }
 
@@ -510,18 +514,22 @@ router.post('/google-login', authLimiter, validate(googleLoginSchema), async (re
           invited: true
         });
       }
-      if (user.approvalStatus === 'pending') {
+      if (user.approvalStatus === 'rejected') {
+        const rawReason = user.rejectionReason && user.rejectionReason.trim()
+          ? user.rejectionReason.trim()
+          : 'Application criteria not met at this time.';
+        const formattedReason = rawReason.endsWith('.') ? rawReason : `${rawReason}.`;
         return res.status(403).json({
           success: false,
-          message: 'Your professional account is currently pending admin approval.',
-          pendingApproval: true
+          message: `Your professional application was not approved. Reason: ${formattedReason} You can apply again from the Interviewer Sign Up page.`,
+          rejected: true
         });
       }
-      if (user.approvalStatus === 'rejected') {
+      if (user.accountStatus === 'pending' || user.approvalStatus === 'pending') {
         return res.status(403).json({
           success: false,
-          message: 'Your professional application was not approved.',
-          rejected: true
+          message: 'Your professional application is awaiting administrator approval. You will be able to sign in once it is approved.',
+          pendingApproval: true
         });
       }
     }

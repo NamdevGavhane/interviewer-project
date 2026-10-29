@@ -57,6 +57,8 @@
 | [x] | B3 | Done | backend/middleware/validate.js | Added support for Zod v4 err.issues alongside err.errors so response message formats as "Validation error: field: message". |
 | [x] | B4 | Done | backend/middleware/rateLimiter.js | Added professionalSignupLimiter (5 req/hour per IP, skipped when NODE_ENV === 'test') and exported it. |
 | [x] | B5 | Done | backend/routes/userRoutes.js | Implemented POST /api/users/register-professional with rate limiters, validation, generic 409 on existing accounts, password check & waiting period enforcement on rejected re-apply, and admin in-app notification dispatch. |
+| [x] | B6 | Done | backend/routes/userRoutes.js, backend/middleware/auth.js | Resolved rejected-before-pending order bug in login route and requireActiveProfessional middleware; formatted rejected reason with trailing full stop and re-apply guidance, and standardized pending message. |
+
 
 
 
