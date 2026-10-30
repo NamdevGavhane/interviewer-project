@@ -7,25 +7,42 @@ import ErrorBoundary from './components/ErrorBoundary';
 import SidebarLayout from './layouts/SidebarLayout';
 import './index.css';
 
+// Helper for resilient lazy imports (handles transient network drops & dev server restarts)
+const lazyRetry = (importFn) =>
+  lazy(() =>
+    importFn().catch((err) => {
+      if (typeof window !== 'undefined' && err?.message && (err.message.includes('dynamically imported module') || err.message.includes('Failed to fetch'))) {
+        const key = 'chunk_reload_' + window.location.pathname;
+        const lastReload = sessionStorage.getItem(key);
+        if (!lastReload || Date.now() - parseInt(lastReload, 10) > 10000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          window.location.reload();
+          return new Promise(() => {});
+        }
+      }
+      throw err;
+    })
+  );
+
 // Route-level code-splitting with React.lazy
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Login = lazy(() => import('./pages/Login'));
-const Booking = lazy(() => import('./pages/Booking'));
-const VideoRoom = lazy(() => import('./pages/VideoRoom'));
-const Profile = lazy(() => import('./pages/Profile'));
-const FeedbackReport = lazy(() => import('./pages/FeedbackReport'));
-const Interviews = lazy(() => import('./pages/Interviews'));
-const AIInterview = lazy(() => import('./pages/AIInterview'));
-const AcceptInvitation = lazy(() => import('./pages/AcceptInvitation'));
-const ProfessionalLogin = lazy(() => import('./pages/ProfessionalLogin'));
-const ProfessionalSignup = lazy(() => import('./pages/ProfessionalSignup'));
-const Availability = lazy(() => import('./pages/professional/Availability'));
-const Earnings = lazy(() => import('./pages/professional/Earnings'));
-const PaymentHistory = lazy(() => import('./pages/payment/PaymentHistory'));
-const CancelBooking = lazy(() => import('./pages/booking/CancelBooking'));
-const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
-const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
-const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Dashboard = lazyRetry(() => import('./pages/Dashboard'));
+const Login = lazyRetry(() => import('./pages/Login'));
+const Booking = lazyRetry(() => import('./pages/Booking'));
+const VideoRoom = lazyRetry(() => import('./pages/VideoRoom'));
+const Profile = lazyRetry(() => import('./pages/Profile'));
+const FeedbackReport = lazyRetry(() => import('./pages/FeedbackReport'));
+const Interviews = lazyRetry(() => import('./pages/Interviews'));
+const AIInterview = lazyRetry(() => import('./pages/AIInterview'));
+const AcceptInvitation = lazyRetry(() => import('./pages/AcceptInvitation'));
+const ProfessionalLogin = lazyRetry(() => import('./pages/ProfessionalLogin'));
+const ProfessionalSignup = lazyRetry(() => import('./pages/ProfessionalSignup'));
+const Availability = lazyRetry(() => import('./pages/professional/Availability'));
+const Earnings = lazyRetry(() => import('./pages/professional/Earnings'));
+const PaymentHistory = lazyRetry(() => import('./pages/payment/PaymentHistory'));
+const CancelBooking = lazyRetry(() => import('./pages/booking/CancelBooking'));
+const AdminDashboard = lazyRetry(() => import('./pages/admin/AdminDashboard'));
+const VerifyEmail = lazyRetry(() => import('./pages/VerifyEmail'));
+const ResetPassword = lazyRetry(() => import('./pages/ResetPassword'));
 
 // Premium Suspense Page Loading Fallback
 const PageLoadingFallback = () => (
