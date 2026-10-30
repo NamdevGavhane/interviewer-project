@@ -36,13 +36,27 @@ const VideoRoom = () => {
   const navigate = useNavigate();
 
   const { user: currentUserData, role: authRole } = useAuth();
+
+  // Prioritize URL role query param so Candidate and Professional links work predictably
+  const initialRole = (roleParam === 'interviewer' || roleParam === 'candidate')
+    ? roleParam
+    : (authRole === 'professional' ? 'interviewer' : 'candidate');
+
+  const [currentRole, setCurrentRole] = useState(initialRole);
   const [meetingRoomId, setMeetingRoomId] = useState(interviewId || searchParams.get('room') || 'main-session');
-  const [currentRole, setCurrentRole] = useState(authRole === 'professional' ? 'interviewer' : 'candidate');
   const [iceServers, setIceServers] = useState([
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
   ]);
   const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
+
+  // Sync role if URL query param changes
+  useEffect(() => {
+    if (roleParam === 'interviewer' || roleParam === 'candidate') {
+      setCurrentRole(roleParam);
+    }
+  }, [roleParam]);
 
   // State
   const [interview, setInterview] = useState(null);
@@ -101,8 +115,9 @@ const VideoRoom = () => {
   const isCallConnectedRef = useRef(false);
   const isCallingRef = useRef(false);
 
-  // Clean IDs for PeerJS (alphanumeric only)
-  const cleanRoomId = (meetingRoomId || 'session').replace(/[^a-zA-Z0-9]/g, '');
+  // Canonical ID for PeerJS: strictly interviewId if present so it never changes halfway
+  const canonicalRoomId = interviewId || searchParams.get('room') || meetingRoomId || 'session';
+  const cleanRoomId = canonicalRoomId.replace(/[^a-zA-Z0-9]/g, '');
   const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
   const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
 
@@ -138,9 +153,11 @@ const VideoRoom = () => {
         .then(res => {
           const data = res.data;
           setInterview(data.interview);
-          setCurrentRole(data.userRole);
+          if (!roleParam && data.userRole) {
+            setCurrentRole(data.userRole);
+          }
           if (data.iceServers) setIceServers(data.iceServers);
-          if (data.meetingRoomId) setMeetingRoomId(data.meetingRoomId);
+          if (data.meetingRoomId && !interviewId) setMeetingRoomId(data.meetingRoomId);
           if (data.interview?.questions?.length) {
             setLiveQuestions(data.interview.questions);
           }
@@ -301,10 +318,16 @@ const VideoRoom = () => {
     // 2. Remote video playback
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = stream;
-      remoteVideoRef.current.volume = 1.0;
-      remoteVideoRef.current.muted = false;
       remoteVideoRef.current.play().catch(e => console.warn('Remote video play warning:', e));
     }
+
+    // 3. Listen for dynamically added video/audio tracks
+    stream.onaddtrack = () => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+    };
   };
 
   // Ensure local video always plays when cameraActive or ref updates
@@ -316,10 +339,20 @@ const VideoRoom = () => {
     }
   }, [cameraActive, isVideoOn]);
 
-  // Ensure remote audio/video plays when remoteStream updates
+  // Ensure remote audio/video plays when remoteStream updates or component renders
   useEffect(() => {
     if (remoteStream) {
       playRemoteMedia(remoteStream);
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        const tryPlay = () => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.play().catch(e => console.warn('Remote video play:', e));
+          }
+        };
+        remoteVideoRef.current.onloadedmetadata = tryPlay;
+        tryPlay();
+      }
     }
   }, [remoteStream, isCallConnected]);
 
@@ -453,7 +486,7 @@ const VideoRoom = () => {
           incomingCall.answer();
         }
 
-        incomingCall.on('stream', (stream) => {
+        const handleIncomingStream = (stream) => {
           console.log('Received remote live stream with tracks:', stream.getTracks().map(t => `${t.kind}: enabled=${t.enabled}`));
           setRemoteStream(stream);
           setIsCallConnected(true);
@@ -461,7 +494,17 @@ const VideoRoom = () => {
           isCallingRef.current = false;
           setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
           playRemoteMedia(stream);
-        });
+        };
+
+        incomingCall.on('stream', handleIncomingStream);
+
+        if (incomingCall.peerConnection) {
+          incomingCall.peerConnection.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+              handleIncomingStream(event.streams[0]);
+            }
+          };
+        }
 
         incomingCall.on('close', () => {
           if (currentCallRef.current === incomingCall) {
@@ -498,8 +541,10 @@ const VideoRoom = () => {
         }
       });
 
-      // Stable Periodic Check: Retries connection until both participants are connected
+      // Stable Periodic Check: candidate initiates calls, interviewer acts as fallback after 3 cycles to prevent glare
+      let retryCount = 0;
       callRetryInterval = setInterval(() => {
+        retryCount++;
         if (
           !isCallConnectedRef.current && 
           !isCallingRef.current && 
@@ -507,9 +552,11 @@ const VideoRoom = () => {
           !peerRef.current.destroyed && 
           mediaStreamRef.current
         ) {
-          callPartner();
+          if (currentRole === 'candidate' || retryCount > 3) {
+            callPartner();
+          }
         }
-      }, 3500);
+      }, 3000);
 
     } catch (e) {
       console.error('PeerJS init failed:', e);
@@ -567,7 +614,7 @@ const VideoRoom = () => {
       if (call) {
         currentCallRef.current = call;
 
-        call.on('stream', (stream) => {
+        const handleOutgoingStream = (stream) => {
           console.log('Remote stream connected from outgoing call with tracks:', stream.getTracks().map(t => `${t.kind}: enabled=${t.enabled}`));
           setRemoteStream(stream);
           setIsCallConnected(true);
@@ -575,7 +622,17 @@ const VideoRoom = () => {
           isCallingRef.current = false;
           setConnectionStatus(`🟢 Live Call Connected with ${partnerName}`);
           playRemoteMedia(stream);
-        });
+        };
+
+        call.on('stream', handleOutgoingStream);
+
+        if (call.peerConnection) {
+          call.peerConnection.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+              handleOutgoingStream(event.streams[0]);
+            }
+          };
+        }
 
         call.on('close', () => {
           if (currentCallRef.current === call) {
@@ -750,6 +807,15 @@ const VideoRoom = () => {
         time: userMsg.time
       });
     }
+  };
+
+  // Switch active role and update URL
+  const handleSwitchRole = (newRole) => {
+    if (newRole === currentRole) return;
+    setCurrentRole(newRole);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('role', newRole);
+    setSearchParams(newParams);
   };
 
   // Copy Room Link
@@ -1015,7 +1081,7 @@ const VideoRoom = () => {
             <span className="text-gray-400 text-xs px-1">You are:</span>
             <button
               type="button"
-              onClick={() => setCurrentRole('candidate')}
+              onClick={() => handleSwitchRole('candidate')}
               className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${currentRole === 'candidate' ? 'bg-primary text-white shadow' : 'text-gray-300 hover:text-white'}`}
               style={{ border: 'none', cursor: 'pointer' }}
             >
@@ -1023,7 +1089,7 @@ const VideoRoom = () => {
             </button>
             <button
               type="button"
-              onClick={() => setCurrentRole('interviewer')}
+              onClick={() => handleSwitchRole('interviewer')}
               className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${currentRole === 'interviewer' ? 'bg-primary text-white shadow' : 'text-gray-300 hover:text-white'}`}
               style={{ border: 'none', cursor: 'pointer' }}
             >
@@ -1109,6 +1175,15 @@ const VideoRoom = () => {
                 <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
                   Waiting for {partnerName} to stream video...
                 </span>
+                <button
+                  type="button"
+                  onClick={callPartner}
+                  className="btn btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 shadow-lg"
+                  style={{ borderRadius: '20px' }}
+                >
+                  <RefreshCw size={13} className={isCallingRef.current ? "animate-spin" : ""} />
+                  <span>Connect Live Video</span>
+                </button>
               </div>
             )}
 
