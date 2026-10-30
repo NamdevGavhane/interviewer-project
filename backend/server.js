@@ -5,6 +5,19 @@ const path = require('path');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
+const dns = require('dns');
+
+// Prioritize IPv4 DNS lookup to prevent ENOTFOUND on systems with unroutable IPv6 NAT64 (e.g. MongoDB Atlas shards)
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
+if (process.env.NODE_ENV !== 'test') {
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+  } catch (dnsErr) {
+    // Keep standard system resolver if custom DNS cannot be configured
+  }
+}
 
 // Load environment variables
 require('dotenv').config();
@@ -248,7 +261,8 @@ const connectDB = async () => {
     await mongoose.connect(MONGO_URI, {
       serverSelectionTimeoutMS: 8000,
       socketTimeoutMS: 45000,
-      maxPoolSize: 10
+      maxPoolSize: 10,
+      family: 4
     });
     console.log('Connected to MongoDB successfully');
     isConnecting = false;

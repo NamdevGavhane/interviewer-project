@@ -79,7 +79,7 @@ const paymentSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['upi', 'card', 'netbanking', 'wallet', 'razorpay', 'free'],
+    enum: ['upi', 'card', 'netbanking', 'wallet', 'razorpay', 'free', 'test_simulator', 'simulator'],
     default: 'razorpay',
   },
   paymentDetails: {

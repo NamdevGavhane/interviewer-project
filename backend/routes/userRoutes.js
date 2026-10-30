@@ -347,7 +347,17 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
     const { email, password } = req.body;
     const cleanEmail = email.trim().toLowerCase();
 
-    const user = await User.findOne({ email: cleanEmail });
+    let user;
+    try {
+      user = await User.findOne({ email: cleanEmail });
+    } catch (dbErr) {
+      if (dbErr.message && (dbErr.message.includes('getaddrinfo') || dbErr.message.includes('ENOTFOUND') || dbErr.message.includes('MongoServerSelectionError'))) {
+        await new Promise(r => setTimeout(r, 600));
+        user = await User.findOne({ email: cleanEmail });
+      } else {
+        throw dbErr;
+      }
+    }
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -430,6 +440,19 @@ router.post('/login', authLimiter, validate(loginSchema), async (req, res) => {
       }
     });
   } catch (err) {
+    const isNetworkOrDnsError = err.message && (
+      err.message.includes('getaddrinfo') ||
+      err.message.includes('ENOTFOUND') ||
+      err.message.includes('ETIMEDOUT') ||
+      err.message.includes('MongoServerSelectionError') ||
+      err.message.includes('topology')
+    );
+    if (isNetworkOrDnsError) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection momentarily unavailable. Please check your internet connection and try again.'
+      });
+    }
     res.status(500).json({ success: false, message: 'Login error: ' + err.message });
   }
 });
