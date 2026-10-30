@@ -106,22 +106,7 @@ const Interviews = () => {
     if (['completed', 'cancelled', 'expired', 'interviewer_no_show', 'candidate_no_show'].includes(item.status)) {
       return { canJoin: false, label: 'Ended', reason: 'ended' };
     }
-    if (!item.startTime) {
-      return { canJoin: true, label: 'Join Room', reason: 'active' };
-    }
-
-    const now = Date.now();
-    const startMs = new Date(item.startTime).getTime();
-    const endMs = item.endTime ? new Date(item.endTime).getTime() : startMs + 45 * 60 * 1000;
-    const earliest = startMs - 10 * 60 * 1000;
-    const latest = endMs + 15 * 60 * 1000;
-
-    if (now < earliest) {
-      return { canJoin: false, label: 'Opens 10m before', reason: 'not_started' };
-    }
-    if (now > latest) {
-      return { canJoin: false, label: 'Ended', reason: 'ended' };
-    }
+    // Room is always open for both candidate & interviewer
     return { canJoin: true, label: 'Join Room', reason: 'active' };
   };
 

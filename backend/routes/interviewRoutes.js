@@ -387,32 +387,9 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
       });
     }
 
-    // Timing window check strictly [startTime - joinOpensMinutesBefore, endTime + joinGraceMinutesAfter]
-    const settings = await Settings.getSettings();
-    const joinOpensMinutesBefore = Number(settings.joinOpensMinutesBefore ?? 10);
-    const joinGraceMinutesAfter = Number(settings.joinGraceMinutesAfter ?? 15);
-    const slotDuration = Number(settings.slotDurationMinutes ?? 45);
-
+    // Timing window check: Room is open for both candidate & interviewer anytime before conclusion
     if (!isAdmin && interview.startTime) {
-      const now = Date.now();
-      const startTimeMs = new Date(interview.startTime).getTime();
-      const endTimeMs = interview.endTime 
-        ? new Date(interview.endTime).getTime() 
-        : startTimeMs + slotDuration * 60 * 1000;
-
-      const earliestJoinTime = startTimeMs - joinOpensMinutesBefore * 60 * 1000;
-      const latestJoinTime = endTimeMs + joinGraceMinutesAfter * 60 * 1000;
-
-      if (now < earliestJoinTime) {
-        const minutesUntilOpen = Math.ceil((earliestJoinTime - now) / 60000);
-        return res.status(403).json({
-          success: false,
-          notStarted: true,
-          message: `The interview room is not open yet. It will open ${joinOpensMinutesBefore} minutes before the scheduled start time (in approximately ${minutesUntilOpen} minutes).`
-        });
-      }
-
-      if (now > latestJoinTime || ['completed', 'cancelled', 'expired', 'interviewer_no_show', 'candidate_no_show'].includes(interview.status)) {
+      if (['completed', 'cancelled', 'expired', 'interviewer_no_show', 'candidate_no_show'].includes(interview.status)) {
         return res.status(403).json({
           success: false,
           sessionEnded: true,
