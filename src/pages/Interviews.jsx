@@ -152,19 +152,19 @@ const Interviews = () => {
 
       {/* Tabs */}
       <div className="tabs-container">
-        <button 
+        <button
           className={`tab-button ${activeTab === 'upcoming' ? 'active' : ''}`}
           onClick={() => setActiveTab('upcoming')}
         >
           Upcoming Sessions ({upcomingInterviews.length})
         </button>
-        <button 
+        <button
           className={`tab-button ${activeTab === 'past' ? 'active' : ''}`}
           onClick={() => setActiveTab('past')}
         >
           Past & Completed ({pastInterviews.length})
         </button>
-        <button 
+        <button
           className={`tab-button ${activeTab === 'invoices' ? 'active' : ''}`}
           onClick={() => setActiveTab('invoices')}
         >
@@ -309,8 +309,8 @@ const Interviews = () => {
           <Calendar size={48} className="text-muted mx-auto mb-4" style={{ margin: '0 auto 1rem auto' }} />
           <h3 className="text-lg font-bold mb-2">No {activeTab} interviews found</h3>
           <p className="text-muted mb-6">
-            {activeTab === 'upcoming' 
-              ? 'You do not have any upcoming interviews scheduled right now.' 
+            {activeTab === 'upcoming'
+              ? 'You do not have any upcoming interviews scheduled right now.'
               : 'You have not completed any interview sessions yet.'}
           </p>
           {userRole === 'candidate' && (
@@ -324,14 +324,14 @@ const Interviews = () => {
           {displayedList.map(item => {
             const partner = userRole === 'professional' ? item.candidateId : item.interviewerId;
             const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
-            const partnerSub = userRole === 'professional' 
-              ? 'Candidate' 
+            const partnerSub = userRole === 'professional'
+              ? 'Candidate'
               : (partner?.title || 'Technical Interviewer');
 
             return (
               <div key={item._id} className="card flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-4">
-                  <div 
+                  <div
                     style={{
                       width: '52px',
                       height: '52px',
@@ -381,7 +381,7 @@ const Interviews = () => {
 
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Invoice Download Action */}
-                    <button 
+                    <button
                       type="button"
                       className="btn btn-outline flex items-center gap-1.5 text-xs py-1.5 px-3"
                       title="Download Official Tax Invoice PDF"
@@ -416,8 +416,8 @@ const Interviews = () => {
                               </button>
                             </Link>
                           ) : (
-                            <button 
-                              className="btn btn-secondary flex items-center gap-1.5 opacity-60 cursor-not-allowed" 
+                            <button
+                              className="btn btn-secondary flex items-center gap-1.5 opacity-60 cursor-not-allowed"
                               disabled
                               title={joinInfo.reason === 'not_started' ? 'Room opens 10 minutes prior to scheduled start' : 'Session window concluded'}
                             >
@@ -426,8 +426,8 @@ const Interviews = () => {
                             </button>
                           )}
                           {joinInfo.reason !== 'ended' && (
-                            <button 
-                              className="btn btn-outline" 
+                            <button
+                              className="btn btn-outline"
                               style={{ color: 'var(--danger)', borderColor: 'rgba(234, 67, 53, 0.3)' }}
                               onClick={() => handleCancelInterview(item._id)}
                               disabled={actionLoading === item._id}
@@ -447,7 +447,7 @@ const Interviews = () => {
                             <span>View Q&A Report</span>
                           </button>
                         </Link>
-                        <button 
+                        <button
                           type="button"
                           className="btn btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 shadow-sm"
                           onClick={() => handleDownloadReportForInterview(item)}

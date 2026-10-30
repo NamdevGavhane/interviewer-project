@@ -170,6 +170,7 @@ const Booking = () => {
         amountPaise: orderData.amountPaise,
         holdMinutes,
         keyId: orderData.keyId,
+        isSimulated: Boolean(orderData.isSimulated),
         interviewer: selectedInterviewer,
         selectedDate: selectedSlotObj.date,
         selectedSlot: selectedSlotObj.slotLabel,

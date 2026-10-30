@@ -78,10 +78,40 @@ const PaymentModal = ({
     orderId,
     keyId,
     totalAmount = 0,
-    freeSession = false
+    freeSession = false,
+    isSimulated = false
   } = bookingDetails;
 
   const isFree = freeSession || totalAmount === 0;
+  const isSimulationMode = Boolean(isSimulated) || !keyId || keyId === 'rzp_test_simulator';
+
+  // Process simulated test payment (when keys are not configured or test simulator is active)
+  const handleSimulatedPayment = async () => {
+    setError(null);
+    setProcessing(true);
+    setStatusMessage('Simulating test payment and confirming booking...');
+
+    try {
+      const res = await apiClient.post('/api/payment/verify-and-book', {
+        interviewerId: interviewer._id,
+        date: selectedDate,
+        timeSlot: selectedSlot,
+        slotId,
+        topic,
+        notes,
+        orderId,
+        paymentId: `pay_sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        signature: 'simulated_test_signature',
+        paymentMethod: 'test_simulator'
+      });
+
+      onSuccess(res.data);
+    } catch (err) {
+      setError(err.response?.data?.message || err.message || 'Payment simulation failed.');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // Process free session booking
   const handleConfirmFree = async () => {
@@ -233,10 +263,10 @@ const PaymentModal = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white">
-                {isFree ? 'Confirm Free Session' : 'Secure Checkout'}
+                {isFree ? 'Confirm Free Session' : isSimulationMode ? 'Test Payment Simulator' : 'Secure Checkout'}
               </h3>
               <p className="text-xs text-slate-400">
-                {isFree ? 'Complimentary Mock Interview' : 'Official Razorpay Gateway'}
+                {isFree ? 'Complimentary Mock Interview' : isSimulationMode ? 'Instant Test Simulation Mode' : 'Official Razorpay Gateway'}
               </p>
             </div>
           </div>
@@ -335,6 +365,18 @@ const PaymentModal = ({
                 <span className="text-sm font-bold text-slate-900">Total Payable</span>
                 <span className="text-lg font-bold text-primary">₹{totalAmount} INR</span>
               </div>
+
+              {isSimulationMode && (
+                <div className="mt-3 p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-950">
+                  <div className="flex items-center gap-1.5 font-bold mb-1 text-indigo-700">
+                    <Sparkles size={14} />
+                    <span>Instant Test Simulation Mode Active</span>
+                  </div>
+                  <p className="text-[11px] text-indigo-800 leading-relaxed">
+                    Live Razorpay credentials are not yet set in environment. Test simulation allows you to instantly complete the booking, test video rooms, AI mock interviews, and invoice generation without any real money charges.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -356,6 +398,31 @@ const PaymentModal = ({
                 <>
                   <CheckCircle2 size={17} />
                   <span>Confirm Free Booking</span>
+                </>
+              )}
+            </button>
+          ) : isSimulationMode ? (
+            <button
+              type="button"
+              onClick={handleSimulatedPayment}
+              disabled={processing}
+              className="btn btn-primary w-full py-3.5 text-sm font-bold flex items-center justify-center gap-2 shadow-sm"
+              style={{
+                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+                border: 'none',
+                color: 'white',
+                boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)'
+              }}
+            >
+              {processing ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  <span>{statusMessage || 'Simulating payment...'}</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  <span>Complete Test Booking (₹{totalAmount}) 💳</span>
                 </>
               )}
             </button>
@@ -383,7 +450,7 @@ const PaymentModal = ({
           {/* Security strip */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-center gap-2 text-[11px] text-slate-400">
             <ShieldCheck size={14} className="text-emerald-500" />
-            <span>256-Bit SSL Encrypted • Powered by Razorpay Standard</span>
+            <span>{isSimulationMode ? 'DevSphere Test Sandbox Gateway Active • Safe Development Mode' : '256-Bit SSL Encrypted • Powered by Razorpay Standard'}</span>
           </div>
         </div>
       </div>
