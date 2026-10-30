@@ -47,7 +47,16 @@ const VideoRoom = () => {
   const [iceServers, setIceServers] = useState([
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun2.l.google.com:19302' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp'
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]);
   const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
 
@@ -151,12 +160,13 @@ const VideoRoom = () => {
       if (!interviewId) return;
       apiClient.get(`/api/interviews/${interviewId}/room-access`)
         .then(res => {
-          const data = res.data;
-          setInterview(data.interview);
+          const data = res?.data || res;
+          if (!data) return;
+          if (data.interview) setInterview(data.interview);
           if (!roleParam && data.userRole) {
             setCurrentRole(data.userRole);
           }
-          if (data.iceServers) setIceServers(data.iceServers);
+          if (data.iceServers && Array.isArray(data.iceServers)) setIceServers(data.iceServers);
           if (data.meetingRoomId && !interviewId) setMeetingRoomId(data.meetingRoomId);
           if (data.interview?.questions?.length) {
             setLiveQuestions(data.interview.questions);
@@ -170,7 +180,7 @@ const VideoRoom = () => {
           }
         })
         .catch(err => {
-          const errData = err.response?.data;
+          const errData = err.response?.data || err.data;
           const msg = errData?.message || err.message;
           const isEnded = errData?.sessionEnded || (typeof msg === 'string' && msg.toLowerCase().includes('session ended'));
 
@@ -179,7 +189,9 @@ const VideoRoom = () => {
             setMediaError('session ended');
             teardownMediaTracks();
           } else {
-            setMediaError(msg || 'Access Denied: You cannot join this interview room.');
+            if (err.status === 403 || err.status === 401 || err.status === 404) {
+              setMediaError(msg || 'Access Denied: You cannot join this interview room.');
+            }
           }
         });
     };
@@ -212,18 +224,28 @@ const VideoRoom = () => {
     try {
       setMediaError(null);
       setConnectionStatus('Requesting camera & microphone access...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 },
-          facingMode: 'user'
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: false, // Prevents Windows audio enhancements from aggressively silencing voice
-          autoGainControl: true
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            width: { ideal: 1280 }, 
+            height: { ideal: 720 },
+            facingMode: 'user'
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: false, // Prevents Windows audio enhancements from aggressively silencing voice
+            autoGainControl: true
+          }
+        });
+      } catch (firstErr) {
+        if (firstErr.name === 'OverconstrainedError' || firstErr.name === 'ConstraintNotSatisfiedError') {
+          console.warn('Constrained camera request failed, retrying with basic constraints...');
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } else {
+          throw firstErr;
         }
-      });
+      }
 
       // Explicitly ensure all audio tracks are unmuted and active
       stream.getAudioTracks().forEach(track => {
@@ -315,17 +337,26 @@ const VideoRoom = () => {
       }
     }
 
-    // 2. Remote video playback
+    // 2. Remote video playback (muted so Chrome/Safari never blocks hardware video decode)
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = stream;
-      remoteVideoRef.current.play().catch(e => console.warn('Remote video play warning:', e));
+      remoteVideoRef.current.muted = true;
+      const playPromise = remoteVideoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => console.warn('Remote video play warning:', e));
+      }
     }
 
     // 3. Listen for dynamically added video/audio tracks
     stream.onaddtrack = () => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = stream;
+        remoteVideoRef.current.muted = true;
         remoteVideoRef.current.play().catch(() => {});
+      }
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = stream;
+        remoteAudioRef.current.play().catch(() => {});
       }
     };
   };
@@ -345,8 +376,10 @@ const VideoRoom = () => {
       playRemoteMedia(remoteStream);
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.muted = true;
         const tryPlay = () => {
           if (remoteVideoRef.current) {
+            remoteVideoRef.current.muted = true;
             remoteVideoRef.current.play().catch(e => console.warn('Remote video play:', e));
           }
         };
@@ -366,7 +399,7 @@ const VideoRoom = () => {
           .catch(() => {});
       }
       if (remoteVideoRef.current && remoteVideoRef.current.srcObject) {
-        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.muted = true;
         remoteVideoRef.current.play().catch(() => {});
       }
     };
@@ -502,6 +535,22 @@ const VideoRoom = () => {
           incomingCall.peerConnection.ontrack = (event) => {
             if (event.streams && event.streams[0]) {
               handleIncomingStream(event.streams[0]);
+            } else if (event.track) {
+              const fallbackStream = new MediaStream([event.track]);
+              handleIncomingStream(fallbackStream);
+            }
+          };
+
+          incomingCall.peerConnection.oniceconnectionstatechange = () => {
+            const state = incomingCall.peerConnection.iceConnectionState;
+            console.log('Incoming call ICE state:', state);
+            if (state === 'disconnected' || state === 'failed') {
+              setIsCallConnected(false);
+              isCallConnectedRef.current = false;
+              isCallingRef.current = false;
+            } else if (state === 'connected' || state === 'completed') {
+              setIsCallConnected(true);
+              isCallConnectedRef.current = true;
             }
           };
         }
@@ -581,8 +630,12 @@ const VideoRoom = () => {
   }, [myPeerId, partnerPeerId, currentRole]);
 
   // Outgoing Call Function with robust audio/video verification
-  const callPartner = async () => {
+  const callPartner = async (force = false) => {
     if (!peerRef.current || peerRef.current.destroyed || peerRef.current.disconnected) return;
+    if (force) {
+      isCallConnectedRef.current = false;
+      isCallingRef.current = false;
+    }
     if (isCallConnectedRef.current || isCallingRef.current) return;
 
     let streamToCall = mediaStreamRef.current;
@@ -630,6 +683,22 @@ const VideoRoom = () => {
           call.peerConnection.ontrack = (event) => {
             if (event.streams && event.streams[0]) {
               handleOutgoingStream(event.streams[0]);
+            } else if (event.track) {
+              const fallbackStream = new MediaStream([event.track]);
+              handleOutgoingStream(fallbackStream);
+            }
+          };
+
+          call.peerConnection.oniceconnectionstatechange = () => {
+            const state = call.peerConnection.iceConnectionState;
+            console.log('Outbound call ICE state:', state);
+            if (state === 'disconnected' || state === 'failed') {
+              setIsCallConnected(false);
+              isCallConnectedRef.current = false;
+              isCallingRef.current = false;
+            } else if (state === 'connected' || state === 'completed') {
+              setIsCallConnected(true);
+              isCallConnectedRef.current = true;
             }
           };
         }
@@ -1152,6 +1221,7 @@ const VideoRoom = () => {
               ref={remoteVideoRef} 
               autoPlay 
               playsInline 
+              muted
               className="vr-remote-video"
               style={{ display: isCallConnected && remoteStream ? 'block' : 'none' }}
             />
@@ -1177,7 +1247,7 @@ const VideoRoom = () => {
                 </span>
                 <button
                   type="button"
-                  onClick={callPartner}
+                  onClick={() => callPartner(true)}
                   className="btn btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 shadow-lg"
                   style={{ borderRadius: '20px' }}
                 >
