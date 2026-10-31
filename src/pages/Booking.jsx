@@ -292,7 +292,7 @@ const Booking = () => {
           )}
 
           <div className="flex gap-3 justify-center">
-            <Link to={`/room?interviewId=${successBooking._id}&role=candidate`} className="flex-1">
+            <Link to={`/room?interviewId=${successBooking._id}`} className="flex-1">
               <button className="btn btn-primary w-full py-2.5">
                 Go to Video Room
               </button>

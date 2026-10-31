@@ -416,7 +416,10 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
     let iceServers = [];
     if (process.env.ICE_SERVERS) {
       try {
-        iceServers = JSON.parse(process.env.ICE_SERVERS);
+        const parsed = JSON.parse(process.env.ICE_SERVERS);
+        if (Array.isArray(parsed)) {
+          iceServers = parsed;
+        }
       } catch (e) {
         console.warn('[WEBRTC] Failed to parse ICE_SERVERS environment variable:', e.message);
       }
@@ -426,16 +429,7 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
       iceServers = [
         { urls: process.env.STUN_URL || 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        {
-          urls: [
-            'turn:openrelay.metered.ca:80',
-            'turn:openrelay.metered.ca:443',
-            'turn:openrelay.metered.ca:443?transport=tcp'
-          ],
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
+        { urls: 'stun:stun2.l.google.com:19302' }
       ];
     }
 
@@ -445,22 +439,30 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
         username: process.env.TURN_USERNAME || '',
         credential: process.env.TURN_CREDENTIAL || ''
       });
-    } else if (process.env.NODE_ENV === 'production') {
-      const hasTurn = Array.isArray(iceServers) && iceServers.some(s => {
-        const u = s.urls;
-        return typeof u === 'string' ? u.startsWith('turn:') : (Array.isArray(u) && u.some(entry => entry.startsWith('turn:')));
-      });
-      if (!hasTurn) {
-        console.warn('[WEBRTC WARNING] No TURN relay server configured in production. P2P WebRTC calls behind symmetric NAT/cellular networks will fail. Please configure TURN_URL, TURN_USERNAME, and TURN_CREDENTIAL in production environment.');
-      }
+    }
+
+    const hasTurn = Array.isArray(iceServers) && iceServers.some(s => {
+      const u = s?.urls;
+      return typeof u === 'string'
+        ? (u.startsWith('turn:') || u.startsWith('turns:'))
+        : (Array.isArray(u) && u.some(entry => typeof entry === 'string' && (entry.startsWith('turn:') || entry.startsWith('turns:'))));
+    });
+
+    let turnConfigured = true;
+    if (process.env.NODE_ENV === 'production' && !hasTurn) {
+      turnConfigured = false;
+      console.warn('[WEBRTC WARNING] No TURN relay server configured in production. Network relay not configured, video may fail on mobile networks.');
+    } else {
+      turnConfigured = hasTurn;
     }
 
     res.json({
       success: true,
       meetingRoomId: interview.meetingRoomId || `room_${interview._id}`,
       iceServers,
+      turnConfigured,
       interview,
-      userRole: isInterviewer ? 'interviewer' : 'candidate'
+      userRole: isAdmin ? 'admin' : (isInterviewer ? 'interviewer' : 'candidate')
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

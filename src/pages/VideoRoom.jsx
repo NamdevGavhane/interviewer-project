@@ -10,18 +10,18 @@ import {
   Send, 
   X, 
   AlertCircle,
+  AlertTriangle,
   FileText,
   Copy,
   Check,
   RefreshCw,
-  Radio,
-  Users,
   ListChecks,
   Plus,
   Trash2,
   Sparkles,
-  CheckCircle2,
-  User
+  User,
+  ShieldAlert,
+  Loader2
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -30,42 +30,26 @@ import Avatar from '../components/Avatar';
 import './VideoRoom.css';
 
 const VideoRoom = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const interviewId = searchParams.get('interviewId');
-  const roleParam = searchParams.get('role');
   const navigate = useNavigate();
 
-  const { user: currentUserData, role: authRole } = useAuth();
+  const { user: currentUserData } = useAuth();
 
-  // Prioritize URL role query param so Candidate and Professional links work predictably
-  const initialRole = (roleParam === 'interviewer' || roleParam === 'candidate')
-    ? roleParam
-    : (authRole === 'professional' ? 'interviewer' : 'candidate');
-
-  const [currentRole, setCurrentRole] = useState(initialRole);
+  // Role and network config come strictly from the server (room-access)
+  const [currentRole, setCurrentRole] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [roomAccessLoaded, setRoomAccessLoaded] = useState(false);
+  const [turnConfigured, setTurnConfigured] = useState(true);
   const [meetingRoomId, setMeetingRoomId] = useState(interviewId || searchParams.get('room') || 'main-session');
-  const [iceServers, setIceServers] = useState([
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp'
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ]);
-  const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
+  const [iceServers, setIceServers] = useState([]);
+  const iceServersRef = useRef(null);
 
-  // Sync role if URL query param changes
-  useEffect(() => {
-    if (roleParam === 'interviewer' || roleParam === 'candidate') {
-      setCurrentRole(roleParam);
-    }
-  }, [roleParam]);
+  // Diagnostics Strip State
+  const [iceState, setIceState] = useState('new');
+  const [isRelayUsed, setIsRelayUsed] = useState(false);
+
+  const partnerRole = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
 
   // State
   const [interview, setInterview] = useState(null);
@@ -127,8 +111,8 @@ const VideoRoom = () => {
   // Canonical ID for PeerJS: strictly interviewId if present so it never changes halfway
   const canonicalRoomId = interviewId || searchParams.get('room') || meetingRoomId || 'session';
   const cleanRoomId = canonicalRoomId.replace(/[^a-zA-Z0-9]/g, '');
-  const myPeerId = `ip-${cleanRoomId}-${currentRole}`;
-  const partnerPeerId = `ip-${cleanRoomId}-${partnerRole}`;
+  const myPeerId = currentRole ? `ip-${cleanRoomId}-${currentRole}` : '';
+  const partnerPeerId = currentRole ? `ip-${cleanRoomId}-${partnerRole}` : '';
 
   // Helper to teardown all active media tracks cleanly (M2)
   const teardownMediaTracks = () => {
@@ -163,10 +147,24 @@ const VideoRoom = () => {
           const data = res?.data || res;
           if (!data) return;
           if (data.interview) setInterview(data.interview);
-          if (!roleParam && data.userRole) {
+          if (data.userRole === 'admin') {
+            setIsAdmin(true);
+            setRoomAccessLoaded(true);
+            return;
+          }
+          if (data.userRole) {
             setCurrentRole(data.userRole);
           }
-          if (data.iceServers && Array.isArray(data.iceServers)) setIceServers(data.iceServers);
+          if (data.iceServers && Array.isArray(data.iceServers)) {
+            const iceString = JSON.stringify(data.iceServers);
+            if (iceString !== JSON.stringify(iceServersRef.current)) {
+              iceServersRef.current = data.iceServers;
+              setIceServers(data.iceServers);
+            }
+          }
+          if (typeof data.turnConfigured === 'boolean') {
+            setTurnConfigured(data.turnConfigured);
+          }
           if (data.meetingRoomId && !interviewId) setMeetingRoomId(data.meetingRoomId);
           if (data.interview?.questions?.length) {
             setLiveQuestions(data.interview.questions);
@@ -178,8 +176,10 @@ const VideoRoom = () => {
               time: m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Saved'
             })));
           }
+          setRoomAccessLoaded(true);
         })
         .catch(err => {
+          setRoomAccessLoaded(true);
           const errData = err.response?.data || err.data;
           const msg = errData?.message || err.message;
           const isEnded = errData?.sessionEnded || (typeof msg === 'string' && msg.toLowerCase().includes('session ended'));
@@ -203,6 +203,60 @@ const VideoRoom = () => {
       if (pollInterval) clearInterval(pollInterval);
     };
   }, [interviewId]);
+
+  // WebRTC Stats polling to detect relay candidates and ICE connection state (pc.getStats)
+  useEffect(() => {
+    const statsInterval = setInterval(async () => {
+      const pc = currentCallRef.current?.peerConnection;
+      if (!pc) {
+        if (!isCallConnectedRef.current) {
+          setIsRelayUsed(false);
+        }
+        return;
+      }
+
+      if (pc.iceConnectionState) {
+        setIceState(pc.iceConnectionState);
+      }
+
+      try {
+        const stats = await pc.getStats();
+        let relayActive = false;
+        let foundNominatedPair = false;
+
+        stats.forEach(report => {
+          if (
+            report.type === 'candidate-pair' &&
+            (report.selected || report.nominated || report.state === 'succeeded')
+          ) {
+            foundNominatedPair = true;
+            const local = stats.get(report.localCandidateId);
+            const remote = stats.get(report.remoteCandidateId);
+            if (local?.candidateType === 'relay' || remote?.candidateType === 'relay') {
+              relayActive = true;
+            }
+          }
+        });
+
+        if (!foundNominatedPair) {
+          stats.forEach(report => {
+            if (
+              (report.type === 'local-candidate' || report.type === 'remote-candidate') &&
+              report.candidateType === 'relay'
+            ) {
+              relayActive = true;
+            }
+          });
+        }
+
+        setIsRelayUsed(relayActive);
+      } catch {
+        // Stats read errors during renegotiation can be safely ignored
+      }
+    }, 2000);
+
+    return () => clearInterval(statsInterval);
+  }, []);
 
   // 2. Timer effect
   useEffect(() => {
@@ -444,6 +498,12 @@ const VideoRoom = () => {
     setIsCallConnected(false);
     setRemoteStream(null);
 
+    // Guard: Do not initialise PeerJS until GET /api/interviews/:id/room-access has succeeded,
+    // and never initialise PeerJS for admins
+    if (!roomAccessLoaded || isAdmin || !currentRole || !myPeerId) {
+      return;
+    }
+
     const initPeer = async () => {
       try {
         setConnectionStatus(`Connecting as ${currentRole}...`);
@@ -544,6 +604,7 @@ const VideoRoom = () => {
           incomingCall.peerConnection.oniceconnectionstatechange = () => {
             const state = incomingCall.peerConnection.iceConnectionState;
             console.log('Incoming call ICE state:', state);
+            setIceState(state);
             if (state === 'disconnected' || state === 'failed') {
               setIsCallConnected(false);
               isCallConnectedRef.current = false;
@@ -627,7 +688,7 @@ const VideoRoom = () => {
         peerInstance.destroy();
       }
     };
-  }, [myPeerId, partnerPeerId, currentRole]);
+  }, [roomAccessLoaded, isAdmin, currentRole, myPeerId, partnerPeerId, iceServers]);
 
   // Outgoing Call Function with robust audio/video verification
   const callPartner = async (force = false) => {
@@ -692,6 +753,7 @@ const VideoRoom = () => {
           call.peerConnection.oniceconnectionstatechange = () => {
             const state = call.peerConnection.iceConnectionState;
             console.log('Outbound call ICE state:', state);
+            setIceState(state);
             if (state === 'disconnected' || state === 'failed') {
               setIsCallConnected(false);
               isCallConnectedRef.current = false;
@@ -878,19 +940,9 @@ const VideoRoom = () => {
     }
   };
 
-  // Switch active role and update URL
-  const handleSwitchRole = (newRole) => {
-    if (newRole === currentRole) return;
-    setCurrentRole(newRole);
-    const newParams = new URLSearchParams(searchParams);
-    newParams.set('role', newRole);
-    setSearchParams(newParams);
-  };
-
-  // Copy Room Link
+  // Copy Room Link (server-authoritative: no role parameter)
   const handleCopyRoomLink = () => {
-    const partnerRoleToPass = currentRole === 'interviewer' ? 'candidate' : 'interviewer';
-    const link = `${window.location.origin}/room?interviewId=${interviewId || cleanRoomId}&role=${partnerRoleToPass}`;
+    const link = `${window.location.origin}/room?interviewId=${interviewId || cleanRoomId}`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(link);
       setCopiedLink(true);
@@ -1048,6 +1100,38 @@ const VideoRoom = () => {
     ? (isInterviewer ? interview.candidateId?.avatar : interview.interviewerId?.avatar)
     : '';
 
+  if (isAdmin) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090d16', color: 'white', padding: '2rem' }}>
+        <div style={{ maxWidth: '480px', width: '100%', textAlign: 'center', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '2.5rem 2rem' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto' }}>
+            <ShieldAlert size={32} />
+          </div>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 'bold', marginBottom: '0.75rem', color: 'white' }}>Admins cannot join live sessions</h2>
+          <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '2rem' }}>
+            Live mock interview sessions are reserved strictly for the registered candidate and assigned technical interviewer to protect session privacy.
+          </p>
+          <Link to="/admin">
+            <button className="btn btn-primary" style={{ padding: '0.65rem 1.5rem', borderRadius: '8px' }}>
+              Return to Admin Dashboard
+            </button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!roomAccessLoaded && !mediaError && !sessionEnded) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090d16', color: 'white', padding: '2rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#94a3b8', fontSize: '0.95rem' }}>
+          <Loader2 size={22} className="animate-spin text-primary" />
+          <span>Verifying room access and network configuration...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (sessionEnded) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#090d16', color: 'white', padding: '2rem' }}>
@@ -1135,35 +1219,19 @@ const VideoRoom = () => {
 
         {/* Room Info & Controls */}
         <div className="flex items-center gap-4">
-          {/* Role Switcher Pill */}
+          {/* Server-Assigned Role Badge */}
           <div 
+            className="flex items-center gap-1.5"
             style={{ 
               backgroundColor: 'rgba(255,255,255,0.06)', 
               borderRadius: '8px', 
-              padding: '3px 6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontSize: '0.75rem'
+              padding: '3px 8px',
+              fontSize: '0.75rem',
+              color: '#cbd5e1'
             }}
           >
-            <span className="text-gray-400 text-xs px-1">You are:</span>
-            <button
-              type="button"
-              onClick={() => handleSwitchRole('candidate')}
-              className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${currentRole === 'candidate' ? 'bg-primary text-white shadow' : 'text-gray-300 hover:text-white'}`}
-              style={{ border: 'none', cursor: 'pointer' }}
-            >
-              Candidate
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSwitchRole('interviewer')}
-              className={`px-2 py-0.5 rounded text-xs font-bold transition-all ${currentRole === 'interviewer' ? 'bg-primary text-white shadow' : 'text-gray-300 hover:text-white'}`}
-              style={{ border: 'none', cursor: 'pointer' }}
-            >
-              Interviewer
-            </button>
+            <span className="text-gray-400">Role:</span>
+            <span className="font-bold text-white capitalize">{currentRole || 'Participant'}</span>
           </div>
 
           {/* Copy Invite Link */}
@@ -1193,6 +1261,78 @@ const VideoRoom = () => {
           </button>
         </div>
       </header>
+
+      {/* Network Relay Warning Bar */}
+      {turnConfigured === false && (
+        <div 
+          className="vr-turn-warning-banner"
+          style={{ 
+            backgroundColor: '#854d0e', 
+            borderBottom: '1px solid #ca8a04', 
+            padding: '0.45rem 1rem', 
+            fontSize: '0.78rem', 
+            color: '#fef08a', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: '0.65rem',
+            fontWeight: '600'
+          }}
+        >
+          <AlertTriangle size={15} />
+          <span>Network relay not configured, video may fail on mobile networks</span>
+        </div>
+      )}
+
+      {/* Diagnostics Strip */}
+      <div 
+        className="vr-diagnostics-strip"
+        style={{
+          backgroundColor: '#0a0f1d',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '0.3rem 1.25rem',
+          fontSize: '0.74rem',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          color: '#94a3b8',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          gap: '1.25rem',
+          zIndex: 40
+        }}
+      >
+        <span className="flex items-center gap-1.5">
+          <span>Camera:</span>
+          <span style={{ color: isVideoOn && cameraActive ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
+            {isVideoOn && cameraActive ? 'ON' : 'OFF'}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span>Mic:</span>
+          <span style={{ color: isMicOn && cameraActive ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
+            {isMicOn && cameraActive ? 'ON' : 'OFF'}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span>Partner:</span>
+          <span style={{ color: isCallConnected ? '#22c55e' : '#f59e0b', fontWeight: 'bold' }}>
+            {isCallConnected ? 'Present' : 'Not present'}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span>ICE:</span>
+          <span style={{ color: iceState === 'connected' || iceState === 'completed' ? '#22c55e' : (iceState === 'failed' || iceState === 'disconnected' ? '#ef4444' : '#38bdf8'), fontWeight: 'bold' }}>
+            {iceState}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span>Relay:</span>
+          <span style={{ color: isRelayUsed ? '#a855f7' : (isCallConnected ? '#38bdf8' : '#94a3b8'), fontWeight: 'bold' }}>
+            {isCallConnected ? (isRelayUsed ? 'Yes (TURN)' : 'No (Direct P2P)') : 'N/A'}
+          </span>
+        </span>
+      </div>
 
       {/* Media Warning Bar */}
       {mediaError && (

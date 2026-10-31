@@ -265,7 +265,7 @@ const Dashboard = () => {
                         </div>
                       </div>
 
-                      <Link to={`/room?interviewId=${session._id}&role=${isProfessional ? 'interviewer' : 'candidate'}`}>
+                      <Link to={`/room?interviewId=${session._id}`}>
                         <button className="btn btn-primary flex items-center gap-1">
                           <Video size={16} />
                           Join Call

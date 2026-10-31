@@ -394,7 +394,7 @@ const Interviews = () => {
                       return (
                         <>
                           {joinInfo.canJoin ? (
-                            <Link to={`/room?interviewId=${item._id}&role=${userRole === 'professional' ? 'interviewer' : 'candidate'}`}>
+                            <Link to={`/room?interviewId=${item._id}`}>
                               <button className="btn btn-primary flex items-center gap-1.5">
                                 <Video size={16} />
                                 <span>Join Room</span>
