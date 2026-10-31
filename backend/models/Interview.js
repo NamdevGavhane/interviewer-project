@@ -60,6 +60,14 @@ const interviewSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  candidatePresence: {
+    peerId: { type: String, default: null },
+    lastSeen: { type: Date, default: null }
+  },
+  interviewerPresence: {
+    peerId: { type: String, default: null },
+    lastSeen: { type: Date, default: null }
+  },
   completedAt: {
     type: Date,
     default: null,

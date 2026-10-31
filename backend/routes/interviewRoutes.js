@@ -521,4 +521,76 @@ router.post('/:id/chat', validateObjectId('id'), chatLimiter, async (req, res) =
   }
 });
 
+// @route   POST /api/interviews/:id/presence
+// @desc    Register caller's tab-specific Peer ID and heartbeat (Participants only)
+// @access  Protected
+router.post('/:id/presence', validateObjectId('id'), async (req, res) => {
+  try {
+    const { peerId } = req.body;
+    if (!peerId || typeof peerId !== 'string' || !peerId.trim()) {
+      return res.status(400).json({ success: false, message: 'Valid peerId is required.' });
+    }
+
+    const interview = await Interview.findById(req.params.id);
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview session not found.' });
+    }
+
+    const isCandidate = String(interview.candidateId) === String(req.user._id);
+    const isInterviewer = String(interview.interviewerId) === String(req.user._id);
+
+    if (!isCandidate && !isInterviewer) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only interview participants may register presence.'
+      });
+    }
+
+    const trimmedPeerId = peerId.trim().slice(0, 150);
+    const update = isCandidate
+      ? { 'candidatePresence.peerId': trimmedPeerId, 'candidatePresence.lastSeen': new Date() }
+      : { 'interviewerPresence.peerId': trimmedPeerId, 'interviewerPresence.lastSeen': new Date() };
+
+    await Interview.findByIdAndUpdate(interview._id, { $set: update });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// @route   GET /api/interviews/:id/presence
+// @desc    Get partner's current active Peer ID
+// @access  Protected
+router.get('/:id/presence', validateObjectId('id'), async (req, res) => {
+  try {
+    const interview = await Interview.findById(req.params.id);
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview session not found.' });
+    }
+
+    const isCandidate = String(interview.candidateId) === String(req.user._id);
+    const isInterviewer = String(interview.interviewerId) === String(req.user._id);
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isCandidate && !isInterviewer && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You do not have access to this interview presence.'
+      });
+    }
+
+    let partnerPeerId = null;
+    if (isCandidate) {
+      partnerPeerId = interview.interviewerPresence?.peerId || null;
+    } else if (isInterviewer) {
+      partnerPeerId = interview.candidatePresence?.peerId || null;
+    }
+
+    res.json({ success: true, peerId: partnerPeerId });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
