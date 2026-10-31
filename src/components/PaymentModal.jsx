@@ -83,10 +83,11 @@ const PaymentModal = ({
   } = bookingDetails;
 
   const isFree = freeSession || totalAmount === 0;
-  const isSimulationMode = Boolean(isSimulated) || !keyId || keyId === 'rzp_test_simulator';
+  const isSimulationMode = Boolean(import.meta.env.DEV) && (Boolean(isSimulated) || !keyId || keyId === 'rzp_test_simulator');
 
-  // Process simulated test payment (when keys are not configured or test simulator is active)
+  // Process simulated test payment (only in development)
   const handleSimulatedPayment = async () => {
+    if (!import.meta.env.DEV) return;
     setError(null);
     setProcessing(true);
     setStatusMessage('Simulating test payment and confirming booking...');
@@ -100,7 +101,7 @@ const PaymentModal = ({
         topic,
         notes,
         orderId,
-        paymentId: `pay_sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        paymentId: import.meta.env.DEV ? `pay_sim_${Date.now()}_${Math.random().toString(36).substring(2, 7)}` : undefined,
         signature: 'simulated_test_signature',
         paymentMethod: 'test_simulator'
       });

@@ -69,6 +69,10 @@ const pendingBookingSchema = new mongoose.Schema({
     type: String,
     default: 'INR'
   },
+  isSimulated: {
+    type: Boolean,
+    default: false
+  },
   status: {
     type: String,
     enum: ['pending', 'processing', 'completed', 'failed', 'expired'],

@@ -114,6 +114,7 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
 
     const rzp = getRazorpayInstance();
     let order;
+    let isSimulated = false;
 
     if (rzp) {
       try {
@@ -133,8 +134,17 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
         throw orderErr;
       }
     } else {
-      // In development or when Razorpay API keys are not supplied in .env,
-      // create a mock simulated order so booking flow & testing are not blocked!
+      // Simulation is allowed only when NODE_ENV !== 'production' AND ALLOW_PAYMENT_SIMULATION === 'true' AND Razorpay keys are missing.
+      const isSimulationAllowed = process.env.NODE_ENV !== 'production' && process.env.ALLOW_PAYMENT_SIMULATION === 'true';
+      if (!isSimulationAllowed) {
+        await Availability.findByIdAndUpdate(slotId, { reservedBy: null, reservedUntil: null });
+        return res.status(503).json({
+          success: false,
+          message: 'Payments are not configured'
+        });
+      }
+
+      isSimulated = true;
       order = {
         id: `order_sim_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
         amount: amountPaise,
@@ -162,6 +172,7 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
         gstAmount: 0,
         amount: totalAmountRupees,
         currency: settings.currency || 'INR',
+        isSimulated,
         status: 'pending',
         expiresAt: new Date(Date.now() + holdMinutes * 60 * 1000)
       },
@@ -170,8 +181,8 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
 
     res.json({
       success: true,
-      freeSession: false,
-      isSimulated: !rzp,
+      freeSession: amountPaise === 0,
+      isSimulated,
       orderId: order.id,
       slotId,
       amount: totalAmountRupees,
@@ -181,7 +192,7 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
       gstAmount: 0,
       holdMinutes,
       currency: settings.currency || 'INR',
-      keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_simulator',
+      keyId: process.env.RAZORPAY_KEY_ID || (isSimulated ? 'rzp_test_simulator' : ''),
       candidate: { _id: req.user._id, name: req.user.name, email: req.user.email },
       interviewer
     });
@@ -246,42 +257,11 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Interviewer not found or not active.' });
     }
 
-    if (!orderId || !paymentId || !signature) {
+    if (!orderId) {
       return res.status(400).json({
         success: false,
-        message: 'Missing payment verification parameters (orderId, paymentId, signature).'
+        message: 'Missing payment verification parameters (orderId).'
       });
-    }
-
-    const secret = process.env.RAZORPAY_KEY_SECRET;
-    const isSimulatedOrder = (orderId && orderId.startsWith('order_sim_')) ||
-                             (paymentId && (paymentId.startsWith('pay_sim_') || paymentId.startsWith('pay_test_') || paymentId.startsWith('FREE_'))) ||
-                             signature === 'simulated_test_signature' ||
-                             signature === 'free_session';
-
-    if (!isSimulatedOrder) {
-      // Real signature verification using crypto.timingSafeEqual
-      if (!secret || !process.env.RAZORPAY_KEY_ID) {
-        return res.status(503).json({
-          success: false,
-          message: 'Payment gateway is not configured. Live transactions cannot be verified.'
-        });
-      }
-
-      const generatedSignature = crypto
-        .createHmac('sha256', secret)
-        .update(`${orderId}|${paymentId}`)
-        .digest('hex');
-
-      const sigBuf = Buffer.from(signature, 'utf8');
-      const expBuf = Buffer.from(generatedSignature, 'utf8');
-
-      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Payment signature verification failed. Invalid or fraudulent transaction.'
-        });
-      }
     }
 
     // Atomically claim the PendingBooking to eliminate race condition with webhook (2h)
@@ -320,36 +300,86 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       });
     }
 
+    // Determine whether booking is simulated or free strictly from the PendingBooking document in DB
+    const isFree = pendingBooking.amountPaise === 0;
+    const isSimulated = Boolean(pendingBooking.isSimulated);
+
+    if (!isFree && !isSimulated) {
+      // Real payments: verify HMAC with timingSafeEqual, then fetch payment from Razorpay
+      const secret = process.env.RAZORPAY_KEY_SECRET;
+      if (!secret || !process.env.RAZORPAY_KEY_ID) {
+        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
+        return res.status(503).json({
+          success: false,
+          message: 'Payment gateway is not configured. Live transactions cannot be verified.'
+        });
+      }
+
+      if (!paymentId || !signature) {
+        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
+        return res.status(400).json({
+          success: false,
+          message: 'Missing payment verification parameters (paymentId, signature).'
+        });
+      }
+
+      const generatedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(`${orderId}|${paymentId}`)
+        .digest('hex');
+
+      const sigBuf = Buffer.from(signature, 'utf8');
+      const expBuf = Buffer.from(generatedSignature, 'utf8');
+
+      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
+        return res.status(400).json({
+          success: false,
+          message: 'Payment signature verification failed. Invalid or fraudulent transaction.'
+        });
+      }
+
+      const rzp = getRazorpayInstance();
+      if (!rzp) {
+        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
+        return res.status(503).json({
+          success: false,
+          message: 'Payment gateway instance unavailable.'
+        });
+      }
+
+      let rzpPayment;
+      try {
+        rzpPayment = await rzp.payments.fetch(paymentId);
+      } catch (fetchErr) {
+        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
+        return res.status(400).json({
+          success: false,
+          message: 'Failed to fetch payment details from gateway.'
+        });
+      }
+
+      // If order_id, amount or currency do not match the PendingBooking, or status is not 'captured', do NOT book: set the PendingBooking back to 'pending' and return an error
+      if (
+        !rzpPayment ||
+        rzpPayment.order_id !== orderId ||
+        Number(rzpPayment.amount) !== Number(pendingBooking.amountPaise) ||
+        (rzpPayment.currency && pendingBooking.currency && rzpPayment.currency.toUpperCase() !== pendingBooking.currency.toUpperCase()) ||
+        rzpPayment.status !== 'captured'
+      ) {
+        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
+        return res.status(400).json({
+          success: false,
+          message: 'Payment verification failed: order ID, amount, currency mismatch or payment not captured.'
+        });
+      }
+    }
+
     const bookingSlotId = pendingBooking.slotId || slotId;
     const bookingTopic = pendingBooking.topic || topic || 'Mock Technical Interview';
     const bookingNotes = pendingBooking.notes || notes || '';
-    const finalPaymentId = paymentId;
+    const finalPaymentId = paymentId || (isFree ? `FREE_${orderId}` : `pay_sim_${orderId}`);
     const finalOrderId = orderId;
-
-    // Check order status and amount against Razorpay API (M1 Rule)
-    const rzp = getRazorpayInstance();
-    if (rzp && !isSimulatedOrder) {
-      try {
-        const rzpPayment = await rzp.payments.fetch(paymentId);
-        if (rzpPayment) {
-          if (rzpPayment.order_id !== orderId) {
-            return res.status(400).json({
-              success: false,
-              message: 'Payment order ID mismatch with gateway record.'
-            });
-          }
-          // RULE M1: verify-and-book rejects the payment if the Razorpay amount does not match the saved amount.
-          if (Number(rzpPayment.amount) !== Number(pendingBooking.amountPaise)) {
-            return res.status(400).json({
-              success: false,
-              message: `Payment amount (${rzpPayment.amount} paise) does not match the saved order amount (${pendingBooking.amountPaise} paise).`
-            });
-          }
-        }
-      } catch (fetchErr) {
-        console.warn('Could not fetch payment from Razorpay API for verification check:', fetchErr.message);
-      }
-    }
 
     // Check slot availability
     const slotDoc = await Availability.findById(bookingSlotId);
@@ -411,7 +441,7 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       paymentStatus: 'paid',
       paymentId: finalPaymentId,
       orderId: finalOrderId,
-      paymentMethod: isSimulatedOrder ? 'test_simulator' : 'razorpay',
+      paymentMethod: isFree ? 'free' : (isSimulated ? 'test_simulator' : 'razorpay'),
       invoiceNumber,
       meetingRoomId
     });
@@ -448,7 +478,7 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       gstAmount: 0,
       currency: pendingBooking.currency || 'INR',
       status: 'captured',
-      paymentMethod: isSimulatedOrder ? 'test_simulator' : 'razorpay',
+      paymentMethod: isFree ? 'free' : (isSimulated ? 'test_simulator' : 'razorpay'),
       invoiceNumber,
       notes: bookingNotes || `Mock interview session: ${bookingTopic}`
     });
