@@ -7,7 +7,8 @@ const productionEnvSchema = z.object({
   MONGO_URI: z.string().min(1, 'MONGO_URI connection string is required in production.'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters in production to resist brute-force attacks.'),
   JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters in production.'),
-  FRONTEND_URL: z.string().min(1, 'FRONTEND_URL (allowed CORS origin) is required in production.')
+  FRONTEND_URL: z.string().min(1, 'FRONTEND_URL (allowed CORS origin) is required in production.'),
+  RAZORPAY_WEBHOOK_SECRET: z.string().min(1, 'RAZORPAY_WEBHOOK_SECRET is required in production.')
 }).refine(data => data.JWT_SECRET !== data.JWT_REFRESH_SECRET, {
   message: 'JWT_SECRET and JWT_REFRESH_SECRET must be distinct secrets.',
   path: ['JWT_REFRESH_SECRET']
@@ -18,30 +19,47 @@ const validateEnv = () => {
 
   console.log(`[ENV VALIDATOR] Checking environment variables (Mode: ${process.env.NODE_ENV || 'development'})...`);
 
-  // Cloud deployment resilience: ensure secure defaults for JWT & CORS if omitted in hosting dashboard
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-    console.warn('[ENV] Notice: Auto-assigning secure production JWT_SECRET (32+ chars).');
-    process.env.JWT_SECRET = 'interviewpro_jwt_secure_auth_production_secret_key_32chars_min_2026';
-  }
-
-  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
-    console.warn('[ENV] Notice: Auto-assigning secure production JWT_REFRESH_SECRET (32+ chars).');
-    process.env.JWT_REFRESH_SECRET = 'interviewpro_jwt_refresh_secure_auth_production_secret_key_32chars_min_2026';
-  }
-
-  if (!process.env.FRONTEND_URL) {
-    console.warn('[ENV] Notice: Auto-assigning production FRONTEND_URL.');
-    process.env.FRONTEND_URL = 'https://interviewpro-frontend-4c78.onrender.com,http://localhost:5173,http://localhost:3000';
-  }
-
   if (isProduction) {
-    const result = productionEnvSchema.safeParse(process.env);
-    if (!result.success) {
+    const errors = [];
+
+    if (!process.env.MONGO_URI || !process.env.MONGO_URI.trim()) {
+      errors.push('MONGO_URI is missing');
+    }
+
+    if (!process.env.JWT_SECRET) {
+      errors.push('JWT_SECRET is missing');
+    } else if (process.env.JWT_SECRET.length < 32) {
+      errors.push('JWT_SECRET is shorter than 32 characters');
+    }
+
+    if (!process.env.JWT_REFRESH_SECRET) {
+      errors.push('JWT_REFRESH_SECRET is missing');
+    } else if (process.env.JWT_REFRESH_SECRET.length < 32) {
+      errors.push('JWT_REFRESH_SECRET is shorter than 32 characters');
+    }
+
+    if (
+      process.env.JWT_SECRET &&
+      process.env.JWT_REFRESH_SECRET &&
+      process.env.JWT_SECRET === process.env.JWT_REFRESH_SECRET
+    ) {
+      errors.push('JWT_SECRET and JWT_REFRESH_SECRET are identical to each other');
+    }
+
+    if (!process.env.FRONTEND_URL || !process.env.FRONTEND_URL.trim()) {
+      errors.push('FRONTEND_URL is missing');
+    }
+
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET || !process.env.RAZORPAY_WEBHOOK_SECRET.trim()) {
+      errors.push('RAZORPAY_WEBHOOK_SECRET is missing');
+    }
+
+    if (errors.length > 0) {
       console.error('\n================================================================================');
       console.error('[FATAL STARTUP ERROR] Production Environment Invariant Violations:');
       console.error('================================================================================');
-      result.error.issues.forEach(issue => {
-        console.error(`- ${issue.path.join('.') || 'CONFIG'}: ${issue.message}`);
+      errors.forEach(err => {
+        console.error(`- Missing or invalid variable: ${err}`);
       });
       console.error('================================================================================');
       console.error('Server process aborted. Set required environment variables before deploying.\n');

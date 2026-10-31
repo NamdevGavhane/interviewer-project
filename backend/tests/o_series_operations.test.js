@@ -102,7 +102,8 @@ describe('Phase 4: Operations, Email, Uploads & AI (O1 - O7)', () => {
         MONGO_URI: 'mongodb+srv://cluster.example.com',
         JWT_SECRET: 'short-key',
         JWT_REFRESH_SECRET: 'super-long-refresh-secret-that-exceeds-thirty-two-chars',
-        FRONTEND_URL: 'https://interviewpro.com'
+        FRONTEND_URL: 'https://interviewpro.com',
+        RAZORPAY_WEBHOOK_SECRET: 'super-long-webhook-secret-key-2026'
       };
 
       const result = productionEnvSchema.safeParse(invalidEnv);
@@ -116,7 +117,8 @@ describe('Phase 4: Operations, Email, Uploads & AI (O1 - O7)', () => {
         MONGO_URI: '',
         JWT_SECRET: 'super-long-access-secret-that-exceeds-thirty-two-chars',
         JWT_REFRESH_SECRET: 'super-long-refresh-secret-that-exceeds-thirty-two-chars',
-        FRONTEND_URL: ''
+        FRONTEND_URL: '',
+        RAZORPAY_WEBHOOK_SECRET: 'super-long-webhook-secret-key-2026'
       };
 
       const result = productionEnvSchema.safeParse(invalidEnv);
@@ -131,11 +133,26 @@ describe('Phase 4: Operations, Email, Uploads & AI (O1 - O7)', () => {
         MONGO_URI: 'mongodb+srv://cluster.example.com/interviewpro',
         JWT_SECRET: 'super-secure-production-jwt-secret-with-plenty-of-entropy-2026',
         JWT_REFRESH_SECRET: 'super-secure-production-jwt-refresh-secret-with-plenty-of-entropy-2026',
-        FRONTEND_URL: 'https://interviewpro.com,https://app.interviewpro.com'
+        FRONTEND_URL: 'https://interviewpro.com,https://app.interviewpro.com',
+        RAZORPAY_WEBHOOK_SECRET: 'super-long-webhook-secret-key-2026'
       };
 
       const result = productionEnvSchema.safeParse(validEnv);
       expect(result.success).toBe(true);
+    });
+
+    test('productionEnvSchema rejects missing RAZORPAY_WEBHOOK_SECRET in production', () => {
+      const invalidEnv = {
+        MONGO_URI: 'mongodb+srv://cluster.example.com/interviewpro',
+        JWT_SECRET: 'super-secure-production-jwt-secret-with-plenty-of-entropy-2026',
+        JWT_REFRESH_SECRET: 'super-secure-production-jwt-refresh-secret-with-plenty-of-entropy-2026',
+        FRONTEND_URL: 'https://interviewpro.com'
+      };
+
+      const result = productionEnvSchema.safeParse(invalidEnv);
+      expect(result.success).toBe(false);
+      const issues = result.error.issues.map(i => i.path[0]);
+      expect(issues).toContain('RAZORPAY_WEBHOOK_SECRET');
     });
   });
 
