@@ -6,6 +6,8 @@ const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const dns = require('dns');
+const http = require('http');
+const { ExpressPeerServer } = require('peer');
 
 // Prioritize IPv4 DNS lookup to prevent ENOTFOUND on systems with unroutable IPv6 NAT64 (e.g. MongoDB Atlas shards)
 if (dns.setDefaultResultOrder) {
@@ -29,6 +31,7 @@ validateEnv();
 const { apiLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
+const server = http.createServer(app);
 
 // Trust reverse proxy (Vercel/Render) for accurate IP resolution and secure cookies
 app.set('trust proxy', 1);
@@ -188,6 +191,17 @@ app.use('/api/availability', availabilityRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 
+// Mount self-hosted ExpressPeerServer at /peerjs on the same HTTP server (TASK A6)
+const peerKey = process.env.PEER_KEY || 'peerjs';
+const peerServer = ExpressPeerServer(server, {
+  path: '/',
+  key: peerKey,
+  allow_discovery: false,
+  proxied: true,
+  debug: process.env.NODE_ENV !== 'production'
+});
+app.use('/peerjs', peerServer);
+
 // Consistent 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -294,7 +308,7 @@ mongoose.connection.on('error', (err) => {
   console.error('MongoDB connection error:', err.message);
 });
 
-let server = null;
+
 if (process.env.NODE_ENV !== 'test') {
   app.use('/api', (req, res, next) => {
     if (mongoose.connection.readyState !== 1 && !isConnecting) {
@@ -303,7 +317,7 @@ if (process.env.NODE_ENV !== 'test') {
     next();
   });
 
-  server = app.listen(PORT, '0.0.0.0', () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`InterviewPro server listening on 0.0.0.0:${PORT}`);
     connectDB();
   });

@@ -30,6 +30,7 @@
     "nodemailer": "^10.1.2",
     "nodemon": "^3.1.14",
     "pdf-parse": "^2.4.5",
+    "peer": "^1.0.2",
     "razorpay": "^2.9.8",
     "zod": "^4.6.7"
   },

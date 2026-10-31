@@ -730,10 +730,37 @@ const VideoRoom = () => {
     const initPeer = async () => {
       try {
         setConnectionStatus(`Connecting as ${currentRole}...`);
+
+        // TASK A6: Enforce self-hosted PeerJS configuration. Never fallback to 0.peerjs.com.
+        const peerHost = import.meta.env.VITE_PEER_HOST;
+        const isProduction = import.meta.env.PROD;
+
+        if (isProduction && (!peerHost || !peerHost.trim())) {
+          const configError = 'Self-hosted PeerJS signalling host (VITE_PEER_HOST) is missing in production. Please configure VITE_PEER_HOST.';
+          console.error(`[WEBRTC CONFIG ERROR] ${configError}`);
+          setMediaError(configError);
+          setConnectionStatus('Signalling server not configured (VITE_PEER_HOST missing).');
+          return;
+        }
+
         const { default: Peer } = await import('peerjs');
         if (!isMounted) return;
 
+        const resolvedHost = (peerHost && peerHost.trim()) || 'localhost';
+        const resolvedPort = import.meta.env.VITE_PEER_PORT
+          ? Number(import.meta.env.VITE_PEER_PORT)
+          : (import.meta.env.DEV ? 5000 : (window.location.protocol === 'https:' ? 443 : 80));
+        const resolvedPath = import.meta.env.VITE_PEER_PATH || '/peerjs';
+        const resolvedSecure = import.meta.env.VITE_PEER_SECURE !== undefined
+          ? String(import.meta.env.VITE_PEER_SECURE) === 'true'
+          : (window.location.protocol === 'https:' || isProduction);
+
         const peerOptions = {
+          host: resolvedHost,
+          port: resolvedPort,
+          path: resolvedPath,
+          secure: resolvedSecure,
+          key: import.meta.env.VITE_PEER_KEY || 'peerjs',
           config: {
             iceServers: iceServers && iceServers.length > 0 ? iceServers : [
               { urls: 'stun:stun.l.google.com:19302' },
@@ -743,13 +770,6 @@ const VideoRoom = () => {
           },
           debug: import.meta.env.DEV ? 1 : 0
         };
-
-        if (import.meta.env.VITE_PEER_HOST) {
-          peerOptions.host = import.meta.env.VITE_PEER_HOST;
-          peerOptions.port = Number(import.meta.env.VITE_PEER_PORT) || 443;
-          peerOptions.path = import.meta.env.VITE_PEER_PATH || '/';
-          peerOptions.secure = import.meta.env.VITE_PEER_SECURE !== 'false';
-        }
 
         peerInstance = new Peer(myPeerId, peerOptions);
         peerRef.current = peerInstance;

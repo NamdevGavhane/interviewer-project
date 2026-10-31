@@ -66,6 +66,7 @@ This document details the exact, step-by-step procedures and required configurat
 | `TURN_USERNAME` | **Yes** | TURN authentication username. |
 | `TURN_CREDENTIAL` | **Yes** | TURN authentication credential/password. |
 | `GOOGLE_CLIENT_ID` | Optional | Google OAuth 2.0 Web Client ID. |
+| `PEER_KEY` | Optional | Broker key for self-hosted PeerJS signalling server at `/peerjs` (default: `peerjs`). |
 
 ---
 
@@ -139,10 +140,11 @@ WebRTC direct peer-to-peer streaming fails across ~15-20% of residential/mobile 
 | `VITE_API_URL` | `https://devsphere-api.onrender.com` (Your Render backend URL, no trailing slash) |
 | `VITE_GOOGLE_CLIENT_ID` | `xxxxxxxxxxxx-xxxxxxxxxxxxxxxx.apps.googleusercontent.com` |
 | `VITE_RAZORPAY_KEY_ID` | `rzp_live_xxxxxxxxxxxxxx` |
-| `VITE_PEER_HOST` | Leave empty to use default PeerJS cloud, or specify custom PeerServer host |
+| `VITE_PEER_HOST` | `devsphere-api.onrender.com` (Your Render backend domain, required in production; fails if missing) |
 | `VITE_PEER_PORT` | `443` |
-| `VITE_PEER_PATH` | `/` |
+| `VITE_PEER_PATH` | `/peerjs` |
 | `VITE_PEER_SECURE` | `true` |
+| `VITE_PEER_KEY` | `peerjs` |
 
 3. **SPA Routing**:
    - [vercel.json](file:///c:/Users/namde/OneDrive/Documents/Interviewer%20Project/vercel.json) is preconfigured with the wildcard rewrite `{"source": "/(.*)", "destination": "/index.html"}` to support HTML5 pushState routing.
