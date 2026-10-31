@@ -267,7 +267,7 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
     // Atomically claim the PendingBooking to eliminate race condition with webhook (2h)
     let pendingBooking = await PendingBooking.findOneAndUpdate(
       { orderId, status: 'pending' },
-      { $set: { status: 'processing' } },
+      { $set: { status: 'processing', updatedAt: new Date() } },
       { new: true }
     );
 
@@ -300,263 +300,327 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
       });
     }
 
-    // Determine whether booking is simulated or free strictly from the PendingBooking document in DB
-    const isFree = pendingBooking.amountPaise === 0;
-    const isSimulated = Boolean(pendingBooking.isSimulated);
+    let interviewCreated = false;
 
-    if (!isFree && !isSimulated) {
-      // Real payments: verify HMAC with timingSafeEqual, then fetch payment from Razorpay
-      const secret = process.env.RAZORPAY_KEY_SECRET;
-      if (!secret || !process.env.RAZORPAY_KEY_ID) {
-        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
-        return res.status(503).json({
+    try {
+      // Determine whether booking is simulated or free strictly from the PendingBooking document in DB
+      const isFree = pendingBooking.amountPaise === 0;
+      const isSimulated = Boolean(pendingBooking.isSimulated);
+
+      if (!isFree && !isSimulated) {
+        // Real payments: verify HMAC with timingSafeEqual, then fetch payment from Razorpay
+        const secret = process.env.RAZORPAY_KEY_SECRET;
+        if (!secret || !process.env.RAZORPAY_KEY_ID) {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(503).json({
+            success: false,
+            message: 'Payment gateway is not configured. Live transactions cannot be verified.'
+          });
+        }
+
+        if (!paymentId || !signature) {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(400).json({
+            success: false,
+            message: 'Missing payment verification parameters (paymentId, signature).'
+          });
+        }
+
+        const generatedSignature = crypto
+          .createHmac('sha256', secret)
+          .update(`${orderId}|${paymentId}`)
+          .digest('hex');
+
+        const sigBuf = Buffer.from(signature, 'utf8');
+        const expBuf = Buffer.from(generatedSignature, 'utf8');
+
+        if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(400).json({
+            success: false,
+            message: 'Payment signature verification failed. Invalid or fraudulent transaction.'
+          });
+        }
+
+        const rzp = getRazorpayInstance();
+        if (!rzp) {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(503).json({
+            success: false,
+            message: 'Payment gateway instance unavailable.'
+          });
+        }
+
+        let rzpPayment;
+        try {
+          rzpPayment = await rzp.payments.fetch(paymentId);
+        } catch (fetchErr) {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(400).json({
+            success: false,
+            message: 'Failed to fetch payment details from gateway.'
+          });
+        }
+
+        // If order_id, amount or currency do not match the PendingBooking, or status is not 'captured', do NOT book: set the PendingBooking back to 'pending' and return an error
+        if (
+          !rzpPayment ||
+          rzpPayment.order_id !== orderId ||
+          Number(rzpPayment.amount) !== Number(pendingBooking.amountPaise) ||
+          (rzpPayment.currency && pendingBooking.currency && rzpPayment.currency.toUpperCase() !== pendingBooking.currency.toUpperCase()) ||
+          rzpPayment.status !== 'captured'
+        ) {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(400).json({
+            success: false,
+            message: 'Payment verification failed: order ID, amount, currency mismatch or payment not captured.'
+          });
+        }
+      }
+
+      const bookingSlotId = pendingBooking.slotId || slotId;
+      const bookingTopic = pendingBooking.topic || topic || 'Mock Technical Interview';
+      const bookingNotes = pendingBooking.notes || notes || '';
+      const finalPaymentId = paymentId || (isFree ? `FREE_${orderId}` : `pay_sim_${orderId}`);
+      const finalOrderId = orderId;
+
+      // Check slot availability
+      const slotDoc = await Availability.findById(bookingSlotId);
+      if (!slotDoc) {
+        await PendingBooking.updateOne(
+          { _id: pendingBooking._id, status: { $ne: 'completed' } },
+          { $set: { status: 'pending' } }
+        );
+        return res.status(404).json({ success: false, message: 'Availability slot not found.' });
+      }
+
+      // RULE M2 Expiry check:
+      // If pendingBooking is expired:
+      // If slot is free, confirm booking. Otherwise refund automatically!
+      const isExpired = pendingBooking.status === 'expired' || (pendingBooking.expiresAt && new Date(pendingBooking.expiresAt) < new Date());
+      if (isExpired) {
+        if (slotDoc.isBooked) {
+          // Slot is already booked by another candidate -> Auto refund
+          if (rzp) {
+            try {
+              await rzp.payments.refund(paymentId, {
+                amount: pendingBooking.amountPaise,
+                notes: { reason: 'Slot reservation expired and slot was booked by another candidate' }
+              });
+            } catch (refErr) {
+              console.error('Auto refund failed for expired slot capture:', refErr.message);
+            }
+          }
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+          return res.status(410).json({
+            success: false,
+            message: 'Payment hold expired and the slot is no longer available. Your payment has been refunded automatically.'
+          });
+        }
+      } else if (slotDoc.isBooked) {
+        await PendingBooking.updateOne(
+          { _id: pendingBooking._id, status: { $ne: 'completed' } },
+          { $set: { status: 'pending' } }
+        );
+        return res.status(409).json({
           success: false,
-          message: 'Payment gateway is not configured. Live transactions cannot be verified.'
+          message: 'The selected time slot was just booked by another candidate. Please choose a different slot.'
         });
       }
 
-      if (!paymentId || !signature) {
-        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
-        return res.status(400).json({
+      const meetingRoomId = crypto.randomBytes(8).toString('hex');
+      const invoiceNumber = await Counter.getNextInvoiceNumber();
+
+      const priceRupees = pendingBooking.amount || (pendingBooking.amountPaise / 100);
+
+      // 1. Create Interview record
+      const newInterview = new Interview({
+        candidateId,
+        interviewerId,
+        date: slotDoc.date,
+        timeSlot: slotDoc.slotLabel,
+        slotId: slotDoc._id,
+        startTime: slotDoc.startTime,
+        endTime: slotDoc.endTime,
+        topic: bookingTopic,
+        price: priceRupees,
+        platformFee: 0,
+        paidAmount: priceRupees,
+        amountPaise: pendingBooking.amountPaise,
+        interviewerEarningsPaise: pendingBooking.interviewerSharePaise,
+        notes: bookingNotes,
+        status: 'scheduled',
+        paymentStatus: 'paid',
+        paymentId: finalPaymentId,
+        orderId: finalOrderId,
+        paymentMethod: isFree ? 'free' : (isSimulated ? 'test_simulator' : 'razorpay'),
+        invoiceNumber,
+        meetingRoomId
+      });
+
+      const savedInterview = await newInterview.save();
+      interviewCreated = true;
+
+      // 2. Atomically confirm slot booking in Availability collection
+      const bookedSlot = await confirmBookedSlot({
+        slotId: bookingSlotId,
+        candidateId,
+        interviewId: savedInterview._id
+      });
+
+      if (!bookedSlot) {
+        await Interview.findByIdAndDelete(savedInterview._id);
+        interviewCreated = false;
+        await PendingBooking.updateOne(
+          { _id: pendingBooking._id, status: { $ne: 'completed' } },
+          { $set: { status: 'pending' } }
+        );
+        return res.status(409).json({
           success: false,
-          message: 'Missing payment verification parameters (paymentId, signature).'
+          message: 'Failed to lock slot: Slot is no longer available or reservation expired.'
         });
       }
 
-      const generatedSignature = crypto
-        .createHmac('sha256', secret)
-        .update(`${orderId}|${paymentId}`)
-        .digest('hex');
+      // 3. Create Payment record
+      const newPayment = new Payment({
+        candidateId,
+        interviewerId,
+        interviewId: savedInterview._id,
+        orderId: finalOrderId,
+        paymentId: finalPaymentId,
+        signature: signature || '',
+        amount: priceRupees,
+        amountPaise: pendingBooking.amountPaise,
+        sessionFee: priceRupees,
+        platformFee: 0,
+        gstAmount: 0,
+        currency: pendingBooking.currency || 'INR',
+        status: 'captured',
+        paymentMethod: isFree ? 'free' : (isSimulated ? 'test_simulator' : 'razorpay'),
+        invoiceNumber,
+        notes: bookingNotes || `Mock interview session: ${bookingTopic}`
+      });
 
-      const sigBuf = Buffer.from(signature, 'utf8');
-      const expBuf = Buffer.from(generatedSignature, 'utf8');
+      const savedPayment = await newPayment.save();
 
-      if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
-        return res.status(400).json({
-          success: false,
-          message: 'Payment signature verification failed. Invalid or fraudulent transaction.'
-        });
-      }
-
-      const rzp = getRazorpayInstance();
-      if (!rzp) {
-        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
-        return res.status(503).json({
-          success: false,
-          message: 'Payment gateway instance unavailable.'
-        });
-      }
-
-      let rzpPayment;
-      try {
-        rzpPayment = await rzp.payments.fetch(paymentId);
-      } catch (fetchErr) {
-        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
-        return res.status(400).json({
-          success: false,
-          message: 'Failed to fetch payment details from gateway.'
-        });
-      }
-
-      // If order_id, amount or currency do not match the PendingBooking, or status is not 'captured', do NOT book: set the PendingBooking back to 'pending' and return an error
-      if (
-        !rzpPayment ||
-        rzpPayment.order_id !== orderId ||
-        Number(rzpPayment.amount) !== Number(pendingBooking.amountPaise) ||
-        (rzpPayment.currency && pendingBooking.currency && rzpPayment.currency.toUpperCase() !== pendingBooking.currency.toUpperCase()) ||
-        rzpPayment.status !== 'captured'
-      ) {
-        await PendingBooking.findByIdAndUpdate(pendingBooking._id, { $set: { status: 'pending' } });
-        return res.status(400).json({
-          success: false,
-          message: 'Payment verification failed: order ID, amount, currency mismatch or payment not captured.'
-        });
-      }
-    }
-
-    const bookingSlotId = pendingBooking.slotId || slotId;
-    const bookingTopic = pendingBooking.topic || topic || 'Mock Technical Interview';
-    const bookingNotes = pendingBooking.notes || notes || '';
-    const finalPaymentId = paymentId || (isFree ? `FREE_${orderId}` : `pay_sim_${orderId}`);
-    const finalOrderId = orderId;
-
-    // Check slot availability
-    const slotDoc = await Availability.findById(bookingSlotId);
-    if (!slotDoc) {
-      return res.status(404).json({ success: false, message: 'Availability slot not found.' });
-    }
-
-    // RULE M2 Expiry check:
-    // If pendingBooking is expired:
-    // If slot is free, confirm booking. Otherwise refund automatically!
-    const isExpired = pendingBooking.status === 'expired' || (pendingBooking.expiresAt && new Date(pendingBooking.expiresAt) < new Date());
-    if (isExpired) {
-      if (slotDoc.isBooked) {
-        // Slot is already booked by another candidate -> Auto refund
-        if (rzp) {
-          try {
-            await rzp.payments.refund(paymentId, {
-              amount: pendingBooking.amountPaise,
-              notes: { reason: 'Slot reservation expired and slot was booked by another candidate' }
-            });
-          } catch (refErr) {
-            console.error('Auto refund failed for expired slot capture:', refErr.message);
+      // 4. Update PendingBooking to completed
+      await PendingBooking.findOneAndUpdate(
+        { orderId },
+        {
+          $set: {
+            status: 'completed',
+            paymentId: finalPaymentId,
+            interviewId: savedInterview._id
           }
         }
-        return res.status(410).json({
-          success: false,
-          message: 'Payment hold expired and the slot is no longer available. Your payment has been refunded automatically.'
+      );
+
+      const populatedInterview = await Interview.findById(savedInterview._id)
+        .populate('candidateId', 'name email avatar')
+        .populate('interviewerId', 'name email avatar title company');
+
+      const populatedPayment = await Payment.findById(savedPayment._id)
+        .populate('candidateId', 'name email')
+        .populate('interviewerId', 'name email title company');
+
+      // Send in-app notifications & booking confirmation emails
+      try {
+        await Notification.create({
+          userId: candidateId,
+          interviewId: savedInterview._id,
+          type: 'booking_confirmed',
+          title: 'Interview Booked Successfully!',
+          message: `Your mock interview on "${bookingTopic}" with ${interviewer.name} is confirmed for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+          link: '/interviews'
         });
+        await Notification.create({
+          userId: interviewer._id,
+          interviewId: savedInterview._id,
+          type: 'booking_confirmed',
+          title: 'New Mock Interview Booked',
+          message: `Candidate ${req.user.name} booked a session on "${bookingTopic}" for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+          link: '/interviews'
+        });
+
+        const frontendBaseUrl = getFrontendBaseUrl();
+        await sendBookingConfirmationEmail({
+          recipientName: req.user.name,
+          recipientEmail: req.user.email,
+          otherPartyName: interviewer.name,
+          isCandidate: true,
+          topic: bookingTopic,
+          date: slotDoc.date,
+          timeSlot: slotDoc.slotLabel,
+          interviewId: savedInterview._id,
+          frontendBaseUrl
+        });
+        await sendBookingConfirmationEmail({
+          recipientName: interviewer.name,
+          recipientEmail: interviewer.email,
+          otherPartyName: req.user.name,
+          isCandidate: false,
+          topic: bookingTopic,
+          date: slotDoc.date,
+          timeSlot: slotDoc.slotLabel,
+          interviewId: savedInterview._id,
+          frontendBaseUrl
+        });
+      } catch (notifErr) {
+        console.warn('Booking confirmation notification notice:', notifErr.message);
       }
-    } else if (slotDoc.isBooked) {
-      return res.status(409).json({
-        success: false,
-        message: 'The selected time slot was just booked by another candidate. Please choose a different slot.'
+
+      return res.status(201).json({
+        success: true,
+        message: 'Payment verified and interview scheduled successfully!',
+        interview: populatedInterview,
+        payment: populatedPayment
       });
-    }
-
-    const meetingRoomId = crypto.randomBytes(8).toString('hex');
-    const invoiceNumber = await Counter.getNextInvoiceNumber();
-
-    const priceRupees = pendingBooking.amount || (pendingBooking.amountPaise / 100);
-
-    // 1. Create Interview record
-    const newInterview = new Interview({
-      candidateId,
-      interviewerId,
-      date: slotDoc.date,
-      timeSlot: slotDoc.slotLabel,
-      slotId: slotDoc._id,
-      startTime: slotDoc.startTime,
-      endTime: slotDoc.endTime,
-      topic: bookingTopic,
-      price: priceRupees,
-      platformFee: 0,
-      paidAmount: priceRupees,
-      amountPaise: pendingBooking.amountPaise,
-      interviewerEarningsPaise: pendingBooking.interviewerSharePaise,
-      notes: bookingNotes,
-      status: 'scheduled',
-      paymentStatus: 'paid',
-      paymentId: finalPaymentId,
-      orderId: finalOrderId,
-      paymentMethod: isFree ? 'free' : (isSimulated ? 'test_simulator' : 'razorpay'),
-      invoiceNumber,
-      meetingRoomId
-    });
-
-    const savedInterview = await newInterview.save();
-
-    // 2. Atomically confirm slot booking in Availability collection
-    const bookedSlot = await confirmBookedSlot({
-      slotId: bookingSlotId,
-      candidateId,
-      interviewId: savedInterview._id
-    });
-
-    if (!bookedSlot) {
-      await Interview.findByIdAndDelete(savedInterview._id);
-      return res.status(409).json({
-        success: false,
-        message: 'Failed to lock slot: Slot is no longer available or reservation expired.'
-      });
-    }
-
-    // 3. Create Payment record
-    const newPayment = new Payment({
-      candidateId,
-      interviewerId,
-      interviewId: savedInterview._id,
-      orderId: finalOrderId,
-      paymentId: finalPaymentId,
-      signature: signature || '',
-      amount: priceRupees,
-      amountPaise: pendingBooking.amountPaise,
-      sessionFee: priceRupees,
-      platformFee: 0,
-      gstAmount: 0,
-      currency: pendingBooking.currency || 'INR',
-      status: 'captured',
-      paymentMethod: isFree ? 'free' : (isSimulated ? 'test_simulator' : 'razorpay'),
-      invoiceNumber,
-      notes: bookingNotes || `Mock interview session: ${bookingTopic}`
-    });
-
-    const savedPayment = await newPayment.save();
-
-    // 4. Update PendingBooking to completed
-    await PendingBooking.findOneAndUpdate(
-      { orderId },
-      {
-        $set: {
-          status: 'completed',
-          paymentId: finalPaymentId,
-          interviewId: savedInterview._id
+    } catch (claimErr) {
+      console.error('Error verifying and booking after claim:', claimErr);
+      if (!interviewCreated) {
+        try {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+        } catch (resetErr) {
+          console.error('Failed to reset pending booking in catch:', resetErr);
         }
       }
-    );
-
-    const populatedInterview = await Interview.findById(savedInterview._id)
-      .populate('candidateId', 'name email avatar')
-      .populate('interviewerId', 'name email avatar title company');
-
-    const populatedPayment = await Payment.findById(savedPayment._id)
-      .populate('candidateId', 'name email')
-      .populate('interviewerId', 'name email title company');
-
-    // Send in-app notifications & booking confirmation emails
-    try {
-      await Notification.create({
-        userId: candidateId,
-        interviewId: savedInterview._id,
-        type: 'booking_confirmed',
-        title: 'Interview Booked Successfully!',
-        message: `Your mock interview on "${bookingTopic}" with ${interviewer.name} is confirmed for ${slotDoc.date} (${slotDoc.slotLabel}).`,
-        link: '/interviews'
-      });
-      await Notification.create({
-        userId: interviewer._id,
-        interviewId: savedInterview._id,
-        type: 'booking_confirmed',
-        title: 'New Mock Interview Booked',
-        message: `Candidate ${req.user.name} booked a session on "${bookingTopic}" for ${slotDoc.date} (${slotDoc.slotLabel}).`,
-        link: '/interviews'
-      });
-
-      const frontendBaseUrl = getFrontendBaseUrl();
-      await sendBookingConfirmationEmail({
-        recipientName: req.user.name,
-        recipientEmail: req.user.email,
-        otherPartyName: interviewer.name,
-        isCandidate: true,
-        topic: bookingTopic,
-        date: slotDoc.date,
-        timeSlot: slotDoc.slotLabel,
-        interviewId: savedInterview._id,
-        frontendBaseUrl
-      });
-      await sendBookingConfirmationEmail({
-        recipientName: interviewer.name,
-        recipientEmail: interviewer.email,
-        otherPartyName: req.user.name,
-        isCandidate: false,
-        topic: bookingTopic,
-        date: slotDoc.date,
-        timeSlot: slotDoc.slotLabel,
-        interviewId: savedInterview._id,
-        frontendBaseUrl
-      });
-    } catch (notifErr) {
-      console.warn('Booking confirmation notification notice:', notifErr.message);
+      return res.status(500).json({ success: false, message: claimErr.message });
+    } finally {
+      if (!interviewCreated) {
+        try {
+          await PendingBooking.updateOne(
+            { _id: pendingBooking._id, status: { $ne: 'completed' } },
+            { $set: { status: 'pending' } }
+          );
+        } catch (resetErr) {
+          console.error('Failed to reset pending booking in finally:', resetErr);
+        }
+      }
     }
-
-    res.status(201).json({
-      success: true,
-      message: 'Payment verified and interview scheduled successfully!',
-      interview: populatedInterview,
-      payment: populatedPayment
-    });
   } catch (err) {
     console.error('Error verifying and booking:', err);
     res.status(500).json({ success: false, message: err.message });
@@ -613,146 +677,200 @@ router.post('/webhook', async (req, res) => {
         return res.status(200).json({ success: true, message: 'Existing payment marked captured.' });
       } else {
         // Candidate may have dropped off after payment: Auto-finalize from PendingBooking (P4 & 2h)
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
         const pending = await PendingBooking.findOneAndUpdate(
-          { orderId, status: 'pending' },
-          { $set: { status: 'processing' } },
+          {
+            orderId,
+            $or: [
+              { status: 'pending' },
+              { status: 'processing', updatedAt: { $lt: twoMinutesAgo } }
+            ]
+          },
+          { $set: { status: 'processing', updatedAt: new Date() } },
           { new: true }
         );
 
         if (!pending) {
           const completed = await PendingBooking.findOne({ orderId });
-          if (completed && (completed.status === 'completed' || completed.status === 'processing')) {
-            console.log(`[WEBHOOK] Order ${orderId} is already ${completed.status}. Idempotent return.`);
-            return res.status(200).json({ success: true, message: 'Order already completed or processing.' });
+          if (completed && completed.status === 'completed') {
+            console.log(`[WEBHOOK] Order ${orderId} is already completed. Idempotent return.`);
+            return res.status(200).json({ success: true, message: 'Order already completed.' });
+          }
+          if (completed && completed.status === 'processing') {
+            console.log(`[WEBHOOK] Order ${orderId} is actively being processed. Idempotent return.`);
+            return res.status(200).json({ success: true, message: 'Order already processing.' });
           }
           return res.status(200).json({ success: true, message: 'No actionable pending booking found.' });
         }
 
-        // Verify amount and currency
-        const expectedPaise = pending.amountPaise ?? Math.round(pending.amount * 100);
+        let webhookInterviewCreated = false;
+
+        try {
+          // Verify amount and currency
+          const expectedPaise = pending.amountPaise ?? Math.round(pending.amount * 100);
           const actualPaise = Number(paymentEntity.amount);
           const expectedCurrency = (pending.currency || 'INR').toUpperCase();
           const actualCurrency = (paymentEntity.currency || 'INR').toUpperCase();
 
           if (actualPaise !== expectedPaise || actualCurrency !== expectedCurrency) {
             console.error(`[SECURITY ALERT] Webhook payment amount/currency mismatch! Order: ${orderId}. Expected ${expectedPaise} ${expectedCurrency}, got ${actualPaise} ${actualCurrency}`);
+            await PendingBooking.updateOne(
+              { _id: pending._id, status: { $ne: 'completed' } },
+              { $set: { status: 'pending' } }
+            );
             return res.status(400).json({ success: false, message: 'Payment amount or currency mismatch.' });
           }
+
           const slotDoc = await Availability.findById(pending.slotId);
-          if (slotDoc && !slotDoc.isBooked) {
-            const meetingRoomId = crypto.randomBytes(8).toString('hex');
-            const invoiceNumber = await Counter.getNextInvoiceNumber();
-
-            const interview = new Interview({
-              candidateId: pending.candidateId,
-              interviewerId: pending.interviewerId,
-              date: slotDoc.date,
-              timeSlot: slotDoc.slotLabel,
-              slotId: slotDoc._id,
-              startTime: slotDoc.startTime,
-              endTime: slotDoc.endTime,
-              topic: pending.topic,
-              price: pending.sessionFee,
-              platformFee: pending.platformFee,
-              paidAmount: pending.amount,
-              notes: pending.notes,
-              status: 'scheduled',
-              paymentStatus: 'paid',
-              paymentId,
-              orderId,
-              paymentMethod: 'razorpay',
-              invoiceNumber,
-              meetingRoomId
-            });
-
-            const savedInterview = await interview.save();
-            await confirmBookedSlot({
-              slotId: pending.slotId,
-              candidateId: pending.candidateId,
-              interviewId: savedInterview._id
-            });
-
-            const payment = new Payment({
-              candidateId: pending.candidateId,
-              interviewerId: pending.interviewerId,
-              interviewId: savedInterview._id,
-              orderId,
-              paymentId,
-              amount: pending.amount,
-              sessionFee: pending.sessionFee,
-              platformFee: pending.platformFee,
-              gstAmount: pending.gstAmount,
-              currency: pending.currency,
-              status: 'captured',
-              paymentMethod: 'razorpay',
-              invoiceNumber,
-              notes: pending.notes || `Webhook finalized: ${pending.topic}`
-            });
-
-            await payment.save();
-
-            pending.status = 'completed';
-            pending.paymentId = paymentId;
-            pending.interviewId = savedInterview._id;
-            await pending.save();
-
-            // Send in-app notification & confirmation emails on webhook finalization
-            try {
-              const [candidateUser, interviewerUser] = await Promise.all([
-                User.findById(pending.candidateId).select('name email'),
-                User.findById(pending.interviewerId).select('name email')
-              ]);
-
-              if (candidateUser && interviewerUser) {
-                await Notification.create({
-                  userId: candidateUser._id,
-                  interviewId: savedInterview._id,
-                  type: 'booking_confirmed',
-                  title: 'Interview Booked Successfully!',
-                  message: `Your mock interview on "${pending.topic}" with ${interviewerUser.name} is confirmed for ${slotDoc.date} (${slotDoc.slotLabel}).`,
-                  link: '/interviews'
-                });
-                await Notification.create({
-                  userId: interviewerUser._id,
-                  interviewId: savedInterview._id,
-                  type: 'booking_confirmed',
-                  title: 'New Mock Interview Booked',
-                  message: `Candidate ${candidateUser.name} booked a session on "${pending.topic}" for ${slotDoc.date} (${slotDoc.slotLabel}).`,
-                  link: '/interviews'
-                });
-
-                const frontendBaseUrl = getFrontendBaseUrl();
-                await sendBookingConfirmationEmail({
-                  recipientName: candidateUser.name,
-                  recipientEmail: candidateUser.email,
-                  otherPartyName: interviewerUser.name,
-                  isCandidate: true,
-                  topic: pending.topic,
-                  date: slotDoc.date,
-                  timeSlot: slotDoc.slotLabel,
-                  interviewId: savedInterview._id,
-                  frontendBaseUrl
-                });
-                await sendBookingConfirmationEmail({
-                  recipientName: interviewerUser.name,
-                  recipientEmail: interviewerUser.email,
-                  otherPartyName: candidateUser.name,
-                  isCandidate: false,
-                  topic: pending.topic,
-                  date: slotDoc.date,
-                  timeSlot: slotDoc.slotLabel,
-                  interviewId: savedInterview._id,
-                  frontendBaseUrl
-                });
-              }
-            } catch (alertErr) {
-              console.warn('Webhook booking confirmation notice:', alertErr.message);
-            }
-            return res.status(200).json({ success: true, message: 'Webhook finalized booking successfully.' });
-          } else {
+          if (!slotDoc || slotDoc.isBooked) {
+            console.warn(`[WEBHOOK] Slot ${pending.slotId} is missing or already booked for order ${orderId}`);
+            await PendingBooking.updateOne(
+              { _id: pending._id, status: { $ne: 'completed' } },
+              { $set: { status: 'pending' } }
+            );
             return res.status(200).json({ success: true, message: 'Slot unavailable or already booked.' });
           }
+
+          const meetingRoomId = crypto.randomBytes(8).toString('hex');
+          const invoiceNumber = await Counter.getNextInvoiceNumber();
+
+          const interview = new Interview({
+            candidateId: pending.candidateId,
+            interviewerId: pending.interviewerId,
+            date: slotDoc.date,
+            timeSlot: slotDoc.slotLabel,
+            slotId: slotDoc._id,
+            startTime: slotDoc.startTime,
+            endTime: slotDoc.endTime,
+            topic: pending.topic,
+            price: pending.sessionFee,
+            platformFee: pending.platformFee,
+            paidAmount: pending.amount,
+            amountPaise: expectedPaise,
+            interviewerEarningsPaise: pending.interviewerSharePaise,
+            notes: pending.notes,
+            status: 'scheduled',
+            paymentStatus: 'paid',
+            paymentId,
+            orderId,
+            paymentMethod: 'razorpay',
+            invoiceNumber,
+            meetingRoomId
+          });
+
+          const savedInterview = await interview.save();
+          webhookInterviewCreated = true;
+
+          await confirmBookedSlot({
+            slotId: pending.slotId,
+            candidateId: pending.candidateId,
+            interviewId: savedInterview._id
+          });
+
+          const payment = new Payment({
+            candidateId: pending.candidateId,
+            interviewerId: pending.interviewerId,
+            interviewId: savedInterview._id,
+            orderId,
+            paymentId,
+            amount: pending.amount,
+            amountPaise: expectedPaise,
+            sessionFee: pending.sessionFee,
+            platformFee: pending.platformFee,
+            gstAmount: pending.gstAmount,
+            currency: pending.currency,
+            status: 'captured',
+            paymentMethod: 'razorpay',
+            invoiceNumber,
+            notes: pending.notes || `Webhook finalized: ${pending.topic}`
+          });
+
+          await payment.save();
+
+          pending.status = 'completed';
+          pending.paymentId = paymentId;
+          pending.interviewId = savedInterview._id;
+          await pending.save();
+
+          // Send in-app notification & confirmation emails on webhook finalization
+          try {
+            const [candidateUser, interviewerUser] = await Promise.all([
+              User.findById(pending.candidateId).select('name email'),
+              User.findById(pending.interviewerId).select('name email')
+            ]);
+
+            if (candidateUser && interviewerUser) {
+              await Notification.create({
+                userId: candidateUser._id,
+                interviewId: savedInterview._id,
+                type: 'booking_confirmed',
+                title: 'Interview Booked Successfully!',
+                message: `Your mock interview on "${pending.topic}" with ${interviewerUser.name} is confirmed for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+                link: '/interviews'
+              });
+              await Notification.create({
+                userId: interviewerUser._id,
+                interviewId: savedInterview._id,
+                type: 'booking_confirmed',
+                title: 'New Mock Interview Booked',
+                message: `Candidate ${candidateUser.name} booked a session on "${pending.topic}" for ${slotDoc.date} (${slotDoc.slotLabel}).`,
+                link: '/interviews'
+              });
+
+              const frontendBaseUrl = getFrontendBaseUrl();
+              await sendBookingConfirmationEmail({
+                recipientName: candidateUser.name,
+                recipientEmail: candidateUser.email,
+                otherPartyName: interviewerUser.name,
+                isCandidate: true,
+                topic: pending.topic,
+                date: slotDoc.date,
+                timeSlot: slotDoc.slotLabel,
+                interviewId: savedInterview._id,
+                frontendBaseUrl
+              });
+              await sendBookingConfirmationEmail({
+                recipientName: interviewerUser.name,
+                recipientEmail: interviewerUser.email,
+                otherPartyName: candidateUser.name,
+                isCandidate: false,
+                topic: pending.topic,
+                date: slotDoc.date,
+                timeSlot: slotDoc.slotLabel,
+                interviewId: savedInterview._id,
+                frontendBaseUrl
+              });
+            }
+          } catch (alertErr) {
+            console.warn('Webhook booking confirmation notice:', alertErr.message);
+          }
+          return res.status(200).json({ success: true, message: 'Webhook finalized booking successfully.' });
+        } catch (wbErr) {
+          console.error('[WEBHOOK] Error finalizing booking:', wbErr);
+          if (!webhookInterviewCreated) {
+            try {
+              await PendingBooking.updateOne(
+                { _id: pending._id, status: { $ne: 'completed' } },
+                { $set: { status: 'pending' } }
+              );
+            } catch (resetErr) {
+              console.error('[WEBHOOK] Failed to reset pending booking in catch:', resetErr);
+            }
+          }
+          return res.status(500).json({ success: false, message: wbErr.message });
+        } finally {
+          if (!webhookInterviewCreated) {
+            try {
+              await PendingBooking.updateOne(
+                { _id: pending._id, status: { $ne: 'completed' } },
+                { $set: { status: 'pending' } }
+              );
+            } catch (resetErr) {
+              console.error('[WEBHOOK] Failed to reset pending booking in finally:', resetErr);
+            }
+          }
         }
+      }
       } else if (eventName === 'payment.failed') {
       const paymentEntity = event.payload.payment.entity;
       const orderId = paymentEntity.order_id;

@@ -24,6 +24,26 @@ const getRazorpayInstance = () => {
 };
 
 /**
+ * Sweeper: Returns PendingBookings stuck in 'processing' for more than 2 minutes to 'pending'.
+ * Never touches bookings in 'completed' status.
+ * @param {number} maxProcessingMs - Threshold in milliseconds (default: 2 minutes = 120,000ms)
+ * @returns {Promise<number>} Number of stuck bookings returned to 'pending'
+ */
+const sweepStuckProcessingBookings = async (maxProcessingMs = 2 * 60 * 1000) => {
+  const cutoffTime = new Date(Date.now() - maxProcessingMs);
+  const result = await PendingBooking.updateMany(
+    {
+      status: 'processing',
+      updatedAt: { $lt: cutoffTime }
+    },
+    {
+      $set: { status: 'pending' }
+    }
+  );
+  return result.modifiedCount || 0;
+};
+
+/**
  * Execute one full sweep of the session lifecycle worker.
  * Idempotent, safe to run twice or concurrently across multiple instances.
  */
@@ -50,6 +70,7 @@ const runLifecycleJob = async (options = {}) => {
     const slotDurationMs = (settings.slotDurationMinutes || 45) * 60 * 1000;
     const results = {
       expiredPendingBookings: 0,
+      stuckProcessingBookingsReset: 0,
       interviewerNoShows: 0,
       candidateNoShows: 0,
       completedSessions: 0,
@@ -81,6 +102,10 @@ const runLifecycleJob = async (options = {}) => {
         }
       }
     }
+
+    // SWEEP 1B: Return PendingBookings stuck in 'processing' for > 2m to 'pending'
+    const stuckResetCount = await sweepStuckProcessingBookings(2 * 60 * 1000);
+    results.stuckProcessingBookingsReset = stuckResetCount;
 
     // Also sweep any unheld reservations past their reservedUntil timestamp
     await releaseExpiredReservations();
@@ -380,6 +405,7 @@ const stopLifecycleWorker = () => {
 
 module.exports = {
   runLifecycleJob,
+  sweepStuckProcessingBookings,
   startLifecycleWorker,
   stopLifecycleWorker
 };
