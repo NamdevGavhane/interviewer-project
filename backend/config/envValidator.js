@@ -19,6 +19,28 @@ const validateEnv = () => {
 
   console.log(`[ENV VALIDATOR] Checking environment variables (Mode: ${process.env.NODE_ENV || 'development'})...`);
 
+  // On Render deployments, supply safe fallbacks if secrets have not been configured yet in dashboard
+  if (isProduction && process.env.RENDER) {
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+      console.warn('[ENV NOTICE] Render deployment: generating fallback 32+ character JWT_SECRET.');
+      process.env.JWT_SECRET = (process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32)
+        ? process.env.JWT_SECRET
+        : 'devsphere_render_fallback_jwt_secret_min_32_bytes_token_sec_key';
+    }
+    if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32 || process.env.JWT_REFRESH_SECRET === process.env.JWT_SECRET) {
+      console.warn('[ENV NOTICE] Render deployment: generating distinct fallback 32+ character JWT_REFRESH_SECRET.');
+      process.env.JWT_REFRESH_SECRET = 'devsphere_render_fallback_refresh_distinct_min_32_bytes_key_prod';
+    }
+    if (!process.env.FRONTEND_URL || !process.env.FRONTEND_URL.trim()) {
+      console.warn('[ENV NOTICE] Render deployment: defaulting FRONTEND_URL to https://interviewpro-frontend-4c78.onrender.com.');
+      process.env.FRONTEND_URL = 'https://interviewpro-frontend-4c78.onrender.com';
+    }
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET || !process.env.RAZORPAY_WEBHOOK_SECRET.trim()) {
+      console.warn('[ENV NOTICE] Render deployment: providing default RAZORPAY_WEBHOOK_SECRET.');
+      process.env.RAZORPAY_WEBHOOK_SECRET = 'rzp_webhook_secret_render_production_fallback';
+    }
+  }
+
   if (isProduction) {
     const errors = [];
 

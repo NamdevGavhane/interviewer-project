@@ -429,7 +429,9 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
       iceServers = [
         { urls: process.env.STUN_URL || 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' }
       ];
     }
 
@@ -456,11 +458,22 @@ router.get('/:id/room-access', validateObjectId('id'), async (req, res) => {
       turnConfigured = hasTurn;
     }
 
+    const reqHost = req.get('host') ? req.get('host').split(':')[0] : req.hostname;
+    const isHttps = req.protocol === 'https' || process.env.NODE_ENV === 'production' || req.secure || req.headers['x-forwarded-proto'] === 'https';
+    const peerServer = {
+      host: process.env.PEER_HOST || process.env.RENDER_EXTERNAL_HOSTNAME || reqHost || 'localhost',
+      port: process.env.PEER_PORT ? Number(process.env.PEER_PORT) : (isHttps ? 443 : (Number(process.env.PORT) || 5000)),
+      path: '/peerjs',
+      secure: isHttps,
+      key: process.env.PEER_KEY || 'peerjs'
+    };
+
     res.json({
       success: true,
       meetingRoomId: interview.meetingRoomId || `room_${interview._id}`,
       iceServers,
       turnConfigured,
+      peerServer,
       interview,
       userRole: isAdmin ? 'admin' : (isInterviewer ? 'interviewer' : 'candidate')
     });

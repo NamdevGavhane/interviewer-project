@@ -50,6 +50,7 @@ const VideoRoom = () => {
   const [meetingRoomId, setMeetingRoomId] = useState(interviewId || searchParams.get('room') || 'main-session');
   const [iceServers, setIceServers] = useState([]);
   const iceServersRef = useRef(null);
+  const [peerServerConfig, setPeerServerConfig] = useState(null);
 
   // Diagnostics Strip State
   const [iceState, setIceState] = useState('new');
@@ -155,9 +156,10 @@ const VideoRoom = () => {
       apiClient.get(`/api/interviews/${interviewId}/presence`)
         .then(res => {
           const data = res?.data || res;
-          if (data?.success && data?.peerId) {
-            setPartnerPeerId(data.peerId);
-            partnerPeerIdRef.current = data.peerId;
+          if (data?.success) {
+            const newId = data.peerId || null;
+            setPartnerPeerId(newId);
+            partnerPeerIdRef.current = newId;
           }
         })
         .catch(err => {
@@ -217,6 +219,9 @@ const VideoRoom = () => {
               iceServersRef.current = data.iceServers;
               setIceServers(data.iceServers);
             }
+          }
+          if (data.peerServer) {
+            setPeerServerConfig(data.peerServer);
           }
           if (typeof data.turnConfigured === 'boolean') {
             setTurnConfigured(data.turnConfigured);
@@ -603,8 +608,13 @@ const VideoRoom = () => {
   const callPartner = async (explicitTargetId = null) => {
     if (currentRole !== 'candidate') return;
 
-    const targetId = explicitTargetId || partnerPeerIdRef.current;
-    if (!targetId) return;
+    const targetId = (typeof explicitTargetId === 'string' && explicitTargetId.trim())
+      ? explicitTargetId.trim()
+      : partnerPeerIdRef.current;
+    if (!targetId) {
+      console.warn('Cannot dial: partner peer ID not found yet');
+      return;
+    }
 
     if (!peerRef.current || peerRef.current.destroyed || peerRef.current.disconnected) return;
     if (!mediaStreamRef.current) {
@@ -731,41 +741,66 @@ const VideoRoom = () => {
       try {
         setConnectionStatus(`Connecting as ${currentRole}...`);
 
-        // TASK A6: Enforce self-hosted PeerJS configuration. Never fallback to 0.peerjs.com.
-        const peerHost = import.meta.env.VITE_PEER_HOST;
-        const isProduction = import.meta.env.PROD;
+        // Multi-tier self-hosted PeerJS signalling host resolution:
+        // Priority 1: VITE_PEER_HOST from build/env
+        // Priority 2: peerServerConfig.host returned from server-authoritative room-access
+        // Priority 3: Derived from VITE_API_URL or window.location.origin
+        // Priority 4: window.location.hostname
+        const explicitPeerHost = import.meta.env.VITE_PEER_HOST;
+        let resolvedHost = (explicitPeerHost && explicitPeerHost.trim()) || peerServerConfig?.host;
 
-        if (isProduction && (!peerHost || !peerHost.trim())) {
-          const configError = 'Self-hosted PeerJS signalling host (VITE_PEER_HOST) is missing in production. Please configure VITE_PEER_HOST.';
-          console.error(`[WEBRTC CONFIG ERROR] ${configError}`);
-          setMediaError(configError);
-          setConnectionStatus('Signalling server not configured (VITE_PEER_HOST missing).');
-          return;
+        if (!resolvedHost) {
+          try {
+            const apiBase = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+            if (apiBase) {
+              const urlObj = new URL(apiBase.startsWith('http') ? apiBase : `https://${apiBase}`);
+              resolvedHost = urlObj.hostname;
+            }
+          } catch {
+            resolvedHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+          }
         }
+
+        if (!resolvedHost) {
+          resolvedHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+        }
+
+        const isProduction = import.meta.env.PROD;
 
         const { default: Peer } = await import('peerjs');
         if (!isMounted) return;
 
-        const resolvedHost = (peerHost && peerHost.trim()) || 'localhost';
-        const resolvedPort = import.meta.env.VITE_PEER_PORT
-          ? Number(import.meta.env.VITE_PEER_PORT)
-          : (import.meta.env.DEV ? 5000 : (window.location.protocol === 'https:' ? 443 : 80));
-        const resolvedPath = import.meta.env.VITE_PEER_PATH || '/peerjs';
+        let resolvedPort = 443;
+        if (import.meta.env.VITE_PEER_PORT) {
+          resolvedPort = Number(import.meta.env.VITE_PEER_PORT);
+        } else if (peerServerConfig?.port) {
+          resolvedPort = Number(peerServerConfig.port);
+        } else if (import.meta.env.DEV) {
+          resolvedPort = 5000;
+        } else {
+          resolvedPort = window.location.protocol === 'https:' ? 443 : 80;
+        }
+
+        const resolvedPath = import.meta.env.VITE_PEER_PATH || peerServerConfig?.path || '/peerjs';
         const resolvedSecure = import.meta.env.VITE_PEER_SECURE !== undefined
           ? String(import.meta.env.VITE_PEER_SECURE) === 'true'
-          : (window.location.protocol === 'https:' || isProduction);
+          : (peerServerConfig?.secure !== undefined 
+              ? Boolean(peerServerConfig.secure) 
+              : (window.location.protocol === 'https:' || isProduction));
 
         const peerOptions = {
           host: resolvedHost,
           port: resolvedPort,
           path: resolvedPath,
           secure: resolvedSecure,
-          key: import.meta.env.VITE_PEER_KEY || 'peerjs',
+          key: import.meta.env.VITE_PEER_KEY || peerServerConfig?.key || 'peerjs',
           config: {
             iceServers: iceServers && iceServers.length > 0 ? iceServers : [
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' }
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun3.l.google.com:19302' },
+              { urls: 'stun:stun4.l.google.com:19302' }
             ]
           },
           debug: import.meta.env.DEV ? 1 : 0
@@ -942,7 +977,7 @@ const VideoRoom = () => {
         peerInstance.destroy();
       }
     };
-  }, [roomAccessLoaded, isAdmin, currentRole, myPeerId, iceServers]);
+  }, [roomAccessLoaded, isAdmin, currentRole, myPeerId, iceServers, peerServerConfig]);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -1585,12 +1620,29 @@ const VideoRoom = () => {
                 </span>
                 <button
                   type="button"
-                  onClick={() => callPartner(true)}
+                  onClick={() => {
+                    if (currentRole === 'candidate') {
+                      callPartner();
+                    } else {
+                      if (interviewId && myPeerId) {
+                        apiClient.post(`/api/interviews/${interviewId}/presence`, { peerId: myPeerId }).catch(() => {});
+                      }
+                      if (interviewId) {
+                        apiClient.get(`/api/interviews/${interviewId}/presence`).then(res => {
+                          const data = res?.data || res;
+                          if (data?.success) {
+                            setPartnerPeerId(data.peerId || null);
+                            partnerPeerIdRef.current = data.peerId || null;
+                          }
+                        }).catch(() => {});
+                      }
+                    }
+                  }}
                   className="btn btn-primary flex items-center gap-1.5 text-xs py-1.5 px-3 shadow-lg"
                   style={{ borderRadius: '20px' }}
                 >
                   <RefreshCw size={13} className={isCallingRef.current ? "animate-spin" : ""} />
-                  <span>Connect Live Video</span>
+                  <span>{currentRole === 'candidate' ? 'Connect Live Video' : 'Check Partner Status'}</span>
                 </button>
               </div>
             )}

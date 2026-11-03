@@ -172,5 +172,22 @@ describe('Interview Presence API (POST & GET /api/interviews/:id/presence)', () 
       expect(res.body.peerId).toBe('ip-room123-candidate-can111');
     });
   });
+
+  describe('GET /api/interviews/:id/room-access PeerServer Configuration', () => {
+    it('returns server-authoritative self-hosted peerServer config for participants', async () => {
+      const res = await request(app)
+        .get(`/api/interviews/${interview._id}/room-access`)
+        .set('Authorization', `Bearer ${candidateToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.peerServer).toBeDefined();
+      expect(res.body.peerServer).toHaveProperty('host');
+      expect(res.body.peerServer).toHaveProperty('port');
+      expect(res.body.peerServer).toHaveProperty('path', '/peerjs');
+      expect(res.body.peerServer).toHaveProperty('secure');
+      expect(res.body.peerServer).toHaveProperty('key');
+    });
+  });
 });
 
