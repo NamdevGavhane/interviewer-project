@@ -175,6 +175,7 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const configRoutes = require('./routes/configRoutes');
+const { runLegacySlotsCleanup } = require('./services/availabilityService');
 const { startReminderWorker, stopReminderWorker } = require('./services/reminderService');
 const { startLifecycleWorker, stopLifecycleWorker } = require('./services/sessionLifecycleService');
 
@@ -279,6 +280,7 @@ const connectDB = async () => {
       family: 4
     });
     console.log('Connected to MongoDB successfully');
+    await runLegacySlotsCleanup();
     isConnecting = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);

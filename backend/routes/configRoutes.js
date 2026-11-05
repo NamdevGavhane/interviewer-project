@@ -19,7 +19,10 @@ router.get('/public', async (req, res) => {
       pendingPaymentMinutes: settings.pendingPaymentMinutes ?? 10,
       joinOpensMinutesBefore: settings.joinOpensMinutesBefore ?? 10,
       joinGraceMinutesAfter: settings.joinGraceMinutesAfter ?? 15,
-      noShowWaitMinutes: settings.noShowWaitMinutes ?? 10
+      noShowWaitMinutes: settings.noShowWaitMinutes ?? 10,
+      slotDurationMinutes: settings.slotDurationMinutes ?? 45,
+      slotBreakMinutes: settings.slotBreakMinutes ?? 0,
+      bookingWindowDays: settings.bookingWindowDays ?? 30
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

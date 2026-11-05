@@ -1,8 +1,6 @@
-const { DateTime } = require('luxon');
 const Availability = require('../models/Availability');
 const AvailabilityRule = require('../models/AvailabilityRule');
 const Settings = require('../models/Settings');
-const Interview = require('../models/Interview');
 
 /**
  * Convert time string "10:00 AM", "10:00", "09:30 PM" to hours and minutes
@@ -24,85 +22,55 @@ const parseTimeString = (timeStr) => {
 };
 
 /**
- * Generate bookable Availability slots for an interviewer for the next N days
- * Interprets AvailabilityRule strictly within rule.timezone using Luxon,
- * outputting pure UTC Date instances for startTime and endTime.
+ * Retired rule system (TASK S1): stop using generateSlotsForInterviewer.
+ * Professionals create their own slots via POST /api/availability/slots.
  */
-const generateSlotsForInterviewer = async (interviewerId) => {
-  const settings = await Settings.getSettings();
-  const bookingWindowDays = settings.bookingWindowDays || 14;
+const generateSlotsForInterviewer = async () => {
+  return [];
+};
 
-  const rules = await AvailabilityRule.find({ interviewerId, isActive: true });
-  if (!rules || rules.length === 0) {
-    return [];
-  }
-
-  const now = new Date();
-  const createdSlots = [];
-
-  for (const rule of rules) {
-    const tz = rule.timezone && DateTime.now().setZone(rule.timezone).isValid ? rule.timezone : 'UTC';
-    const parsedStart = parseTimeString(rule.startTime);
-    const parsedEnd = parseTimeString(rule.endTime);
-    if (!parsedStart || !parsedEnd) continue;
-
-    // Loop through days 0..bookingWindowDays in rule's timezone
-    for (let i = 0; i <= bookingWindowDays; i++) {
-      const baseInZone = DateTime.now().setZone(tz).plus({ days: i });
-      // Luxon weekday: 1 (Mon) .. 7 (Sun). Mongoose rule dayOfWeek: 0 (Sun) .. 6 (Sat)
-      const jsDayOfWeek = baseInZone.weekday === 7 ? 0 : baseInZone.weekday;
-
-      if (rule.dayOfWeek !== jsDayOfWeek) continue;
-
-      const slotStartDt = baseInZone.set({
-        hour: parsedStart.hours,
-        minute: parsedStart.minutes,
-        second: 0,
-        millisecond: 0
-      });
-
-      const slotEndDt = baseInZone.set({
-        hour: parsedEnd.hours,
-        minute: parsedEnd.minutes,
-        second: 0,
-        millisecond: 0
-      });
-
-      const slotStart = slotStartDt.toJSDate();
-      const slotEnd = slotEndDt.toJSDate();
-
-      // Don't create slots in the past
-      if (slotStart <= now) continue;
-
-      const dateStr = baseInZone.toISODate(); // YYYY-MM-DD in the rule's timezone
-
-      try {
-        const slot = await Availability.findOneAndUpdate(
-          { interviewerId, startTime: slotStart },
-          {
-            $setOnInsert: {
-              interviewerId,
-              date: dateStr,
-              slotLabel: rule.slotLabel || `${rule.startTime} - ${rule.endTime}`,
-              startTime: slotStart,
-              endTime: slotEnd,
-              timezone: tz,
-              isBooked: false,
-              interviewId: null,
-              reservedBy: null,
-              reservedUntil: null
-            }
-          },
-          { upsert: true, new: true }
-        );
-        createdSlots.push(slot);
-      } catch (err) {
-        // Ignore duplicate key race conditions
-      }
+/**
+ * One-time cleanup at server start (TASK S1)
+ * Guarded by Settings.legacySlotsCleared so it runs only once.
+ * Deletes future slots that are unbooked and not reserved.
+ * Deletes all AvailabilityRule documents.
+ * Never touches booked or reserved slots.
+ * Logs only counts.
+ */
+const runLegacySlotsCleanup = async () => {
+  try {
+    const settings = await Settings.getSettings();
+    if (settings.legacySlotsCleared) {
+      return { skipped: true };
     }
-  }
 
-  return createdSlots;
+    const now = new Date();
+    // Delete future slots that are unbooked and not reserved
+    const deleteSlotsQuery = {
+      startTime: { $gt: now },
+      isBooked: false,
+      $or: [
+        { reservedUntil: null },
+        { reservedUntil: { $lte: now } }
+      ]
+    };
+
+    const deletedSlots = await Availability.deleteMany(deleteSlotsQuery);
+    const deletedRules = await AvailabilityRule.deleteMany({});
+
+    settings.legacySlotsCleared = true;
+    await settings.save();
+
+    console.log(`[CLEANUP] Legacy availability cleanup: deleted ${deletedSlots.deletedCount || 0} unbooked future slots and ${deletedRules.deletedCount || 0} availability rules.`);
+    return {
+      success: true,
+      deletedSlotsCount: deletedSlots.deletedCount || 0,
+      deletedRulesCount: deletedRules.deletedCount || 0
+    };
+  } catch (err) {
+    console.error('[CLEANUP ERROR] Failed to run legacy availability cleanup:', err.message);
+    throw err;
+  }
 };
 
 /**
@@ -236,6 +204,7 @@ const releaseExpiredReservations = async () => {
 
 module.exports = {
   generateSlotsForInterviewer,
+  runLegacySlotsCleanup,
   reserveSlotForCandidate,
   confirmBookedSlot,
   atomicBookSlot,

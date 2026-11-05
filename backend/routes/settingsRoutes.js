@@ -38,7 +38,7 @@ router.put('/', authenticate, requireRole('admin'), async (req, res) => {
       refundWindowHours,
       supportEmail,
       siteName,
-      slotPresets,
+      slotBreakMinutes,
       bookingWindowDays,
       slotDurationMinutes,
       aiDailyLimit,
@@ -143,8 +143,11 @@ router.put('/', authenticate, requireRole('admin'), async (req, res) => {
       updateData.professionalReapplyAfterDays = Math.round(days);
     }
 
-    if (slotPresets !== undefined && Array.isArray(slotPresets)) {
-      updateData.slotPresets = slotPresets.map(p => String(p).trim()).filter(Boolean);
+    if (slotBreakMinutes !== undefined) {
+      const breakMin = Number(slotBreakMinutes);
+      if (!isNaN(breakMin) && breakMin >= 0) {
+        updateData.slotBreakMinutes = Math.round(breakMin);
+      }
     }
 
     if (platformCommissionPercent !== undefined) updateData.platformCommissionPercent = Number(platformCommissionPercent);
