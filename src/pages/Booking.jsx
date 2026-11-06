@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   ArrowLeft, 
   Calendar as CalendarIcon, 
@@ -6,26 +6,54 @@ import {
   CheckCircle2, 
   Download, 
   Building2, 
-  Briefcase,
   AlertCircle,
   Loader2,
-  CalendarCheck
+  CalendarCheck,
+  Globe
 } from 'lucide-react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import PaymentModal from '../components/PaymentModal';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
 import apiClient from '../utils/apiClient';
 
+/**
+ * Format date string into readable heading (e.g. "Fri, Nov 6, 2026")
+ */
+const formatReadableDate = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    return dt.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
 const Booking = () => {
   const [searchParams] = useSearchParams();
   const preselectedInterviewerId = searchParams.get('interviewerId');
-  const navigate = useNavigate();
+
+  // Candidate detected timezone
+  const candidateTimezone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    } catch {
+      return 'Asia/Kolkata';
+    }
+  }, []);
 
   const [interviewers, setInterviewers] = useState([]);
   const [selectedInterviewer, setSelectedInterviewer] = useState(null);
   const [publicConfig, setPublicConfig] = useState(null);
   
-  // Real dynamic availability
+  // Dynamic slots
   const [availableSlots, setAvailableSlots] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlotObj, setSelectedSlotObj] = useState(null);
@@ -37,115 +65,277 @@ const Booking = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [holdExpiredMessage, setHoldExpiredMessage] = useState('');
+  const [slotConflictMessage, setSlotConflictMessage] = useState('');
   const [successBooking, setSuccessBooking] = useState(null);
   const [confirmedPayment, setConfirmedPayment] = useState(null);
+
+  // Toast notification state
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type });
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Payment modal state
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentOrderData, setPaymentOrderData] = useState(null);
 
-  // 1. Fetch public config and professionals on mount
+  // Dynamic session price from public config
+  const sessionPrice = publicConfig?.mockSessionPricePaise != null
+    ? (publicConfig.mockSessionPricePaise / 100)
+    : null;
+
+  // Fetch slots for an interviewer and set processed slots
+  const fetchInterviewerSlots = useCallback(async (interviewerId) => {
+    if (!interviewerId) return [];
+    try {
+      setLoadingSlots(true);
+      setSlotConflictMessage('');
+      const res = await apiClient.get(`/api/availability/${interviewerId}`);
+      const rawSlots = Array.isArray(res) 
+        ? res 
+        : Array.isArray(res?.data) 
+        ? res.data 
+        : [];
+      setAvailableSlots(rawSlots);
+      return rawSlots;
+    } catch (err) {
+      console.warn('Error fetching availability:', err.message);
+      setAvailableSlots([]);
+      return [];
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, []);
+
+  // 1. Fetch public config and professionals with availability status on mount
   useEffect(() => {
+    let ignore = false;
     const initData = async () => {
       try {
-        setLoading(true);
         const [configData, usersData] = await Promise.all([
           apiClient.get('/api/config/public').catch(() => null),
-          apiClient.get('/api/users?role=professional').catch(() => [])
+          apiClient.get('/api/users?role=professional&limit=50').catch(() => [])
         ]);
 
+        if (ignore) return;
         if (configData) setPublicConfig(configData);
+
         const profList = Array.isArray(usersData) 
           ? usersData 
           : Array.isArray(usersData?.data) 
           ? usersData.data 
           : [];
-        setInterviewers(profList);
 
-        if (profList.length > 0) {
-          const match = preselectedInterviewerId 
-            ? profList.find(u => u._id === preselectedInterviewerId) 
-            : profList[0];
-          const chosen = match || profList[0];
-          setSelectedInterviewer(chosen);
-          if (chosen.title || chosen.domain) {
+        // Check slots for each professional in parallel to know if they have open slots
+        const profsWithSlots = await Promise.all(
+          profList.map(async (prof) => {
+            try {
+              const availRes = await apiClient.get(`/api/availability/${prof._id}`);
+              const rawSlots = Array.isArray(availRes)
+                ? availRes
+                : Array.isArray(availRes?.data)
+                ? availRes.data
+                : [];
+              
+              const hasSlots = rawSlots.length > 0;
+              let nextAvailableDateFormatted = null;
+              let firstSlotTime = null;
+
+              if (hasSlots) {
+                firstSlotTime = rawSlots[0].startTime;
+                const candDate = new Date(rawSlots[0].startTime);
+                nextAvailableDateFormatted = candDate.toLocaleDateString('en-US', {
+                  timeZone: candidateTimezone,
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric'
+                });
+              }
+
+              return {
+                ...prof,
+                hasSlots,
+                slotsCount: rawSlots.length,
+                nextAvailableDateFormatted,
+                firstSlotTime,
+                cachedSlots: rawSlots
+              };
+            } catch {
+              return {
+                ...prof,
+                hasSlots: false,
+                slotsCount: 0,
+                nextAvailableDateFormatted: null,
+                firstSlotTime: null,
+                cachedSlots: []
+              };
+            }
+          })
+        );
+
+        if (ignore) return;
+
+        // Interviewers with open slots come first
+        const sorted = [...profsWithSlots].sort((a, b) => {
+          if (a.hasSlots && !b.hasSlots) return -1;
+          if (!a.hasSlots && b.hasSlots) return 1;
+          if (a.hasSlots && b.hasSlots && a.firstSlotTime && b.firstSlotTime) {
+            return new Date(a.firstSlotTime) - new Date(b.firstSlotTime);
+          }
+          return (b.rating || 0) - (a.rating || 0);
+        });
+
+        setInterviewers(sorted);
+
+        // Select initial interviewer: prefer preselected if has slots, else first with slots
+        let chosen = null;
+        if (preselectedInterviewerId) {
+          chosen = sorted.find(p => p._id === preselectedInterviewerId && p.hasSlots);
+        }
+        if (!chosen) {
+          chosen = sorted.find(p => p.hasSlots) || sorted[0] || null;
+        }
+
+        setSelectedInterviewer(chosen);
+        if (chosen) {
+          if (chosen.domain || chosen.title) {
             setTopic(`${chosen.domain || chosen.title} Technical Mock Interview`);
+          }
+          if (chosen.cachedSlots && chosen.cachedSlots.length > 0) {
+            setAvailableSlots(chosen.cachedSlots);
           }
         }
       } catch (err) {
-        setError('Error loading booking data: ' + err.message);
+        if (!ignore) {
+          setError('Error loading booking data: ' + err.message);
+        }
       } finally {
-        setLoading(false);
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     };
 
     initData();
-  }, [preselectedInterviewerId]);
+    return () => { ignore = true; };
+  }, [candidateTimezone, preselectedInterviewerId]);
 
-  // 2. Fetch real dynamic availability whenever selectedInterviewer changes
-  useEffect(() => {
-    if (!selectedInterviewer?._id) return;
-
-    const fetchSlots = async () => {
+  // Process available slots into candidate timezone and compute candidate dates
+  const processedSlots = useMemo(() => {
+    return (availableSlots || []).map(slot => {
+      if (!slot?.startTime || !slot?.endTime) return null;
       try {
-        setLoadingSlots(true);
-        setSelectedSlotObj(null);
-        setHoldExpiredMessage('');
-        const res = await apiClient.get(`/api/availability/${selectedInterviewer._id}`);
-        const slots = Array.isArray(res) 
-          ? res 
-          : Array.isArray(res?.data) 
-          ? res.data 
-          : [];
-        setAvailableSlots(slots);
+        const startUtc = new Date(slot.startTime);
+        const endUtc = new Date(slot.endTime);
 
-        if (slots.length > 0) {
-          const firstDate = slots[0]?.date || '';
-          setSelectedDate(firstDate);
-          setSelectedSlotObj(slots[0] || null);
-        } else {
-          setSelectedDate('');
-          setSelectedSlotObj(null);
-        }
-      } catch (err) {
-        console.warn('Error fetching availability:', err.message);
-        setAvailableSlots([]);
-      } finally {
-        setLoadingSlots(false);
+        // Format date in candidate's timezone: YYYY-MM-DD
+        const candidateDate = new Intl.DateTimeFormat('en-CA', {
+          timeZone: candidateTimezone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(startUtc);
+
+        // Format start & end time in candidate's timezone
+        const startTimeStr = startUtc.toLocaleTimeString('en-US', {
+          timeZone: candidateTimezone,
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        const endTimeStr = endUtc.toLocaleTimeString('en-US', {
+          timeZone: candidateTimezone,
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        const candidateSlotLabel = `${startTimeStr} - ${endTimeStr}`;
+
+        return {
+          ...slot,
+          candidateDate,
+          candidateSlotLabel
+        };
+      } catch {
+        return {
+          ...slot,
+          candidateDate: slot.date,
+          candidateSlotLabel: slot.slotLabel
+        };
       }
-    };
+    }).filter(Boolean);
+  }, [availableSlots, candidateTimezone]);
 
-    fetchSlots();
-  }, [selectedInterviewer]);
+  // Unique dates that actually have open slots
+  const uniqueDates = useMemo(() => {
+    return Array.from(new Set(processedSlots.map(s => s.candidateDate))).sort();
+  }, [processedSlots]);
 
-  const handleInterviewerChange = (interviewerId) => {
-    const chosen = (interviewers || []).find(u => u && u._id === interviewerId);
-    if (chosen) {
-      setSelectedInterviewer(chosen);
-      if (chosen.domain || chosen.title) {
-        setTopic(`${chosen.domain || chosen.title} Mock Interview`);
-      }
+  // Derive effective active date and slot cleanly without cascading effect setState
+  const activeDate = useMemo(() => {
+    if (selectedDate && uniqueDates.includes(selectedDate)) {
+      return selectedDate;
     }
-  };
+    return uniqueDates[0] || '';
+  }, [selectedDate, uniqueDates]);
 
-  // Unique dates with available slots
-  const uniqueDates = Array.from(new Set((availableSlots || []).map(s => s?.date).filter(Boolean))).sort();
+  const activeSlotObj = useMemo(() => {
+    if (selectedSlotObj && selectedSlotObj.candidateDate === activeDate) {
+      const exists = processedSlots.find(s => s._id === selectedSlotObj._id);
+      if (exists) return exists;
+    }
+    const matching = processedSlots.filter(s => s.candidateDate === activeDate);
+    return matching[0] || null;
+  }, [selectedSlotObj, activeDate, processedSlots]);
 
   // Slots for currently selected date
-  const slotsForSelectedDate = (availableSlots || []).filter(s => s && s.date === selectedDate);
+  const slotsForSelectedDate = useMemo(() => {
+    return processedSlots.filter(s => s.candidateDate === activeDate);
+  }, [processedSlots, activeDate]);
 
-  // Dynamic session price from public config (M1)
-  const sessionPrice = publicConfig?.mockSessionPricePaise != null
-    ? (publicConfig.mockSessionPricePaise / 100)
-    : null;
+  // Month label for date strip
+  const monthLabel = useMemo(() => {
+    if (!activeDate && uniqueDates.length === 0) return 'Available Dates';
+    const activeDateStr = activeDate || uniqueDates[0];
+    try {
+      const [y, m, d] = activeDateStr.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+      return dt.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    } catch {
+      return 'Available Dates';
+    }
+  }, [activeDate, uniqueDates]);
+
+  // Interviewer Selection Handler
+  const handleInterviewerChange = async (interviewerId) => {
+    const chosen = (interviewers || []).find(u => u && u._id === interviewerId);
+    if (!chosen) return;
+    if (!chosen.hasSlots) {
+      showToast('This interviewer has no open slots yet.', 'error');
+      return;
+    }
+
+    setSelectedInterviewer(chosen);
+    setSelectedSlotObj(null);
+    setSlotConflictMessage('');
+    if (chosen.domain || chosen.title) {
+      setTopic(`${chosen.domain || chosen.title} Mock Interview`);
+    }
+
+    await fetchInterviewerSlots(chosen._id);
+  };
 
   // Initiate Booking / Payment Flow
   const handleInitiateBooking = async (e) => {
     e.preventDefault();
     setHoldExpiredMessage('');
+    setSlotConflictMessage('');
 
-    if (!selectedInterviewer || !selectedSlotObj) {
-      alert('Please select an interviewer and an available time slot.');
+    if (!selectedInterviewer || !activeSlotObj) {
+      showToast('Please select an interviewer and an available time slot.', 'error');
       return;
     }
 
@@ -153,7 +343,7 @@ const Booking = () => {
       setSubmitting(true);
       const orderRes = await apiClient.post('/api/payment/create-order', {
         interviewerId: selectedInterviewer._id,
-        slotId: selectedSlotObj._id,
+        slotId: activeSlotObj._id,
         topic,
         notes
       });
@@ -172,9 +362,9 @@ const Booking = () => {
         keyId: orderData.keyId,
         isSimulated: Boolean(orderData.isSimulated),
         interviewer: selectedInterviewer,
-        selectedDate: selectedSlotObj.date,
-        selectedSlot: selectedSlotObj.slotLabel,
-        slotId: selectedSlotObj._id,
+        selectedDate: activeSlotObj.candidateDate || activeSlotObj.date || activeDate,
+        selectedSlot: activeSlotObj.candidateSlotLabel || activeSlotObj.slotLabel,
+        slotId: activeSlotObj._id,
         topic,
         notes,
         createdAt: Date.now()
@@ -182,8 +372,26 @@ const Booking = () => {
 
       setIsPaymentModalOpen(true);
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'Payment initialization error';
-      alert('Booking Error: ' + errMsg);
+      const isConflict = err.status === 409 || 
+        (err.message && (
+          err.message.includes('taken') || 
+          err.message.includes('booked') || 
+          err.message.includes('reserved') ||
+          err.message.includes('Slot not available')
+        ));
+
+      if (isConflict) {
+        const conflictNotice = 'That slot was just taken, please pick another';
+        setSlotConflictMessage(conflictNotice);
+        showToast(conflictNotice, 'error');
+        setSelectedSlotObj(null);
+        if (selectedInterviewer?._id) {
+          await fetchInterviewerSlots(selectedInterviewer._id);
+        }
+      } else {
+        const errMsg = err.data?.message || err.message || 'Payment initialization error';
+        showToast(errMsg, 'error');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -194,6 +402,9 @@ const Booking = () => {
     setPaymentOrderData(null);
     setSelectedSlotObj(null);
     setHoldExpiredMessage('Time expired, slot released. Please select a slot again to book.');
+    if (selectedInterviewer?._id) {
+      fetchInterviewerSlots(selectedInterviewer._id);
+    }
   };
 
   const handlePaymentSuccess = (result) => {
@@ -219,7 +430,7 @@ const Booking = () => {
     const payMethod = confirmedPayment?.paymentMethod || 'Razorpay Gateway';
 
     return (
-      <div style={{ maxWidth: '640px', margin: '2rem auto' }} className="card">
+      <div style={{ maxWidth: '640px', margin: '2rem auto' }} className="card p-6">
         <div className="text-center mb-6">
           <div style={{ display: 'inline-flex', padding: '1rem', borderRadius: '50%', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)', marginBottom: '1rem' }}>
             <CheckCircle2 size={44} />
@@ -249,8 +460,8 @@ const Booking = () => {
             <span className="font-semibold">{topic}</span>
           </div>
           <div className="flex justify-between py-1 text-sm">
-            <span className="text-muted">Date & Time</span>
-            <span className="font-semibold">{selectedDate} ({selectedSlotObj?.slotLabel})</span>
+            <span className="text-muted">Date & Time ({candidateTimezone})</span>
+            <span className="font-semibold">{paymentOrderData?.selectedDate || activeDate} ({paymentOrderData?.selectedSlot || activeSlotObj?.candidateSlotLabel || activeSlotObj?.slotLabel})</span>
           </div>
           <div className="flex justify-between py-1 text-sm">
             <span className="text-muted">Payment Mode</span>
@@ -275,7 +486,7 @@ const Booking = () => {
                 interviewerTitle: selectedInterviewer?.title,
                 company: selectedInterviewer?.company,
                 topic,
-                timeSlot: `${selectedDate} (${selectedSlotObj?.slotLabel})`,
+                timeSlot: `${paymentOrderData?.selectedDate || activeDate} (${paymentOrderData?.selectedSlot || activeSlotObj?.candidateSlotLabel || activeSlotObj?.slotLabel})`,
                 sessionFee: feePaid,
                 platformFee: 0,
                 paidAmount: feePaid,
@@ -308,20 +519,46 @@ const Booking = () => {
     );
   }
 
-
-
   return (
-    <div>
-      <Link to="/" className="inline-flex items-center gap-2 text-muted mb-6 hover:text-primary transition-colors">
-        <ArrowLeft size={18} />
+    <div className="max-w-6xl mx-auto pb-28 lg:pb-12">
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            backgroundColor: '#1e293b',
+            color: 'white',
+            padding: '0.85rem 1.5rem',
+            borderRadius: '10px',
+            boxShadow: 'var(--shadow-lg)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            fontWeight: 500
+          }}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle size={18} className="text-red-400" />
+          ) : (
+            <CheckCircle2 size={18} className="text-success" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Top Breadcrumb */}
+      <Link to="/" className="inline-flex items-center gap-2 text-muted mb-4 hover:text-primary transition-colors text-sm">
+        <ArrowLeft size={16} />
         <span className="font-medium">Back to Dashboard</span>
       </Link>
       
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl font-bold">Book Mock Interview</h2>
-          <p className="text-muted mt-1">Select an expert interviewer, choose your date and slot, and confirm.</p>
-        </div>
+      {/* Page Title */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Book Mock Interview</h1>
+        <p className="text-muted text-sm mt-1">Select an expert interviewer, choose your date and slot, and confirm.</p>
       </div>
 
       {error && (
@@ -332,106 +569,170 @@ const Booking = () => {
       )}
 
       {holdExpiredMessage && (
-        <div className="card p-4 mb-6 flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-          <AlertCircle size={18} className="text-amber-600" />
+        <div className="card p-4 mb-6 flex items-center gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-sm">
+          <AlertCircle size={18} className="text-amber-600 flex-shrink-0" />
           <span>{holdExpiredMessage}</span>
         </div>
       )}
 
+      {slotConflictMessage && (
+        <div className="card p-4 mb-6 flex items-center gap-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+          <AlertCircle size={18} className="text-red-600 flex-shrink-0" />
+          <span className="font-semibold">{slotConflictMessage}</span>
+        </div>
+      )}
+
       <form onSubmit={handleInitiateBooking}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.1fr', gap: '2rem' }}>
-          {/* Left Column */}
-          <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left Column: Form Steps (cols 12 on mobile, 8 on lg) */}
+          <div className="lg:col-span-8 flex flex-col gap-6">
+            
             {/* Step 1: Select Interviewer */}
-            <div className="card">
-              <label className="font-bold text-base mb-3 block">1. Select Interviewer</label>
+            <div className="card p-6">
+              <div className="flex items-center justify-between mb-4 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                <label className="font-bold text-base block">1. Select Interviewer</label>
+                <span className="text-xs text-muted">Interviewers with open slots shown first</span>
+              </div>
               
-              <div className="flex flex-col gap-3 mb-2">
-                {(interviewers || []).filter(Boolean).map(prof => (
-                  <div 
-                    key={prof._id}
-                    onClick={() => handleInterviewerChange(prof._id)}
-                    className="flex items-center justify-between p-3 border rounded-lg transition-all"
-                    style={{
-                      cursor: 'pointer',
-                      borderColor: selectedInterviewer?._id === prof._id ? 'var(--primary)' : 'var(--border)',
-                      backgroundColor: selectedInterviewer?._id === prof._id ? 'rgba(26, 115, 232, 0.04)' : 'transparent',
-                      borderWidth: selectedInterviewer?._id === prof._id ? '2px' : '1px'
-                    }}
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <div className="relative flex-shrink-0">
-                        {prof.avatar ? (
-                          <img 
-                            src={prof.avatar} 
-                            alt={prof.name} 
-                            className="profile-avatar shadow-sm"
-                            style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--border)' }}
-                          />
-                        ) : (
-                          <div 
-                            style={{
-                              width: '48px',
-                              height: '48px',
-                              borderRadius: '50%',
-                              backgroundColor: 'var(--primary)',
-                              color: 'white',
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                          >
-                            {prof.name?.charAt(0).toUpperCase()}
+              <div className="flex flex-col gap-3">
+                {(interviewers || []).filter(Boolean).map(prof => {
+                  const isSelected = selectedInterviewer?._id === prof._id;
+                  const canSelect = prof.hasSlots;
+
+                  return (
+                    <div 
+                      key={prof._id}
+                      onClick={() => {
+                        if (canSelect) {
+                          handleInterviewerChange(prof._id);
+                        }
+                      }}
+                      className={`p-4 border rounded-xl transition-all ${
+                        !canSelect
+                          ? 'opacity-60 bg-slate-50/60 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800 cursor-not-allowed'
+                          : isSelected
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary shadow-sm cursor-pointer'
+                          : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                          {/* Avatar */}
+                          <div className="relative flex-shrink-0 mt-0.5">
+                            {prof.avatar ? (
+                              <img 
+                                src={prof.avatar} 
+                                alt={prof.name} 
+                                className="profile-avatar shadow-sm"
+                                style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '50%', border: '2px solid var(--border)' }}
+                              />
+                            ) : (
+                              <div 
+                                style={{
+                                  width: '48px',
+                                  height: '48px',
+                                  borderRadius: '50%',
+                                  backgroundColor: 'var(--primary)',
+                                  color: 'white',
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '1.1rem'
+                                }}
+                              >
+                                {prof.name?.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            {prof.hasSlots && (
+                              <span 
+                                className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2" 
+                                style={{ borderColor: 'var(--card-bg, #fff)' }}
+                                title="Has open bookable slots"
+                              />
+                            )}
                           </div>
-                        )}
-                        <span 
-                          className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 border-2" 
-                          style={{ borderColor: 'var(--card-bg, #fff)' }}
-                          title="Available for booking"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-sm flex items-center gap-2">
-                          <span className="truncate">{prof.name}</span>
-                          <CheckCircle2 size={13} className="text-primary flex-shrink-0" />
-                          {selectedInterviewer?._id === prof._id && (
-                            <span className="badge badge-info text-xs">Selected</span>
-                          )}
-                        </div>
 
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 mt-1 truncate">
-                          <Building2 size={13} className="text-primary flex-shrink-0" />
-                          <span className="truncate">{prof.company || 'Tech Leader'}</span>
-                        </div>
+                          {/* Profile Information */}
+                          <div className="min-w-0 flex-1 flex flex-col gap-0.5">
+                            {/* Name with Verified Badge */}
+                            <div className="font-bold text-sm flex flex-wrap items-center gap-1.5">
+                              <span className="truncate text-slate-900 dark:text-slate-100">{prof.name}</span>
+                              <span className="badge badge-info text-[10px] py-0.5 px-1.5 inline-flex items-center gap-1">
+                                <CheckCircle2 size={11} /> Verified
+                              </span>
+                              {isSelected && (
+                                <span className="badge badge-success text-[10px] py-0.5 px-1.5">Selected</span>
+                              )}
+                            </div>
 
-                        <div className="flex items-center gap-1.5 text-xs text-muted mt-0.5 truncate">
-                          <Briefcase size={12} className="text-muted flex-shrink-0" />
-                          <span className="truncate">{prof.domain || prof.title || 'Technical Specialist'}</span>
-                        </div>
+                            {/* Designation on its own separate line */}
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">
+                              {prof.designation || prof.title || 'Professional Interviewer'}
+                            </div>
 
-                        {prof.reviewsCount > 0 && (
-                          <div className="text-xs font-medium mt-1 flex items-center gap-1 text-amber-500">
-                            ⭐ {prof.rating.toFixed(1)} ({prof.reviewsCount} reviews)
+                            {/* Company on its own separate line */}
+                            <div className="text-xs text-muted flex items-center gap-1 truncate">
+                              <Building2 size={12} className="flex-shrink-0 text-muted" />
+                              <span className="truncate">{prof.company || 'Tech Leader'}</span>
+                            </div>
+
+                            {/* Domain Chip & Rating row */}
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              {prof.domain && (
+                                <span className="badge badge-secondary text-[11px] py-0.5 px-2 font-medium">
+                                  {prof.domain}
+                                </span>
+                              )}
+                              {prof.reviewsCount > 0 ? (
+                                <span className="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                                  ★ {prof.rating.toFixed(1)} <span className="text-muted">({prof.reviewsCount})</span>
+                                </span>
+                              ) : (
+                                <span className="badge badge-secondary text-[11px] py-0.5 px-2 font-normal text-muted">
+                                  New
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Next Available Date OR "No open slots yet" */}
+                            <div className="mt-1.5 text-xs">
+                              {prof.hasSlots ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                                  <CalendarIcon size={12} /> Next: {prof.nextAvailableDateFormatted}
+                                </span>
+                              ) : (
+                                <span className="text-muted font-medium inline-flex items-center gap-1">
+                                  <AlertCircle size={12} /> No open slots yet
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        )}
+                        </div>
+
+                        {/* Price Column */}
+                        <div className="text-right flex-shrink-0 pl-2">
+                          <div className="font-bold text-base text-primary">
+                            {sessionPrice != null ? `₹${sessionPrice}` : '...'}
+                          </div>
+                          <div className="text-[11px] text-muted font-medium">/ session</div>
+                        </div>
                       </div>
                     </div>
-
-                    <div className="text-right flex-shrink-0 pl-3">
-                      <div className="font-bold text-base text-primary">
-                        {sessionPrice != null ? `₹${sessionPrice}` : ''}
-                      </div>
-                      <div className="text-[11px] text-muted font-medium">/ session</div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
             {/* Step 2: Real Dynamic Date & Time Slot Picker */}
-            <div className="card">
-              <label className="font-bold text-base mb-3 block">2. Select Date & Bookable Slot</label>
+            <div className="card p-6">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                <label className="font-bold text-base block">2. Select Date & Bookable Slot</label>
+                <div className="text-xs text-muted flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-full">
+                  <Globe size={13} className="text-primary" />
+                  <span>Times shown in <strong>{candidateTimezone}</strong></span>
+                </div>
+              </div>
               
               {loadingSlots ? (
                 <div className="p-8 text-center text-muted">
@@ -440,54 +741,83 @@ const Booking = () => {
                 </div>
               ) : uniqueDates.length === 0 ? (
                 <div className="p-8 text-center border-2 border-dashed rounded-xl text-muted">
-                  <CalendarCheck size={36} className="mx-auto mb-2 text-muted" />
+                  <CalendarCheck size={36} className="mx-auto mb-2 text-muted opacity-40" />
                   <p className="font-semibold text-sm">No Open Slots Available</p>
-                  <p className="text-xs mt-1">This interviewer currently has no published availability for the upcoming window.</p>
+                  <p className="text-xs mt-1">
+                    {selectedInterviewer 
+                      ? `${selectedInterviewer.name} has no open slots currently. Please check back later or choose another interviewer.`
+                      : 'Select an interviewer above to check available slots.'}
+                  </p>
                 </div>
               ) : (
                 <>
-                  {/* Date Selector */}
+                  {/* Date Selector Header with Month Label */}
                   <div className="mb-4">
-                    <label className="text-xs font-bold text-muted block uppercase tracking-wider mb-2">Available Dates</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {(uniqueDates || []).map(dateStr => (
-                        <button
-                          type="button"
-                          key={dateStr}
-                          onClick={() => {
-                            setSelectedDate(dateStr);
-                            const matching = availableSlots.filter(s => s.date === dateStr);
-                            if (matching.length > 0) setSelectedSlotObj(matching[0]);
-                          }}
-                          className={`btn ${selectedDate === dateStr ? 'btn-primary' : 'btn-outline'}`}
-                          style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
-                        >
-                          <CalendarIcon size={14} />
-                          <span>{new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                        </button>
-                      ))}
+                    <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800 dark:text-slate-200 mb-2">
+                      <CalendarIcon size={15} className="text-primary" />
+                      <span>{monthLabel}</span>
+                    </div>
+
+                    {/* Horizontal scroll date strip */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-3 pt-1 scrollbar-thin">
+                      {uniqueDates.map(dateStr => {
+                        const isSelected = activeDate === dateStr;
+                        const [y, m, d] = dateStr.split('-').map(Number);
+                        const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+                        const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+                        const dayNum = dateObj.toLocaleDateString('en-US', { day: 'numeric', timeZone: 'UTC' });
+                        const monthShort = dateObj.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+
+                        return (
+                          <button
+                            type="button"
+                            key={dateStr}
+                            onClick={() => {
+                              setSelectedDate(dateStr);
+                              setSelectedSlotObj(null);
+                              setSlotConflictMessage('');
+                            }}
+                            className={`flex flex-col items-center justify-center min-w-[72px] px-3 py-2 rounded-xl border text-xs font-medium transition-all flex-shrink-0 ${
+                              isSelected
+                                ? 'bg-primary text-white border-primary shadow-sm'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-primary/50 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            <span className="text-[11px] uppercase opacity-80">{weekday}</span>
+                            <span className="text-base font-bold my-0.5">{dayNum}</span>
+                            <span className="text-[10px] opacity-80">{monthShort}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   {/* Slots for Selected Date */}
-                  <div>
-                    <label className="text-xs font-bold text-muted block uppercase tracking-wider mb-2">
-                      Available Slots on {selectedDate}
+                  <div className="mt-2 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <label className="text-xs font-bold text-muted block uppercase tracking-wider mb-2.5">
+                      Available Slots on {formatReadableDate(activeDate)}
                     </label>
-                    <div className="flex gap-2 flex-wrap">
-                      {(slotsForSelectedDate || []).map(slot => (
-                        <button
-                          type="button"
-                          key={slot._id}
-                          onClick={() => setSelectedSlotObj(slot)}
-                          className={`btn ${selectedSlotObj?._id === slot._id ? 'btn-primary' : 'btn-outline'}`}
-                          style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem' }}
-                        >
-                          <Clock size={14} />
-                          <span>{slot.slotLabel}</span>
-                          {selectedSlotObj?._id === slot._id && <CheckCircle2 size={13} />}
-                        </button>
-                      ))}
+                    <div className="flex flex-wrap gap-2.5">
+                      {slotsForSelectedDate.map(slot => {
+                        const isSelected = activeSlotObj?._id === slot._id;
+                        return (
+                          <button
+                            type="button"
+                            key={slot._id}
+                            onClick={() => {
+                              setSelectedSlotObj(slot);
+                              setSlotConflictMessage('');
+                            }}
+                            className={`btn flex items-center gap-2 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${
+                              isSelected ? 'btn-primary shadow-sm' : 'btn-outline'
+                            }`}
+                          >
+                            <Clock size={14} />
+                            <span>{slot.candidateSlotLabel || slot.slotLabel}</span>
+                            {isSelected && <CheckCircle2 size={13} />}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </>
@@ -495,59 +825,75 @@ const Booking = () => {
             </div>
 
             {/* Step 3: Interview Focus Topic */}
-            <div className="card">
-              <label className="font-bold text-base mb-3 block">3. Interview Topic & Focus</label>
-              <div className="input-group">
-                <label>Focus Topic</label>
-                <input 
-                  type="text"
-                  className="input-field"
-                  placeholder="e.g. Full Stack System Design, React & Node.js, ML Algorithms"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  required
-                />
-              </div>
+            <div className="card p-6">
+              <label className="font-bold text-base mb-4 block pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                3. Interview Topic & Focus
+              </label>
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="text-xs font-bold text-muted block uppercase tracking-wider mb-1.5">
+                    Focus Topic
+                  </label>
+                  <input 
+                    type="text"
+                    className="input text-sm w-full"
+                    placeholder="e.g. Full Stack System Design, React & Node.js, ML Algorithms"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    required
+                  />
+                </div>
 
-              <div className="input-group">
-                <label>Preparation Notes / Target Role (Optional)</label>
-                <input 
-                  type="text"
-                  className="input-field"
-                  placeholder="e.g. Preparing for Senior Software Engineer interview..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
+                <div>
+                  <label className="text-xs font-bold text-muted block uppercase tracking-wider mb-1.5">
+                    Preparation Notes / Target Role (Optional)
+                  </label>
+                  <input 
+                    type="text"
+                    className="input text-sm w-full"
+                    placeholder="e.g. Preparing for Senior Software Engineer interview..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Right Column - Booking Summary */}
-          <div>
-            <div className="card" style={{ position: 'sticky', top: '1rem' }}>
-              <h3 className="font-bold text-lg mb-4">Booking Summary</h3>
+          {/* Right Column: Desktop Booking Summary Side Panel (cols 4 on lg, min-w 280px) */}
+          <div className="lg:col-span-4 hidden lg:block">
+            <div className="card p-5 sticky top-6 min-w-[280px] shadow-sm">
+              <h3 className="font-bold text-lg mb-4 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                Booking Summary
+              </h3>
               
               {selectedInterviewer && (
-                <div className="p-3 border rounded-lg mb-5" style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border)' }}>
-                  <div className="text-xs text-muted uppercase tracking-wider font-semibold mb-1">Interviewer</div>
-                  <div className="font-bold text-sm">{selectedInterviewer.name}</div>
-                  <div className="text-xs text-muted">{selectedInterviewer.title || selectedInterviewer.company}</div>
+                <div className="p-3.5 border rounded-xl mb-5 bg-slate-50 dark:bg-slate-900/50" style={{ borderColor: 'var(--border)' }}>
+                  <div className="text-[11px] text-muted uppercase tracking-wider font-bold mb-1">
+                    Interviewer
+                  </div>
+                  <div className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                    {selectedInterviewer.name}
+                  </div>
+                  <div className="text-xs text-muted mt-0.5">
+                    {selectedInterviewer.designation || selectedInterviewer.title || selectedInterviewer.company}
+                  </div>
                   
-                  {selectedSlotObj && (
-                    <div className="mt-2.5 text-xs font-semibold text-primary flex items-center gap-1.5">
-                      <Clock size={14} />
-                      <span>{selectedDate} | {selectedSlotObj.slotLabel}</span>
+                  {activeSlotObj && (
+                    <div className="mt-3 pt-2.5 border-t text-xs font-semibold text-primary flex items-center gap-1.5" style={{ borderColor: 'var(--border)' }}>
+                      <Clock size={14} className="flex-shrink-0" />
+                      <span>{activeDate} • {activeSlotObj.candidateSlotLabel || activeSlotObj.slotLabel}</span>
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="flex flex-col gap-2 mb-6 text-sm">
+              <div className="flex flex-col gap-2.5 mb-6 text-sm">
                 <div className="flex justify-between text-muted">
                   <span>Session Rate</span>
                   <span>{sessionPrice != null ? `₹${sessionPrice}` : '...'}</span>
                 </div>
-                <div className="flex justify-between font-bold text-base pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                <div className="flex justify-between font-bold text-base pt-2.5 border-t" style={{ borderColor: 'var(--border)' }}>
                   <span>Total Payable</span>
                   <span className="text-primary">{sessionPrice != null ? `₹${sessionPrice} INR` : '...'}</span>
                 </div>
@@ -555,8 +901,8 @@ const Booking = () => {
 
               <button
                 type="submit"
-                disabled={submitting || !selectedSlotObj || sessionPrice == null}
-                className="btn btn-primary w-full py-3 font-bold flex items-center justify-center gap-2"
+                disabled={submitting || !activeSlotObj || sessionPrice == null}
+                className="btn btn-primary w-full py-3 font-bold flex items-center justify-center gap-2 shadow-md"
               >
                 {submitting ? (
                   <>
@@ -569,6 +915,33 @@ const Booking = () => {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Mobile Sticky Bottom Bar (visible on phones only) */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 p-3.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-2xl z-40 flex items-center justify-between gap-3">
+          <div className="flex flex-col min-w-0">
+            <span className="text-[11px] text-muted uppercase tracking-wider font-semibold">Total Payable</span>
+            <span className="font-bold text-base text-primary">₹{sessionPrice || 0} INR</span>
+            {activeSlotObj && (
+              <span className="text-[11px] text-muted truncate max-w-[150px]">
+                {activeSlotObj.candidateSlotLabel || activeSlotObj.slotLabel}
+              </span>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={submitting || !activeSlotObj || sessionPrice == null}
+            className="btn btn-primary py-2.5 px-6 font-bold text-sm flex items-center justify-center gap-2 shadow-md flex-shrink-0"
+          >
+            {submitting ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Processing...</span>
+              </>
+            ) : (
+              <span>Proceed to Pay</span>
+            )}
+          </button>
         </div>
       </form>
 
