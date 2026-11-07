@@ -7,20 +7,16 @@ import {
   Users, 
   Calendar, 
   User, 
-  LogOut,
-  Bell,
-  FileText,
-  Video,
-  Bot,
-  Receipt,
-  ShieldCheck,
-  Check,
-  CheckCheck,
-  Clock,
-  Sparkles,
-  Briefcase,
-  Sliders,
-  DollarSign
+  LogOut, 
+  Bell, 
+  FileText, 
+  Bot, 
+  Receipt, 
+  ShieldCheck, 
+  CheckCheck, 
+  Clock, 
+  Briefcase, 
+  DollarSign 
 } from 'lucide-react';
 
 const SidebarLayout = () => {
@@ -36,23 +32,29 @@ const SidebarLayout = () => {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const notifRef = useRef(null);
 
-  const fetchNotifications = async () => {
-    if (!userData) return;
-    try {
-      const res = await apiClient.get('/api/notifications');
-      const rawList = res?.notifications || res?.data || (Array.isArray(res) ? res : []);
-      const list = Array.isArray(rawList) ? rawList.filter(Boolean) : [];
-      setNotifications(list);
-      setUnreadCount(typeof res?.unreadCount === 'number' ? res.unreadCount : list.filter(n => n && !n.isRead).length);
-    } catch (err) {
-      // Quiet notice
-    }
-  };
-
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // Poll every 30s (O7)
-    return () => clearInterval(interval);
+    let isMounted = true;
+    if (!userData) return;
+
+    const runFetch = async () => {
+      try {
+        const res = await apiClient.get('/api/notifications');
+        if (!isMounted) return;
+        const rawList = res?.notifications || res?.data || (Array.isArray(res) ? res : []);
+        const list = Array.isArray(rawList) ? rawList.filter(Boolean) : [];
+        setNotifications(list);
+        setUnreadCount(typeof res?.unreadCount === 'number' ? res.unreadCount : list.filter(n => n && !n.isRead).length);
+      } catch {
+        // Quiet notice
+      }
+    };
+
+    runFetch();
+    const interval = setInterval(runFetch, 30000); // Poll every 30s (O7)
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [userData]);
 
   useEffect(() => {
@@ -108,6 +110,7 @@ const SidebarLayout = () => {
   };
 
   const isCandidate = currentRole === 'candidate';
+  const isProfessional = currentRole === 'professional';
 
   const userInitials = userData?.name
     ? userData.name.trim().split(/\s+/).map(n => n[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || 'DS'
@@ -198,8 +201,36 @@ const SidebarLayout = () => {
                 <span>My Profile</span>
               </NavLink>
             </>
+          ) : isProfessional ? (
+            /* ================= PROFESSIONAL EXCLUSIVE NAVIGATION ================= */
+            <>
+              <NavLink to="/" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} end>
+                <LayoutDashboard size={18} />
+                <span>Dashboard</span>
+              </NavLink>
+
+              <NavLink to="/professional/availability" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Clock size={18} />
+                <span>My Availability</span>
+              </NavLink>
+
+              <NavLink to="/interviews" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <Calendar size={18} />
+                <span>My Interviews</span>
+              </NavLink>
+
+              <NavLink to="/professional/earnings" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <DollarSign size={18} />
+                <span>Earnings</span>
+              </NavLink>
+
+              <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
+                <User size={18} />
+                <span>Profile</span>
+              </NavLink>
+            </>
           ) : (
-            /* ================= CANDIDATE & PROFESSIONAL NAVIGATION ================= */
+            /* ================= CANDIDATE NAVIGATION ================= */
             <>
               <NavLink to="/" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} end>
                 <LayoutDashboard size={18} />
@@ -235,9 +266,9 @@ const SidebarLayout = () => {
 
               <NavLink to="/payments" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
                 <Receipt size={18} className="text-success" />
-                <span>{currentRole === 'professional' ? 'Earnings & Payouts' : 'Billing & Invoices'}</span>
+                <span>Billing & Invoices</span>
                 <span className="badge badge-success text-xs" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', marginLeft: 'auto' }}>
-                  {currentRole === 'professional' ? '₹ Earned' : '₹ Paid'}
+                  ₹ Paid
                 </span>
               </NavLink>
 
@@ -363,9 +394,9 @@ const SidebarLayout = () => {
                         No notifications yet.
                       </div>
                     ) : (
-                      notifications.filter(Boolean).map(n => (
+                      notifications.filter(Boolean).map((n, idx) => (
                         <div 
-                          key={n._id || Math.random()}
+                          key={n._id || idx}
                           onClick={() => handleMarkAsRead(n._id, n.link)}
                           className={`p-3 border-b text-xs cursor-pointer transition-colors hover:bg-slate-50 ${!n.isRead ? 'bg-blue-50/40' : ''}`}
                         >

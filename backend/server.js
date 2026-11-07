@@ -175,6 +175,7 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const configRoutes = require('./routes/configRoutes');
+const professionalRoutes = require('./routes/professionalRoutes');
 const { runLegacySlotsCleanup } = require('./services/availabilityService');
 const { startReminderWorker, stopReminderWorker } = require('./services/reminderService');
 const { startLifecycleWorker, stopLifecycleWorker } = require('./services/sessionLifecycleService');
@@ -189,6 +190,7 @@ app.use('/api/ai', aiInterviewRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/availability', availabilityRoutes);
+app.use('/api/professional', professionalRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 
