@@ -262,3 +262,4 @@ describe('TASK S4: GET /api/professional/summary', () => {
     expect(res.body.data.nextInterview.meetingRoomId).toBe('room_live_now');
   });
 });
+

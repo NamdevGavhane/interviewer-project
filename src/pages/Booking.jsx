@@ -358,6 +358,7 @@ const Booking = () => {
         gstAmount: 0,
         totalAmount: orderData.amount ?? sessionPrice,
         amountPaise: orderData.amountPaise,
+        freeSession: Boolean(orderData.freeSession || orderData.amountPaise === 0),
         holdMinutes,
         keyId: orderData.keyId,
         isSimulated: Boolean(orderData.isSimulated),
