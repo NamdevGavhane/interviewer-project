@@ -45,7 +45,8 @@ const updateUserSchema = z.object({
   skills: z.array(z.string()).optional(),
   experience: z.string().optional(),
   linkedin: z.string().optional(),
-  avatar: z.string().optional()
+  avatar: z.string().optional(),
+  batchValidityDays: z.number().int().min(1).max(365).optional()
 });
 
 // Admin Schemas

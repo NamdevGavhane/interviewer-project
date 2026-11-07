@@ -9,6 +9,7 @@ const JobLock = require('../models/JobLock');
 const { sendCancellationEmail } = require('../utils/mailer');
 const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { releaseSlotForInterview, releaseExpiredReservations } = require('./availabilityService');
+const { sweepExpiredBatches, extendBatchForProfessionalCancellation } = require('./batchService');
 
 const getRazorpayInstance = () => {
   const key_id = process.env.RAZORPAY_KEY_ID;
@@ -180,6 +181,16 @@ const runLifecycleJob = async (options = {}) => {
 
           // Release slot lock
           await releaseSlotForInterview(claimed._id);
+
+          // Automatic batch extension for candidate (Requirements 6, 7 & 8)
+          try {
+            await extendBatchForProfessionalCancellation({
+              interviewId: claimed._id,
+              reason: 'Interviewer no-show automatic refund'
+            });
+          } catch (extErr) {
+            console.warn('[LIFECYCLE] Batch extension notice:', extErr.message);
+          }
 
           // Notifications to both parties
           try {
@@ -367,6 +378,12 @@ const runLifecycleJob = async (options = {}) => {
       endTime: { $lt: sevenDaysAgo }
     });
     results.cleanedOldSlots = deleteResult.deletedCount || 0;
+
+    // =========================================================================
+    // SWEEP 4: Auto-expire batches whose validity period has ended (Requirement 4)
+    // =========================================================================
+    const expiredBatchesCount = await sweepExpiredBatches();
+    results.expiredBatches = expiredBatchesCount;
 
     return { success: true, ...results };
   } catch (err) {

@@ -27,6 +27,12 @@ const interviewSchema = new mongoose.Schema({
     ref: 'Availability',
     default: null,
   },
+  batchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Batch',
+    default: null,
+    index: true,
+  },
   startTime: {
     type: Date,
     default: null,

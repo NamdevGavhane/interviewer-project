@@ -20,6 +20,7 @@ const {
   releaseSlotForInterview
 } = require('../services/availabilityService');
 const { processInterviewRefund } = require('../services/refundService');
+const { activateBatchForCandidate } = require('../services/batchService');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
 const { getFrontendBaseUrl } = require('../utils/urlHelper');
@@ -72,7 +73,7 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid interviewer ID or slot ID format.' });
     }
 
-    const interviewer = await User.findById(interviewerId).select('name email title company role accountStatus isDeactivated isVerified');
+    const interviewer = await User.findById(interviewerId).select('name email title company role accountStatus isDeactivated isVerified batchValidityDays');
     if (!interviewer || interviewer.role !== 'professional' || interviewer.isDeactivated || interviewer.accountStatus !== 'active' || !interviewer.isVerified) {
       return res.status(400).json({ success: false, message: 'Interviewer not found or not currently active and verified.' });
     }
@@ -89,6 +90,16 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
     const gracePeriodMs = 10 * 60 * 1000;
     if (new Date(slotDoc.endTime) <= now || new Date(slotDoc.startTime).getTime() < (now.getTime() - gracePeriodMs)) {
       return res.status(400).json({ success: false, message: 'Cannot book slots in the past or expired slots.' });
+    }
+
+    // Verify slot fits within interviewer's batch validity window (Requirements 1, 2 & 9)
+    const batchValidityDays = Number(interviewer.batchValidityDays) > 0 ? Number(interviewer.batchValidityDays) : 30;
+    const maxAllowedBatchTime = new Date(Date.now() + batchValidityDays * 24 * 60 * 60 * 1000);
+    if (new Date(slotDoc.startTime) > maxAllowedBatchTime) {
+      return res.status(400).json({
+        success: false,
+        message: `Selected slot exceeds interviewer's batch validity window (${batchValidityDays} days). Please select a slot within ${batchValidityDays} days.`
+      });
     }
 
     const settings = await Settings.getSettings();
@@ -526,6 +537,23 @@ router.post('/verify-and-book', authenticate, async (req, res) => {
 
       const savedPayment = await newPayment.save();
 
+      // Activate candidate's batch with snapshot validity (Requirements 2 & 3)
+      try {
+        const candidateBatch = await activateBatchForCandidate({
+          candidateId,
+          interviewerId,
+          interviewId: savedInterview._id,
+          orderId: finalOrderId,
+          paymentId: finalPaymentId
+        });
+        if (candidateBatch) {
+          savedInterview.batchId = candidateBatch._id;
+          await savedInterview.save();
+        }
+      } catch (batchErr) {
+        console.warn('[BATCH ACTIVATION] Notice:', batchErr.message);
+      }
+
       // 4. Update PendingBooking to completed
       await PendingBooking.findOneAndUpdate(
         { orderId },
@@ -788,6 +816,23 @@ router.post('/webhook', async (req, res) => {
           });
 
           await payment.save();
+
+          // Activate candidate's batch with snapshot validity (Requirements 2 & 3)
+          try {
+            const webhookBatch = await activateBatchForCandidate({
+              candidateId: pending.candidateId,
+              interviewerId: pending.interviewerId,
+              interviewId: savedInterview._id,
+              orderId,
+              paymentId
+            });
+            if (webhookBatch) {
+              savedInterview.batchId = webhookBatch._id;
+              await savedInterview.save();
+            }
+          } catch (batchErr) {
+            console.warn('[WEBHOOK BATCH ACTIVATION] Notice:', batchErr.message);
+          }
 
           pending.status = 'completed';
           pending.paymentId = paymentId;

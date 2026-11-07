@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Video, FileText, CheckCircle2, AlertCircle, XCircle, ChevronRight, User, Download, ShieldCheck, CreditCard, Receipt, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Video, FileText, CheckCircle2, Download, ShieldCheck, Receipt, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../utils/apiClient';
 import { downloadInvoicePDF } from '../utils/invoiceGenerator';
@@ -10,6 +10,7 @@ const Interviews = () => {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [interviews, setInterviews] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('upcoming'); // 'upcoming' | 'past' | 'invoices'
@@ -22,13 +23,16 @@ const Interviews = () => {
     if (!user) return;
     try {
       setLoading(true);
-      const [resInterviews, resPayments] = await Promise.all([
+      const batchEndpoint = userRole === 'professional' ? '/api/batches/professional' : '/api/batches/my-batches';
+      const [resInterviews, resPayments, resBatches] = await Promise.all([
         apiClient.get('/api/interviews'),
-        apiClient.get('/api/payment/history').catch(() => ({ data: [] }))
+        apiClient.get('/api/payment/history').catch(() => ({ data: [] })),
+        apiClient.get(batchEndpoint).catch(() => ({ data: [] }))
       ]);
 
       setInterviews(Array.isArray(resInterviews) ? resInterviews : (Array.isArray(resInterviews?.data) ? resInterviews.data : []));
       setPayments(Array.isArray(resPayments) ? resPayments : (Array.isArray(resPayments?.data) ? resPayments.data : []));
+      setBatches(Array.isArray(resBatches) ? resBatches : (Array.isArray(resBatches?.data) ? resBatches.data : []));
     } catch (err) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -289,23 +293,64 @@ const Interviews = () => {
             </div>
           </div>
         </div>
-      ) : displayedList.length === 0 ? (
-        <div className="card text-center p-12">
-          <Calendar size={48} className="text-muted mx-auto mb-4" style={{ margin: '0 auto 1rem auto' }} />
-          <h3 className="text-lg font-bold mb-2">No {activeTab} interviews found</h3>
-          <p className="text-muted mb-6">
-            {activeTab === 'upcoming'
-              ? 'You do not have any upcoming interviews scheduled right now.'
-              : 'You have not completed any interview sessions yet.'}
-          </p>
-          {userRole === 'candidate' && (
-            <Link to="/booking">
-              <button className="btn btn-primary">Browse Interviewers</button>
-            </Link>
-          )}
-        </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div>
+          {activeTab === 'upcoming' && batches.length > 0 && (
+            <div className="card p-4 mb-4 border-l-4" style={{ borderLeftColor: 'var(--primary)' }}>
+              <div className="flex justify-between items-center mb-3">
+                <div className="font-bold text-sm flex items-center gap-2">
+                  <Clock size={16} className="text-primary" />
+                  <span>{userRole === 'professional' ? 'Active Enrolled Candidate Batches' : 'Your Batch Validity & Access'}</span>
+                </div>
+                <span className="badge badge-secondary text-xs">{batches.length} {batches.length === 1 ? 'Batch' : 'Batches'}</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {batches.map(b => {
+                  const partnerUser = userRole === 'professional' ? b.candidateId : b.interviewerId;
+                  const partnerName = partnerUser?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
+                  const expiresDate = new Date(b.expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                  return (
+                    <div key={b._id} className="p-3 border rounded-lg bg-slate-50 dark:bg-slate-900/40 text-xs flex flex-col gap-1.5" style={{ borderColor: 'var(--border)' }}>
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{partnerName}</span>
+                        <span className={`badge text-[10px] py-0.5 px-2 ${b.isExpired ? 'badge-danger' : 'badge-success'}`}>
+                          {b.isExpired ? 'Expired' : `${b.daysRemaining}d remaining`}
+                        </span>
+                      </div>
+                      <div className="text-muted flex justify-between items-center">
+                        <span>Validity: {b.validityDaysSnapshot} days snapshot</span>
+                        <span>Expires: {expiresDate}</span>
+                      </div>
+                      {b.totalExtendedDays > 0 && (
+                        <div className="text-[11px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                          <CheckCircle2 size={12} />
+                          <span>+{b.totalExtendedDays} days extension granted (interviewer cancelled session)</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {displayedList.length === 0 ? (
+            <div className="card text-center p-12">
+              <Calendar size={48} className="text-muted mx-auto mb-4" style={{ margin: '0 auto 1rem auto' }} />
+              <h3 className="text-lg font-bold mb-2">No {activeTab} interviews found</h3>
+              <p className="text-muted mb-6">
+                {activeTab === 'upcoming'
+                  ? 'You do not have any upcoming interviews scheduled right now.'
+                  : 'You have not completed any interview sessions yet.'}
+              </p>
+              {userRole === 'candidate' && (
+                <Link to="/booking">
+                  <button className="btn btn-primary">Browse Interviewers</button>
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
           {displayedList.map(item => {
             const partner = userRole === 'professional' ? item.candidateId : item.interviewerId;
             const partnerName = partner?.name || (userRole === 'professional' ? 'Candidate' : 'Interviewer');
@@ -448,6 +493,8 @@ const Interviews = () => {
               </div>
             );
           })}
+        </div>
+      )}
         </div>
       )}
     </div>

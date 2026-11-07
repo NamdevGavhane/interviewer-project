@@ -176,6 +176,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const configRoutes = require('./routes/configRoutes');
 const professionalRoutes = require('./routes/professionalRoutes');
+const batchRoutes = require('./routes/batchRoutes');
 const { runLegacySlotsCleanup } = require('./services/availabilityService');
 const { startReminderWorker, stopReminderWorker } = require('./services/reminderService');
 const { startLifecycleWorker, stopLifecycleWorker } = require('./services/sessionLifecycleService');
@@ -193,6 +194,7 @@ app.use('/api/availability', availabilityRoutes);
 app.use('/api/professional', professionalRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/batches', batchRoutes);
 
 // Mount self-hosted ExpressPeerServer at /peerjs on the same HTTP server (TASK A6)
 const peerKey = process.env.PEER_KEY || 'peerjs';

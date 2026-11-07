@@ -99,6 +99,12 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: null,
   },
+  batchValidityDays: {
+    type: Number,
+    default: 30,
+    min: 1,
+    max: 365,
+  },
   bio: {
     type: String,
     default: '',

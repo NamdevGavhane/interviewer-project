@@ -7,6 +7,7 @@ const User = require('../models/User');
 const { sendCancellationEmail, sendRefundProcessedEmail } = require('../utils/mailer');
 const { getFrontendBaseUrl } = require('../utils/urlHelper');
 const { releaseSlotForInterview } = require('./availabilityService');
+const { extendBatchForProfessionalCancellation } = require('./batchService');
 
 const getRazorpayInstance = () => {
   const key_id = process.env.RAZORPAY_KEY_ID;
@@ -91,6 +92,18 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
       refundAmount: 0
     });
 
+    // Automatic +7 days batch extension on Professional/Admin cancellation (Requirements 6, 7 & 8)
+    if (isAdmin || isInterviewer) {
+      try {
+        await extendBatchForProfessionalCancellation({
+          interviewId: interview._id,
+          reason: interview.cancellationReason || reason
+        });
+      } catch (batchExtErr) {
+        console.warn('[BATCH EXTENSION NOTICE]', batchExtErr.message);
+      }
+    }
+
     return {
       success: true,
       refunded: false,
@@ -123,6 +136,18 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
       requestedByUserId,
       refundAmount: 0
     });
+
+    // Automatic +7 days batch extension on Professional/Admin cancellation (Requirements 6, 7 & 8)
+    if (isAdmin || isInterviewer) {
+      try {
+        await extendBatchForProfessionalCancellation({
+          interviewId: interview._id,
+          reason: interview.cancellationReason || reason
+        });
+      } catch (batchExtErr) {
+        console.warn('[BATCH EXTENSION NOTICE]', batchExtErr.message);
+      }
+    }
 
     return {
       success: true,
@@ -191,6 +216,18 @@ const processInterviewRefund = async ({ interviewId, requestedByUserId, userRole
       refundAmount: payment.amount,
       refundId: refund.id
     });
+
+    // Automatic +7 days batch extension on Professional/Admin cancellation (Requirements 6, 7 & 8)
+    if (isAdmin || isInterviewer) {
+      try {
+        await extendBatchForProfessionalCancellation({
+          interviewId: interview._id,
+          reason: interview.cancellationReason || reason
+        });
+      } catch (batchExtErr) {
+        console.warn('[BATCH EXTENSION NOTICE]', batchExtErr.message);
+      }
+    }
 
     return {
       success: true,

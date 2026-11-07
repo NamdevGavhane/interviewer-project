@@ -43,7 +43,7 @@ const {
 const mongoose = require('mongoose');
 const { validateObjectId } = require('../middleware/validateObjectId');
 
-const PUBLIC_PROFESSIONAL_FIELDS = '_id name title designation company domain bio skills rating reviewsCount avatar role accountStatus isVerified approvalStatus experience linkedin createdAt';
+const PUBLIC_PROFESSIONAL_FIELDS = '_id name title designation company domain bio skills rating reviewsCount avatar role accountStatus isVerified approvalStatus experience linkedin batchValidityDays createdAt';
 
 // Initialize Google OAuth2 Client
 const getGoogleClient = () => {
@@ -1078,7 +1078,8 @@ router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSche
       skills,
       experience,
       linkedin,
-      avatar
+      avatar,
+      batchValidityDays
     } = req.body;
 
     if (avatar !== undefined) {
@@ -1104,6 +1105,7 @@ router.put('/:id', authenticate, validateObjectId('id'), validate(updateUserSche
     if (experience !== undefined) updateData.experience = experience;
     if (linkedin !== undefined) updateData.linkedin = linkedin;
     if (avatar !== undefined) updateData.avatar = avatar;
+    if (batchValidityDays !== undefined && targetUser.role === 'professional') updateData.batchValidityDays = batchValidityDays;
 
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,

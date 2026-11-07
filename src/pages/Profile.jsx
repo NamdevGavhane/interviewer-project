@@ -27,7 +27,8 @@ const Profile = () => {
     title: '',
     company: '',
     bio: '',
-    skills: ''
+    skills: '',
+    batchValidityDays: 30
   });
 
   const handleAvatarFileChange = async (e) => {
@@ -78,7 +79,8 @@ const Profile = () => {
           title: data.title || '',
           company: data.company || '',
           bio: data.bio || '',
-          skills: data.skills ? data.skills.join(', ') : ''
+          skills: data.skills ? data.skills.join(', ') : '',
+          batchValidityDays: data.batchValidityDays || 30
         });
       }
     } catch (err) {
@@ -96,13 +98,17 @@ const Profile = () => {
     e.preventDefault();
     try {
       setSaving(true);
-      const updated = await apiClient.put(`/api/users/${targetId}`, {
+      const payload = {
         name: editForm.name,
         title: editForm.title,
         company: editForm.company,
         bio: editForm.bio,
         skills: editForm.skills.split(',').map(s => s.trim()).filter(Boolean)
-      });
+      };
+      if (profileData.role === 'professional') {
+        payload.batchValidityDays = Number(editForm.batchValidityDays) || 30;
+      }
+      const updated = await apiClient.put(`/api/users/${targetId}`, payload);
 
       if (updated) {
         setProfileData(updated);
@@ -209,6 +215,42 @@ const Profile = () => {
             />
           </div>
 
+          {profileData.role === 'professional' && (
+            <div className="input-group p-4 rounded-xl border bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex justify-between items-center mb-2">
+                <label className="font-semibold text-sm m-0">Candidate Batch Validity</label>
+                <span className="text-xs text-muted">Snapshot saved upon payment</span>
+              </div>
+              <p className="text-xs text-muted mb-3">
+                Select how many days candidates have to schedule and take their mock interview after booking with you.
+              </p>
+              <div className="flex items-center gap-2 mb-3">
+                {[15, 30, 60].map(days => (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setEditForm(p => ({ ...p, batchValidityDays: days }))}
+                    className={`btn text-xs py-1.5 px-3 font-semibold ${Number(editForm.batchValidityDays) === days ? 'btn-primary' : 'btn-outline'}`}
+                  >
+                    {days} Days
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 max-w-xs">
+                <input 
+                  type="number" 
+                  className="input-field text-sm"
+                  min={1}
+                  max={365}
+                  value={editForm.batchValidityDays}
+                  onChange={(e) => setEditForm(p => ({ ...p, batchValidityDays: Math.max(1, Math.min(365, parseInt(e.target.value) || 1)) }))}
+                  placeholder="Custom days"
+                />
+                <span className="text-xs text-muted whitespace-nowrap">days validity</span>
+              </div>
+            </div>
+          )}
+
           <button 
             type="submit" 
             className="btn btn-primary self-start flex items-center gap-2"
@@ -291,6 +333,12 @@ const Profile = () => {
                   <MapPin size={18} />
                   <span>Remote / Global</span>
                 </div>
+                {profileData.role === 'professional' && (
+                  <div className="flex items-center gap-3 text-sm text-muted">
+                    <Clock size={18} className="text-primary" />
+                    <span>Batch Validity: <strong className="text-slate-800 dark:text-slate-200">{profileData.batchValidityDays || 30} Days</strong></span>
+                  </div>
+                )}
               </div>
             </div>
 

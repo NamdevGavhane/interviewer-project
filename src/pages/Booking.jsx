@@ -689,6 +689,9 @@ const Booking = () => {
                                   {prof.domain}
                                 </span>
                               )}
+                              <span className="badge text-[10px] py-0.5 px-1.5 font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                ⏱ {prof.batchValidityDays || 30}d validity
+                              </span>
                               {prof.reviewsCount > 0 ? (
                                 <span className="text-xs font-medium text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
                                   ★ {prof.rating.toFixed(1)} <span className="text-muted">({prof.reviewsCount})</span>
@@ -898,6 +901,14 @@ const Booking = () => {
                   <span>Session Rate</span>
                   <span>{sessionPrice != null ? `₹${sessionPrice}` : '...'}</span>
                 </div>
+                {selectedInterviewer && (
+                  <div className="flex justify-between text-xs text-muted">
+                    <span>Batch Validity</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      {selectedInterviewer.batchValidityDays || 30} Days
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-base pt-2.5 border-t" style={{ borderColor: 'var(--border)' }}>
                   <span>Total Payable</span>
                   <span className="text-primary">{sessionPrice != null ? `₹${sessionPrice} INR` : '...'}</span>

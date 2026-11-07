@@ -8,6 +8,7 @@ const Availability = require('../models/Availability');
 const Settings = require('../models/Settings');
 const Interview = require('../models/Interview');
 const User = require('../models/User');
+const Batch = require('../models/Batch');
 const { authenticate } = require('../middleware/auth');
 const { validateObjectId } = require('../middleware/validateObjectId');
 const { atomicBookSlot } = require('../services/availabilityService');
@@ -471,6 +472,37 @@ router.post('/reschedule', authenticate, async (req, res) => {
 
     if (interview.status === 'completed' || interview.status === 'cancelled') {
       return res.status(400).json({ success: false, message: `Cannot reschedule an interview that is already ${interview.status}.` });
+    }
+
+    // Check batch validity if interview is linked to a batch (Requirements 4 & 5)
+    let linkedBatch = null;
+    if (interview.batchId) {
+      linkedBatch = await Batch.findById(interview.batchId);
+    }
+    if (!linkedBatch) {
+      linkedBatch = await Batch.findOne({
+        candidateId: interview.candidateId,
+        interviewerId: interview.interviewerId
+      }).sort({ createdAt: -1 });
+    }
+
+    if (linkedBatch) {
+      const now = new Date();
+      const isBatchExpired = linkedBatch.status === 'expired' || now > new Date(linkedBatch.expiresAt);
+      if (isBatchExpired) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot reschedule: Your batch validity has expired. Expired batches cannot be used for new bookings.'
+        });
+      }
+
+      const proposedSlot = await Availability.findById(newSlotId);
+      if (proposedSlot && new Date(proposedSlot.startTime) > new Date(linkedBatch.expiresAt)) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot reschedule: Selected slot falls after your batch expiry date (${new Date(linkedBatch.expiresAt).toLocaleDateString()}). Please select a slot within your batch validity.`
+        });
+      }
     }
 
     const oldSlotId = interview.slotId;
