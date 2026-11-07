@@ -119,7 +119,7 @@ router.post('/slots', authenticate, requireActiveVerifiedProfessional, async (re
           });
         }
 
-        if (windowStart.toJSDate() <= now) {
+        if (windowStart.plus({ minutes: 5 }).toJSDate() <= now) {
           return res.status(400).json({
             success: false,
             message: 'Cannot create slots in the past.'
@@ -332,6 +332,61 @@ router.delete('/slots/:id', authenticate, requireActiveVerifiedProfessional, val
   }
 });
 
+// @route   GET /api/availability/active-interviewers
+// @desc    Fast aggregated query returning which interviewers have open future slots & next slot date
+// @access  Protected
+router.get('/active-interviewers', authenticate, async (req, res) => {
+  try {
+    const now = new Date();
+    // 10-minute grace window for active sessions
+    const graceThreshold = new Date(now.getTime() - 10 * 60 * 1000);
+
+    const summaries = await Availability.aggregate([
+      {
+        $match: {
+          isBooked: false,
+          endTime: { $gt: now },
+          startTime: { $gt: graceThreshold },
+          $or: [
+            { reservedUntil: null },
+            { reservedUntil: { $lte: now } }
+          ]
+        }
+      },
+      {
+        $sort: { startTime: 1 }
+      },
+      {
+        $group: {
+          _id: '$interviewerId',
+          nextSlotDate: { $first: '$date' },
+          nextSlotStart: { $first: '$startTime' },
+          openCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const activeMap = {};
+    for (const item of summaries) {
+      if (item._id) {
+        activeMap[String(item._id)] = {
+          hasSlots: item.openCount > 0,
+          openCount: item.openCount,
+          nextSlotDate: item.nextSlotDate,
+          nextSlotStart: item.nextSlotStart
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      data: activeMap
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // @route   GET /api/availability/:interviewerId
 // @desc    Get bookable future slots for an active, verified professional (no auto-creation)
 // @access  Protected
@@ -355,10 +410,12 @@ router.get('/:interviewerId', authenticate, validateObjectId('interviewerId'), a
     }
 
     const now = new Date();
+    const graceThreshold = new Date(now.getTime() - 10 * 60 * 1000);
     const query = {
       interviewerId,
       isBooked: false,
-      startTime: { $gt: now },
+      endTime: { $gt: now },
+      startTime: { $gt: graceThreshold },
       $or: [
         { reservedUntil: null },
         { reservedUntil: { $lte: now } }

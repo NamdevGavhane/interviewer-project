@@ -68,6 +68,12 @@ const Booking = () => {
   const [slotConflictMessage, setSlotConflictMessage] = useState('');
   const [successBooking, setSuccessBooking] = useState(null);
   const [confirmedPayment, setConfirmedPayment] = useState(null);
+  const [nowTick, setNowTick] = useState(Date.now);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Toast notification state
   const [toast, setToast] = useState(null);
@@ -115,9 +121,10 @@ const Booking = () => {
     let ignore = false;
     const initData = async () => {
       try {
-        const [configData, usersData] = await Promise.all([
+        const [configData, usersData, activeInterviewersRes] = await Promise.all([
           apiClient.get('/api/config/public').catch(() => null),
-          apiClient.get('/api/users?role=professional&limit=50').catch(() => [])
+          apiClient.get('/api/users?role=professional&limit=50').catch(() => []),
+          apiClient.get('/api/availability/active-interviewers').catch(() => ({ data: {} }))
         ]);
 
         if (ignore) return;
@@ -129,52 +136,37 @@ const Booking = () => {
           ? usersData.data 
           : [];
 
-        // Check slots for each professional in parallel to know if they have open slots
-        const profsWithSlots = await Promise.all(
-          profList.map(async (prof) => {
+        const activeMap = activeInterviewersRes?.data || activeInterviewersRes || {};
+
+        // Merge professional profiles with pre-aggregated active slot counts (O(1) lookup, no 50-request waterfall)
+        const profsWithSlots = profList.map((prof) => {
+          const slotMeta = activeMap[String(prof._id)] || null;
+          const hasSlots = Boolean(slotMeta?.hasSlots);
+          let nextAvailableDateFormatted = null;
+          const firstSlotTime = slotMeta?.nextSlotStart || null;
+
+          if (hasSlots && slotMeta.nextSlotStart) {
             try {
-              const availRes = await apiClient.get(`/api/availability/${prof._id}`);
-              const rawSlots = Array.isArray(availRes)
-                ? availRes
-                : Array.isArray(availRes?.data)
-                ? availRes.data
-                : [];
-              
-              const hasSlots = rawSlots.length > 0;
-              let nextAvailableDateFormatted = null;
-              let firstSlotTime = null;
-
-              if (hasSlots) {
-                firstSlotTime = rawSlots[0].startTime;
-                const candDate = new Date(rawSlots[0].startTime);
-                nextAvailableDateFormatted = candDate.toLocaleDateString('en-US', {
-                  timeZone: candidateTimezone,
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric'
-                });
-              }
-
-              return {
-                ...prof,
-                hasSlots,
-                slotsCount: rawSlots.length,
-                nextAvailableDateFormatted,
-                firstSlotTime,
-                cachedSlots: rawSlots
-              };
+              const candDate = new Date(slotMeta.nextSlotStart);
+              nextAvailableDateFormatted = candDate.toLocaleDateString('en-US', {
+                timeZone: candidateTimezone,
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+              });
             } catch {
-              return {
-                ...prof,
-                hasSlots: false,
-                slotsCount: 0,
-                nextAvailableDateFormatted: null,
-                firstSlotTime: null,
-                cachedSlots: []
-              };
+              nextAvailableDateFormatted = slotMeta.nextSlotDate || null;
             }
-          })
-        );
+          }
+
+          return {
+            ...prof,
+            hasSlots,
+            slotsCount: slotMeta?.openCount || 0,
+            nextAvailableDateFormatted,
+            firstSlotTime
+          };
+        });
 
         if (ignore) return;
 
@@ -204,8 +196,8 @@ const Booking = () => {
           if (chosen.domain || chosen.title) {
             setTopic(`${chosen.domain || chosen.title} Technical Mock Interview`);
           }
-          if (chosen.cachedSlots && chosen.cachedSlots.length > 0) {
-            setAvailableSlots(chosen.cachedSlots);
+          if (chosen._id) {
+            fetchInterviewerSlots(chosen._id);
           }
         }
       } catch (err) {
@@ -221,13 +213,25 @@ const Booking = () => {
 
     initData();
     return () => { ignore = true; };
-  }, [candidateTimezone, preselectedInterviewerId]);
+  }, [candidateTimezone, preselectedInterviewerId, fetchInterviewerSlots]);
 
   // Process available slots into candidate timezone and compute candidate dates
   const processedSlots = useMemo(() => {
+    const currentMs = nowTick;
+    // 10-minute grace window for active sessions
+    const graceThresholdMs = currentMs - 10 * 60 * 1000;
+
     return (availableSlots || []).map(slot => {
       if (!slot?.startTime || !slot?.endTime) return null;
       try {
+        const startMs = new Date(slot.startTime).getTime();
+        const endMs = new Date(slot.endTime).getTime();
+
+        // Discard slots that have already concluded or started more than 10 minutes ago
+        if (endMs <= currentMs || startMs < graceThresholdMs) {
+          return null;
+        }
+
         const startUtc = new Date(slot.startTime);
         const endUtc = new Date(slot.endTime);
 

@@ -215,4 +215,7 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return candidatePassword === this.password;
 };
 
+// High performance compound indexes for candidate professional search & auth lookups
+userSchema.index({ role: 1, accountStatus: 1, approvalStatus: 1, isVerified: 1, isDeactivated: 1 });
+
 module.exports = mongoose.model('User', userSchema);

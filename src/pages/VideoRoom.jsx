@@ -132,11 +132,12 @@ const VideoRoom = () => {
   const myPeerIdRef = useRef(myPeerId);
   myPeerIdRef.current = myPeerId;
 
-  // TASK A5: Presence Heartbeat - send peerId every 5s
+  // TASK A5: Presence Heartbeat - send peerId every 10s (skipped when tab hidden)
   useEffect(() => {
     if (!interviewId || !myPeerId || isAdmin) return;
 
     const reportPresence = () => {
+      if (document.hidden) return;
       apiClient.post(`/api/interviews/${interviewId}/presence`, { peerId: myPeerId })
         .catch(err => {
           console.warn('Presence heartbeat notice:', err?.response?.data?.message || err?.message);
@@ -144,15 +145,16 @@ const VideoRoom = () => {
     };
 
     reportPresence();
-    const interval = setInterval(reportPresence, 5000);
+    const interval = setInterval(reportPresence, 10000);
     return () => clearInterval(interval);
   }, [interviewId, myPeerId, isAdmin]);
 
-  // TASK A5: Presence Polling - fetch partner's peerId every 2s
+  // TASK A5: Presence Polling - fetch partner's peerId dynamically (5s while connecting, 20s once connected, pause on hidden)
   useEffect(() => {
     if (!interviewId || isAdmin) return;
 
     const pollPartnerPresence = () => {
+      if (document.hidden) return;
       apiClient.get(`/api/interviews/${interviewId}/presence`)
         .then(res => {
           const data = res?.data || res;
@@ -168,8 +170,19 @@ const VideoRoom = () => {
     };
 
     pollPartnerPresence();
-    const interval = setInterval(pollPartnerPresence, 2000);
-    return () => clearInterval(interval);
+    // Dynamic interval: 5s while waiting, 20s once call is connected
+    const getIntervalMs = () => (isCallConnectedRef.current ? 20000 : 5000);
+    let timerId = null;
+
+    const tick = () => {
+      pollPartnerPresence();
+      timerId = setTimeout(tick, getIntervalMs());
+    };
+    timerId = setTimeout(tick, getIntervalMs());
+
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
   }, [interviewId, isAdmin]);
 
   // Helper to teardown all active media tracks cleanly (M2)

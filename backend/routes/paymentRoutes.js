@@ -85,8 +85,10 @@ router.post('/create-order', authenticate, paymentLimiter, async (req, res) => {
     if (slotDoc.isBooked) {
       return res.status(409).json({ success: false, message: 'This time slot is already booked.' });
     }
-    if (new Date(slotDoc.startTime) <= new Date()) {
-      return res.status(400).json({ success: false, message: 'Cannot book slots in the past.' });
+    const now = new Date();
+    const gracePeriodMs = 10 * 60 * 1000;
+    if (new Date(slotDoc.endTime) <= now || new Date(slotDoc.startTime).getTime() < (now.getTime() - gracePeriodMs)) {
+      return res.status(400).json({ success: false, message: 'Cannot book slots in the past or expired slots.' });
     }
 
     const settings = await Settings.getSettings();

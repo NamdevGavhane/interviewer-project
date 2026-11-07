@@ -37,6 +37,7 @@ const SidebarLayout = () => {
     if (!userData) return;
 
     const runFetch = async () => {
+      if (document.hidden) return;
       try {
         const res = await apiClient.get('/api/notifications');
         if (!isMounted) return;
@@ -50,10 +51,19 @@ const SidebarLayout = () => {
     };
 
     runFetch();
-    const interval = setInterval(runFetch, 30000); // Poll every 30s (O7)
+    const interval = setInterval(runFetch, 30000); // Poll every 30s when tab active (O7)
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isMounted) {
+        runFetch();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       isMounted = false;
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [userData]);
 

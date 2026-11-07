@@ -58,6 +58,7 @@ const availabilitySchema = new mongoose.Schema({
 availabilitySchema.index({ interviewerId: 1, startTime: 1 }, { unique: true });
 availabilitySchema.index({ interviewerId: 1, date: 1, isBooked: 1 });
 availabilitySchema.index({ isBooked: 1, endTime: 1 });
+availabilitySchema.index({ isBooked: 1, endTime: 1, startTime: 1, interviewerId: 1 });
 availabilitySchema.index({ interviewId: 1 });
 
 module.exports = mongoose.model('Availability', availabilitySchema);

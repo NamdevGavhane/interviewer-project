@@ -16,14 +16,26 @@ const rateLimit = require('express-rate-limit');
  * multiple container replicas, provision Redis and pass `store: new RedisStore({ client: redisClient })`.
  */
 
-// 1. General API Rate Limiter: 600 req per 15 min (40 req/min)
-// Bypasses dedicated polling endpoints so normal browsing is never starved by background polls
+// 1. General API Rate Limiter: 1500 req per 15 min (100 req/min)
+// Bypasses dedicated polling endpoints and auth routes so normal browsing is never starved by background polls
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
+  max: 1500,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.baseUrl === '/api/notifications' || req.originalUrl.includes('/api/config/public'),
+  skip: (req) => {
+    const url = req.originalUrl || req.url || '';
+    return (
+      url.startsWith('/api/notifications') ||
+      url.startsWith('/api/config/public') ||
+      url.startsWith('/api/interviews/presence') ||
+      url.startsWith('/api/interviews/room-access') ||
+      url.startsWith('/api/users/login') ||
+      url.startsWith('/api/users/register') ||
+      url.startsWith('/api/users/refresh') ||
+      url.startsWith('/api/users/logout')
+    );
+  },
   message: {
     success: false,
     message: 'Too many requests from this client. Please slow down.'
