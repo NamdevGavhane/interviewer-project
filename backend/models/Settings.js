@@ -115,7 +115,8 @@ settingsSchema.statics.getSettings = async function() {
     settings = await this.create({});
   } else {
     let changed = false;
-    if (settings.mockSessionPricePaise === undefined) {
+    // Strictly enforce mock session price to Rs 50 (5000 paise) - no extra additions
+    if (settings.mockSessionPricePaise !== 5000) {
       settings.mockSessionPricePaise = 5000;
       changed = true;
     }

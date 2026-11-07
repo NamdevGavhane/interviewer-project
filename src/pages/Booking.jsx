@@ -88,10 +88,10 @@ const Booking = () => {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentOrderData, setPaymentOrderData] = useState(null);
 
-  // Dynamic session price from public config
+  // Fixed session price strictly Rs 50 from public config
   const sessionPrice = publicConfig?.mockSessionPricePaise != null
     ? (publicConfig.mockSessionPricePaise / 100)
-    : null;
+    : 50;
 
   // Fetch slots for an interviewer and set processed slots
   const fetchInterviewerSlots = useCallback(async (interviewerId) => {
